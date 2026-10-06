@@ -34,22 +34,6 @@ Route::post('/login', [AuthController::class, 'login'])
 
 /*
 |--------------------------------------------------------------------------
-| OTP Verification
-|--------------------------------------------------------------------------
-*/
-
-Route::get('/login/verify', [AuthController::class, 'showVerifyOtp'])
-    ->name('login.otp.show');
-
-Route::post('/login/verify', [AuthController::class, 'verifyOtp'])
-    ->name('login.otp.verify');
-
-Route::post('/login/verify/resend', [AuthController::class, 'resendOtp'])
-    ->name('login.otp.resend');
-
-
-/*
-|--------------------------------------------------------------------------
 | Register
 |--------------------------------------------------------------------------
 */

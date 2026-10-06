@@ -11,6 +11,7 @@ class ProductController extends Controller
 {
     public function index(Request $request)
     {
+<<<<<<< Updated upstream
         $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
         $products = Product::with(['category', 'unit'])
             ->where('is_active', $listingStatus === 'active')
@@ -19,6 +20,20 @@ class ProductController extends Controller
         $units = Unit::where('is_active', 1)
             ->orderBy('name')
             ->get();
+=======
+        if ($request->filled('category_id')) {
+            $request->validate([
+                'category_id' => 'integer|exists:categories,id',
+            ]);
+        }
+
+        $query = Product::with(['category', 'unit']);
+        if ($request->filled('category_id')) {
+            $query->where('category_id', $request->input('category_id'));
+        }
+
+        $products = $query->orderBy('id', 'desc')->get();
+>>>>>>> Stashed changes
 
         return view('products.index', compact('products', 'units', 'listingStatus'));
     }

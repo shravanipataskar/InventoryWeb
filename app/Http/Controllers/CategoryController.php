@@ -3,18 +3,65 @@
 namespace App\Http\Controllers;
 
 use App\Category;
+use App\Product;
 use Illuminate\Http\Request;
 
 class CategoryController extends Controller
 {
     public function index(Request $request)
     {
+<<<<<<< Updated upstream
         $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
         $categories = Category::where('is_active', $listingStatus === 'active')
             ->orderBy('id', 'desc')
             ->get();
 
         return view('categories.index', compact('categories', 'listingStatus'));
+=======
+        $totalCategories = Category::count();
+        $activeCategories = Category::where('is_active', 1)->count();
+        $inactiveCategories = Category::where('is_active', 0)->count();
+        $totalProductsInCategories = Product::whereHas('category')->count();
+
+        $query = Category::withCount('products');
+
+        if ($request->filled('search')) {
+            $search = trim($request->input('search'));
+            $query->where(function ($categoryQuery) use ($search) {
+                $categoryQuery->where('name', 'like', '%' . $search . '%')
+                    ->orWhere('description', 'like', '%' . $search . '%');
+            });
+        }
+
+        if ($request->input('status') === 'active') {
+            $query->where('is_active', 1);
+        } elseif ($request->input('status') === 'inactive') {
+            $query->where('is_active', 0);
+        }
+
+        $sortOptions = [
+            'newest' => ['created_at', 'desc'],
+            'oldest' => ['created_at', 'asc'],
+            'name_asc' => ['name', 'asc'],
+            'name_desc' => ['name', 'desc'],
+        ];
+        $sort = $request->input('sort', 'newest');
+        if (!array_key_exists($sort, $sortOptions)) {
+            $sort = 'newest';
+        }
+
+        $query->orderBy($sortOptions[$sort][0], $sortOptions[$sort][1]);
+        $categories = $query->paginate(5)->appends($request->query());
+
+        return view('categories.index', compact(
+            'categories',
+            'totalCategories',
+            'activeCategories',
+            'inactiveCategories',
+            'totalProductsInCategories',
+            'sort'
+        ));
+>>>>>>> Stashed changes
     }
 
     public function create()
@@ -40,6 +87,13 @@ class CategoryController extends Controller
             ->with('success', 'Category created successfully.');
     }
 
+    public function show($id)
+    {
+        $category = Category::withCount('products')->findOrFail($id);
+
+        return view('categories.show', compact('category'));
+    }
+
     public function edit($id)
     {
         $category = Category::findOrFail($id);
@@ -49,21 +103,31 @@ class CategoryController extends Controller
 
     public function update(Request $request, $id)
     {
-        $request->validate([
+        $validated = $request->validate([
             'name' => 'required|string|max:255',
             'description' => 'nullable|string',
+            'is_active' => 'sometimes|in:0,1',
         ]);
 
         $category = Category::findOrFail($id);
 
         $category->update([
-            'name' => $request->name,
-            'description' => $request->description,
+            'name' => $validated['name'],
+            'description' => $validated['description'] ?? null,
         ]);
+
+        if (array_key_exists('is_active', $validated)) {
+            $category->update(['is_active' => (int) $validated['is_active']]);
+        }
 
         return redirect()
             ->route('categories.index')
-            ->with('success', 'Category updated successfully.');
+            ->with(
+                'success',
+                array_key_exists('is_active', $validated)
+                    ? 'Category status updated successfully.'
+                    : 'Category updated successfully.'
+            );
     }
 
     public function status(Request $request, $id)

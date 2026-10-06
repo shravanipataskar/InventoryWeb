@@ -3,14 +3,10 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use App\LoginOtp;
-use App\Mail\LoginOtpMail;
 use App\User;
-use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Str;
 
@@ -36,18 +32,6 @@ class AuthController extends Controller
             'sendResetLink',
             'showResetPassword',
             'resetPassword',
-        ]);
-
-        /*
-        |--------------------------------------------------------------------------
-        | OTP pages
-        |--------------------------------------------------------------------------
-        */
-
-        $this->middleware('guest')->only([
-            'showVerifyOtp',
-            'verifyOtp',
-            'resendOtp',
         ]);
 
         /*
@@ -138,253 +122,9 @@ class AuthController extends Controller
                 );
         }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Generate OTP
-        |--------------------------------------------------------------------------
-        */
-
         $remember = $request->boolean('remember');
 
-        $this->sendLoginOtp($user);
-
-        /*
-        |--------------------------------------------------------------------------
-        | Store temporary authentication data
-        |--------------------------------------------------------------------------
-        |
-        | User is NOT authenticated yet.
-        | Authentication happens only after OTP verification.
-        |
-        */
-
-        $request->session()->put([
-            'otp_user_id' => $user->id,
-            'otp_remember' => $remember,
-            'otp_email' => $user->email,
-        ]);
-
-        return redirect()
-            ->route('login.otp.show')
-            ->with(
-                'status',
-                'A 6-digit verification code has been sent to your email.'
-            );
-    }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Send Login OTP
-    |--------------------------------------------------------------------------
-    */
-
-    protected function sendLoginOtp(User $user)
-    {
-        /*
-        | Remove old unused OTPs
-        */
-
-        LoginOtp::where(
-            'user_id',
-            $user->id
-        )
-        ->whereNull('used_at')
-        ->delete();
-
-        /*
-        | Generate 6-digit OTP
-        */
-
-        $otp = (string) random_int(
-            100000,
-            999999
-        );
-
-        /*
-        | Save hashed OTP
-        */
-
-        LoginOtp::create([
-            'user_id' => $user->id,
-
-            'code_hash' => Hash::make($otp),
-
-            'expires_at' => Carbon::now()->addMinutes(5),
-
-            'attempts' => 0,
-        ]);
-
-        /*
-        | Send OTP email
-        */
-
-        Mail::to($user->email)
-            ->send(
-                new LoginOtpMail(
-                    $otp,
-                    5
-                )
-            );
-    }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | OTP Verification Page
-    |--------------------------------------------------------------------------
-    */
-
-    public function showVerifyOtp(Request $request)
-    {
-        if (
-            !$request->session()->has(
-                'otp_user_id'
-            )
-        ) {
-            return redirect()->route('login');
-        }
-
-        return view('auth.verify-otp');
-    }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Verify OTP
-    |--------------------------------------------------------------------------
-    */
-
-    public function verifyOtp(Request $request)
-    {
-        $request->validate([
-            'otp' => [
-                'required',
-                'digits:6',
-            ],
-        ]);
-
-        $userId = $request->session()->get(
-            'otp_user_id'
-        );
-
-        if (!$userId) {
-            return redirect()
-                ->route('login')
-                ->withErrors([
-                    'otp' => 'Your verification session has expired. Please login again.',
-                ]);
-        }
-
-        $otpRecord = LoginOtp::where(
-            'user_id',
-            $userId
-        )
-        ->whereNull('used_at')
-        ->latest('id')
-        ->first();
-
-        /*
-        |--------------------------------------------------------------------------
-        | OTP does not exist
-        |--------------------------------------------------------------------------
-        */
-
-        if (!$otpRecord) {
-            return back()->withErrors([
-                'otp' => 'No active verification code was found. Please request a new code.',
-            ]);
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | OTP expired
-        |--------------------------------------------------------------------------
-        */
-
-        if (
-            $otpRecord->expires_at->isPast()
-        ) {
-            return back()->withErrors([
-                'otp' => 'This verification code has expired. Please request a new code.',
-            ]);
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | Too many attempts
-        |--------------------------------------------------------------------------
-        */
-
-        if (
-            $otpRecord->attempts >= 5
-        ) {
-            return back()->withErrors([
-                'otp' => 'Too many incorrect attempts. Please request a new code.',
-            ]);
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | Check OTP
-        |--------------------------------------------------------------------------
-        */
-
-        if (
-            !Hash::check(
-                $request->otp,
-                $otpRecord->code_hash
-            )
-        ) {
-            $otpRecord->increment('attempts');
-
-            return back()->withErrors([
-                'otp' => 'The verification code is incorrect.',
-            ]);
-        }
-
-        /*
-        |--------------------------------------------------------------------------
-        | OTP is valid
-        |--------------------------------------------------------------------------
-        */
-
-        $user = User::findOrFail(
-            $userId
-        );
-
-        $otpRecord->update([
-            'used_at' => Carbon::now(),
-        ]);
-
-        /*
-        | Get remember value
-        */
-
-        $remember = $request->session()->pull(
-            'otp_remember',
-            false
-        );
-
-        /*
-        | Remove temporary OTP session
-        */
-
-        $request->session()->forget([
-            'otp_user_id',
-            'otp_email',
-        ]);
-
-        /*
-        |--------------------------------------------------------------------------
-        | Login user
-        |--------------------------------------------------------------------------
-        */
-
-        Auth::login(
-            $user,
-            $remember
-        );
+        Auth::login($user, $remember);
 
         $request->session()->regenerate();
 
@@ -394,39 +134,8 @@ class AuthController extends Controller
             )
             ->with(
                 'success',
-                'Welcome back! Your sign in has been verified.'
+                'Welcome back! You are signed in.'
             );
-    }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Resend OTP
-    |--------------------------------------------------------------------------
-    */
-
-    public function resendOtp(Request $request)
-    {
-        $userId = $request->session()->get(
-            'otp_user_id'
-        );
-
-        if (!$userId) {
-            return redirect()->route('login');
-        }
-
-        $user = User::findOrFail(
-            $userId
-        );
-
-        $this->sendLoginOtp(
-            $user
-        );
-
-        return back()->with(
-            'status',
-            'A new verification code has been sent. It is valid for 5 minutes.'
-        );
     }
 
 
@@ -483,41 +192,14 @@ class AuthController extends Controller
             ),
         ]);
 
-        /*
-        |--------------------------------------------------------------------------
-        | Send OTP after registration
-        |--------------------------------------------------------------------------
-        */
-
-        $this->sendLoginOtp(
-            $user
-        );
-
-        /*
-        |--------------------------------------------------------------------------
-        | Store temporary OTP session
-        |--------------------------------------------------------------------------
-        */
-
-        $request->session()->put([
-            'otp_user_id' => $user->id,
-
-            'otp_remember' => false,
-
-            'otp_email' => $user->email,
-        ]);
-
-        /*
-        |--------------------------------------------------------------------------
-        | DO NOT LOGIN USER YET
-        |--------------------------------------------------------------------------
-        */
+        Auth::login($user);
+        $request->session()->regenerate();
 
         return redirect()
-            ->route('login.otp.show')
+            ->route('dashboard')
             ->with(
-                'status',
-                'Your account was created successfully. A 6-digit verification code has been sent to your email.'
+                'success',
+                'Your account was created successfully and you are now signed in.'
             );
     }
 
