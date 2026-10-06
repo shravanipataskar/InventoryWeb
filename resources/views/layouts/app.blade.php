@@ -45,14 +45,14 @@
                 <a class="nav-link {{ request()->routeIs('dashboard') ? 'is-active' : '' }}" href="{{ route('dashboard') }}">
                     <svg><use href="#icon-grid"></use></svg><span>Dashboard</span>
                 </a>
-                <a class="nav-link {{ request()->routeIs('products.*') ? 'is-active' : '' }}" href="{{ route('products.index') }}">
-                    <svg><use href="#icon-box"></use></svg><span>Products</span>
-                </a>
                 <a class="nav-link {{ request()->routeIs('categories.*') ? 'is-active' : '' }}" href="{{ route('categories.index') }}">
                     <svg><use href="#icon-layers"></use></svg><span>Categories</span>
                 </a>
                 <a class="nav-link {{ request()->routeIs('units.*') ? 'is-active' : '' }}" href="{{ route('units.index') }}">
                     <svg><use href="#icon-ruler"></use></svg><span>Units</span>
+                </a>
+                <a class="nav-link {{ request()->routeIs('products.*') ? 'is-active' : '' }}" href="{{ route('products.index') }}">
+                    <svg><use href="#icon-box"></use></svg><span>Products</span>
                 </a>
                 <a class="nav-link {{ request()->routeIs('suppliers.*') ? 'is-active' : '' }}" href="{{ route('suppliers.index') }}">
                     <svg><use href="#icon-users"></use></svg><span>Suppliers</span>

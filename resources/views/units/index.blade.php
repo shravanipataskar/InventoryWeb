@@ -1,151 +1,46 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Units - Inventory System</title>
+@extends('layouts.app')
 
-    <link rel="stylesheet"
-          href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+@section('title', 'Units')
+@section('topbar-title', 'Units')
 
-    <style>
-        body {
-            background: #f5f6fa;
-        }
-
-        .container {
-            margin-top: 50px;
-        }
-
-        .card {
-            border: none;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-        }
-    </style>
-</head>
-
-<body>
-
-<div class="container">
-
-    <div class="d-flex justify-content-between align-items-center mb-4">
-
-        <div>
-            <h2>Units</h2>
-            <p class="text-muted mb-0">
-                Manage inventory measurement units
-            </p>
-        </div>
-
-        <a href="{{ route('units.create') }}"
-           class="btn btn-primary">
-            + Add Unit
-        </a>
-
+@section('content')
+    <div class="page-heading">
+        <div><span class="section-kicker">CATALOGUE</span><h1>Units</h1><p>Manage inventory measurement units.</p></div>
+        <a class="button button-primary" href="{{ route('units.create') }}"><span class="button-plus">+</span> Add Unit</a>
     </div>
 
-    @if(session('success'))
-        <div class="alert alert-success">
-            {{ session('success') }}
+    <section class="panel listing-panel" data-enhanced-table data-page-size="10">
+        <div class="table-toolbar">
+            <label class="search-field"><span class="search-glyph" aria-hidden="true">⌕</span><input type="search" placeholder="Search units..." aria-label="Search units" data-table-search></label>
+            <select class="filter-select" aria-label="Filter by status" data-filter-key="status"><option value="">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option></select>
+            <button class="button button-light" type="button" data-filter-reset>Reset</button>
         </div>
-    @endif
-
-    <div class="card">
-
-        <div class="card-body">
-
-            <table class="table table-bordered table-hover">
-
-                <thead class="thead-light">
-
-                    <tr>
-                        <th width="80">#</th>
-                        <th>Unit Name</th>
-                        <th>Short Name</th>
-                        <th>Status</th>
-                        <th width="180">Action</th>
-                    </tr>
-
-                </thead>
-
+        <div class="table-wrap">
+            <table class="data-table listing-table">
+                <thead><tr><th>#</th><th>UNIT NAME</th><th>SHORT NAME</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
                 <tbody>
-
-                @forelse($units as $unit)
-
-                    <tr>
-
-                        <td>{{ $loop->iteration }}</td>
-
-                        <td>{{ $unit->name }}</td>
-
-                        <td>{{ $unit->short_name }}</td>
-
-                        <td>
-
-                            @if($unit->is_active)
-
-                                <span class="badge badge-success">
-                                    Active
-                                </span>
-
-                            @else
-
-                                <span class="badge badge-danger">
-                                    Inactive
-                                </span>
-
-                            @endif
-
-                        </td>
-
-                        <td>
-
-                            <a href="{{ route('units.edit', $unit->id) }}"
-                               class="btn btn-sm btn-warning">
-                                Edit
-                            </a>
-
-                            <form action="{{ route('units.destroy', $unit->id) }}"
-                                  method="POST"
-                                  style="display:inline-block;">
-
+                @forelse ($units as $unit)
+                    <tr data-table-row data-status="{{ $unit->is_active ? 'active' : 'inactive' }}">
+                        <td class="muted-cell">{{ $loop->iteration }}</td>
+                        <td><strong class="table-primary-text">{{ $unit->name }}</strong></td>
+                        <td><span class="unit-code">{{ $unit->short_name }}</span></td>
+                        <td>@include('components.status-badge', ['status' => $unit->is_active ? 'Active' : 'Inactive'])</td>
+                        <td class="action-cell">
+                            <a class="button button-small button-light" href="{{ route('units.edit', $unit->id) }}">Edit</a>
+                            <form action="{{ route('units.destroy', $unit->id) }}" method="POST" onsubmit="return confirm('Delete this unit? This action cannot be undone.');">
                                 @csrf
                                 @method('DELETE')
-
-                                <button type="submit"
-                                        class="btn btn-sm btn-danger"
-                                        onclick="return confirm('Are you sure you want to delete this unit?')">
-                                    Delete
-                                </button>
-
+                                <button class="button button-small button-danger" type="submit">Delete</button>
                             </form>
-
                         </td>
-
                     </tr>
-
                 @empty
-
-                    <tr>
-
-                        <td colspan="5"
-                            class="text-center text-muted py-4">
-
-                            No units found.
-
-                        </td>
-
-                    </tr>
-
+                    <tr><td colspan="5">@include('components.empty-state', ['icon' => 'icon-ruler', 'title' => 'No units yet', 'message' => 'Add a measurement unit to use with your products.'])</td></tr>
                 @endforelse
-
                 </tbody>
-
             </table>
-
         </div>
-
-    </div>
-
-</div>
-
-</body>
-</html>
+        <div class="filter-empty" data-filter-empty hidden>No units match your search or filters.</div>
+        <div class="table-footer"><span class="table-summary" data-table-summary></span><div class="pagination" data-table-pagination></div></div>
+    </section>
+@endsection

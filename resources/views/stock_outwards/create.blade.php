@@ -1,353 +1,83 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Add Stock Outward - Inventory System</title>
+@extends('layouts.app')
 
-    <link rel="stylesheet"
-          href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+@section('title', 'Add Stock Outward')
+@section('topbar-title', 'Add stock outward')
 
-    <style>
-        body {
-            background: #f5f6fa;
-        }
-
-        .container {
-            margin-top: 40px;
-            max-width: 900px;
-        }
-
-        .card {
-            border: none;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-        }
-    </style>
-</head>
-
-<body>
-
-<div class="container">
-
-    <div class="d-flex justify-content-between align-items-center mb-4">
-
-        <div>
-            <h2>Add Stock Outward</h2>
-
-            <p class="text-muted mb-0">
-                Issue or sell inventory
-            </p>
-        </div>
-
-        <a href="{{ route('stock-outwards.index') }}"
-           class="btn btn-secondary">
-            Back
-        </a>
-
+@section('content')
+    <div class="page-heading">
+        <div><span class="section-kicker">STOCK MOVEMENT / OUTWARD</span><h1>Add Stock Outward</h1><p>Record inventory issued to a customer, department or team member.</p></div>
+        <a class="button button-light" href="{{ route('stock-outwards.index') }}">Back to stock outward</a>
     </div>
-
-    @if($errors->any())
-
-        <div class="alert alert-danger">
-
-            <ul class="mb-0">
-
-                @foreach($errors->all() as $error)
-                    <li>{{ $error }}</li>
-                @endforeach
-
-            </ul>
-
-        </div>
-
+    <div class="inventory-notice notice-out"><span class="notice-symbol">−</span><span><strong>Issuing stock decreases available inventory.</strong><small>Available stock is checked here and validated again by the server when you save.</small></span></div>
+    @if ($errors->any())
+        <div class="form-alert" role="alert"><strong>Please check the form:</strong><ul>@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
     @endif
-
-    <div class="card">
-
-        <div class="card-body p-4">
-
-            <form action="{{ route('stock-outwards.store') }}"
-                  method="POST">
-
-                @csrf
-
-                <div class="form-row">
-
-                    <div class="form-group col-md-6">
-
-                        <label>Product *</label>
-
-                        <select name="product_id"
-                                id="product_id"
-                                class="form-control"
-                                required>
-
-                            <option value="">
-                                Select Product
-                            </option>
-
-                            @foreach($products as $product)
-
-                                <option value="{{ $product->id }}"
-                                        data-stock="{{ $product->current_stock }}"
-                                        data-price="{{ $product->selling_price }}"
-                                    {{ old('product_id') == $product->id ? 'selected' : '' }}>
-
-                                    {{ $product->name }}
-                                    ({{ $product->product_code }})
-
-                                </option>
-
-                            @endforeach
-
-                        </select>
-
-                    </div>
-
-                    <div class="form-group col-md-6">
-
-                        <label>Available Stock</label>
-
-                        <input type="text"
-                               id="available_stock"
-                               class="form-control"
-                               value="0"
-                               readonly>
-
-                    </div>
-
+    <section class="form-card">
+        <form action="{{ route('stock-outwards.store') }}" method="POST">
+            @csrf
+            <div class="form-section">
+                <div class="form-card-heading"><span class="form-section-icon"><svg><use href="#icon-calendar"></use></svg></span><div><h2>Transaction information</h2><p>Set the issue date and optional reference.</p></div></div>
+                <div class="form-grid">
+                    <div class="field"><label for="outward_date">Outward date <span class="required-mark">*</span></label><input class="field-control" id="outward_date" type="date" name="outward_date" value="{{ old('outward_date', date('Y-m-d')) }}" required>@error('outward_date')<small class="field-error">{{ $message }}</small>@enderror</div>
+                    <div class="field"><label for="reference_number">Reference number</label><input class="field-control" id="reference_number" type="text" name="reference_number" value="{{ old('reference_number') }}" placeholder="e.g. OUT-001" maxlength="100">@error('reference_number')<small class="field-error">{{ $message }}</small>@enderror</div>
+                    <div class="field"><label for="issued_to">Issued to</label><input class="field-control" id="issued_to" type="text" name="issued_to" value="{{ old('issued_to') }}" placeholder="Customer, department or employee" maxlength="255">@error('issued_to')<small class="field-error">{{ $message }}</small>@enderror</div>
                 </div>
-
-                <div class="form-row">
-
-                    <div class="form-group col-md-6">
-
-                        <label>Reference Number</label>
-
-                        <input type="text"
-                               name="reference_number"
-                               class="form-control"
-                               placeholder="OUT-001"
-                               value="{{ old('reference_number') }}">
-
-                    </div>
-
-                    <div class="form-group col-md-6">
-
-                        <label>Outward Date *</label>
-
-                        <input type="date"
-                               name="outward_date"
-                               class="form-control"
-                               value="{{ old('outward_date', date('Y-m-d')) }}"
-                               required>
-
-                    </div>
-
+            </div>
+            <div class="form-section">
+                <div class="form-card-heading"><span class="form-section-icon form-icon-violet"><svg><use href="#icon-box"></use></svg></span><div><h2>Product & quantity</h2><p>Choose a product with available stock and enter the quantity to issue.</p></div></div>
+                <div class="form-grid">
+                    <div class="field"><label for="product_id">Product <span class="required-mark">*</span></label><select class="field-control" name="product_id" id="product_id" required><option value="">Select product</option>@foreach ($products as $product)<option value="{{ $product->id }}" data-stock="{{ $product->current_stock }}" data-price="{{ $product->selling_price }}" {{ old('product_id') == $product->id ? 'selected' : '' }}>{{ $product->name }} ({{ $product->product_code }})</option>@endforeach</select>@error('product_id')<small class="field-error">{{ $message }}</small>@enderror</div>
+                    <div class="field"><label for="available_stock">Available stock</label><div class="stock-availability"><input class="field-control" id="available_stock" type="text" value="0" readonly><span>units available</span></div><small id="stock_warning" class="field-error" role="alert" hidden>Quantity cannot exceed available stock.</small></div>
+                    <div class="field"><label for="quantity">Quantity <span class="required-mark">*</span></label><input class="field-control" id="quantity" type="number" name="quantity" value="{{ old('quantity') }}" min="0.01" step="0.01" placeholder="0.00" required>@error('quantity')<small class="field-error">{{ $message }}</small>@enderror</div>
+                    <div class="field"><label for="selling_price">Selling price per unit <span class="required-mark">*</span></label><div class="input-prefix"><span>₹</span><input class="field-control" id="selling_price" type="number" name="selling_price" value="{{ old('selling_price') }}" min="0" step="0.01" placeholder="0.00" required></div>@error('selling_price')<small class="field-error">{{ $message }}</small>@enderror</div>
+                    <div class="field field-wide"><label for="total_amount">Total amount</label><div class="total-preview total-preview-out"><span>Issue total</span><strong>₹<output id="total_amount">0.00</output></strong></div><small class="field-hint">Calculated from quantity × selling price. The server remains authoritative.</small></div>
+                    <div class="field field-wide"><label for="remarks">Remarks</label><textarea class="field-control" id="remarks" name="remarks" rows="3" placeholder="Optional notes about this issue">{{ old('remarks') }}</textarea>@error('remarks')<small class="field-error">{{ $message }}</small>@enderror</div>
                 </div>
-
-                <div class="form-row">
-
-                    <div class="form-group col-md-6">
-
-                        <label>Quantity *</label>
-
-                        <input type="number"
-                               name="quantity"
-                               id="quantity"
-                               class="form-control"
-                               step="0.01"
-                               min="0.01"
-                               placeholder="5"
-                               value="{{ old('quantity') }}"
-                               required>
-
-                        <small id="stock_warning"
-                               class="text-danger"
-                               style="display:none;">
-                            Quantity cannot exceed available stock.
-                        </small>
-
-                    </div>
-
-                    <div class="form-group col-md-6">
-
-                        <label>Selling Price *</label>
-
-                        <input type="number"
-                               name="selling_price"
-                               id="selling_price"
-                               class="form-control"
-                               step="0.01"
-                               min="0"
-                               value="{{ old('selling_price') }}"
-                               required>
-
-                    </div>
-
-                </div>
-
-                <div class="form-group">
-
-                    <label>Total Amount</label>
-
-                    <input type="text"
-                           id="total_amount"
-                           class="form-control"
-                           value="0.00"
-                           readonly>
-
-                </div>
-
-                <div class="form-group">
-
-                    <label>Issued To</label>
-
-                    <input type="text"
-                           name="issued_to"
-                           class="form-control"
-                           placeholder="Customer / Department / Employee"
-                           value="{{ old('issued_to') }}">
-
-                </div>
-
-                <div class="form-group">
-
-                    <label>Remarks</label>
-
-                    <textarea name="remarks"
-                              class="form-control"
-                              rows="3"
-                              placeholder="Optional remarks">{{ old('remarks') }}</textarea>
-
-                </div>
-
-                <button type="submit"
-                        id="saveButton"
-                        class="btn btn-success">
-                    Save Stock Outward
-                </button>
-
-                <a href="{{ route('stock-outwards.index') }}"
-                   class="btn btn-secondary ml-2">
-                    Cancel
-                </a>
-
-            </form>
-
-        </div>
-
-    </div>
-
-</div>
-
-<script>
-
-    const productSelect =
-        document.getElementById('product_id');
-
-    const stockField =
-        document.getElementById('available_stock');
-
-    const priceField =
-        document.getElementById('selling_price');
-
-    const quantityField =
-        document.getElementById('quantity');
-
-    const totalField =
-        document.getElementById('total_amount');
-
-    const warning =
-        document.getElementById('stock_warning');
-
-    const saveButton =
-        document.getElementById('saveButton');
-
-
-    function updateProductDetails() {
-
-        const option =
-            productSelect.options[productSelect.selectedIndex];
-
-        if (!option || !option.value) {
-
-            stockField.value = '0';
-
-            return;
-        }
-
-        const stock =
-            parseFloat(option.dataset.stock) || 0;
-
-        const price =
-            parseFloat(option.dataset.price) || 0;
-
-        stockField.value = stock;
-
-        priceField.value = price.toFixed(2);
-
-        calculateTotal();
-
-        validateQuantity();
-    }
-
-
-    function calculateTotal() {
-
-        const quantity =
-            parseFloat(quantityField.value) || 0;
-
-        const price =
-            parseFloat(priceField.value) || 0;
-
-        totalField.value =
-            (quantity * price).toFixed(2);
-    }
-
-
-    function validateQuantity() {
-
-        const quantity =
-            parseFloat(quantityField.value) || 0;
-
-        const stock =
-            parseFloat(stockField.value) || 0;
-
-        if (quantity > stock) {
-
-            warning.style.display = 'block';
-
-            saveButton.disabled = true;
-
-        } else {
-
-            warning.style.display = 'none';
-
-            saveButton.disabled = false;
-        }
-    }
-
-
-    productSelect.addEventListener(
-        'change',
-        updateProductDetails
-    );
-
-    quantityField.addEventListener(
-        'input',
-        function () {
-            calculateTotal();
-            validateQuantity();
-        }
-    );
-
-    priceField.addEventListener(
-        'input',
-        calculateTotal
-    );
-
-    updateProductDetails();
-
-</script>
-
-</body>
-</html>
+            </div>
+            <div class="form-actions"><a class="button button-light" href="{{ route('stock-outwards.index') }}">Cancel</a><button class="button button-primary" id="saveButton" type="submit">Save Stock Outward</button></div>
+        </form>
+    </section>
+    <script>
+        (function () {
+            var productSelect = document.getElementById('product_id');
+            var stockField = document.getElementById('available_stock');
+            var priceField = document.getElementById('selling_price');
+            var quantityField = document.getElementById('quantity');
+            var totalField = document.getElementById('total_amount');
+            var warning = document.getElementById('stock_warning');
+            var saveButton = document.getElementById('saveButton');
+
+            function calculateTotal() {
+                totalField.value = ((parseFloat(quantityField.value) || 0) * (parseFloat(priceField.value) || 0)).toFixed(2);
+            }
+
+            function validateQuantity() {
+                var exceedsStock = (parseFloat(quantityField.value) || 0) > (parseFloat(stockField.value) || 0);
+                warning.hidden = !exceedsStock;
+                saveButton.disabled = exceedsStock;
+            }
+
+            function updateProductDetails() {
+                var option = productSelect.options[productSelect.selectedIndex];
+                if (!option || !option.value) {
+                    stockField.value = '0';
+                    validateQuantity();
+                    calculateTotal();
+                    return;
+                }
+                stockField.value = option.dataset.stock || '0';
+                priceField.value = (parseFloat(option.dataset.price) || 0).toFixed(2);
+                calculateTotal();
+                validateQuantity();
+            }
+
+            productSelect.addEventListener('change', updateProductDetails);
+            quantityField.addEventListener('input', function () {
+                calculateTotal();
+                validateQuantity();
+            });
+            priceField.addEventListener('input', calculateTotal);
+            updateProductDetails();
+        }());
+    </script>
+@endsection

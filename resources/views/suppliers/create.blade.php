@@ -1,177 +1,28 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Add Supplier - Inventory System</title>
+@extends('layouts.app')
 
-    <link rel="stylesheet"
-          href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+@section('title', 'Add Supplier')
+@section('topbar-title', 'Add supplier')
 
-    <style>
-        body {
-            background: #f5f6fa;
-        }
-
-        .container {
-            margin-top: 50px;
-            max-width: 900px;
-        }
-
-        .card {
-            border: none;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-        }
-
-        .page-title {
-            font-weight: 600;
-        }
-    </style>
-</head>
-
-<body>
-
-<div class="container">
-
-    <div class="d-flex justify-content-between align-items-center mb-4">
-
-        <div>
-            <h2 class="page-title">Add Supplier</h2>
-
-            <p class="text-muted mb-0">
-                Add a new supplier to the inventory system
-            </p>
-        </div>
-
-        <a href="{{ route('suppliers.index') }}"
-           class="btn btn-secondary">
-            Back
-        </a>
-
+@section('content')
+    <div class="page-heading">
+        <div><span class="section-kicker">PARTNERS / SUPPLIERS</span><h1>Add Supplier</h1><p>Add a supplier to your business directory.</p></div>
+        <a class="button button-light" href="{{ route('suppliers.index') }}">Back to suppliers</a>
     </div>
-
-    @if($errors->any())
-
-        <div class="alert alert-danger">
-
-            <strong>Please fix the following errors:</strong>
-
-            <ul class="mb-0 mt-2">
-
-                @foreach($errors->all() as $error)
-
-                    <li>{{ $error }}</li>
-
-                @endforeach
-
-            </ul>
-
-        </div>
-
+    @if ($errors->any())
+        <div class="form-alert" role="alert"><strong>Please check the form:</strong><ul>@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
     @endif
-
-    <div class="card">
-
-        <div class="card-body p-4">
-
-            <form action="{{ route('suppliers.store') }}"
-                  method="POST">
-
-                @csrf
-
-                <div class="form-row">
-
-                    <div class="form-group col-md-6">
-
-                        <label>
-                            Supplier Name
-                            <span class="text-danger">*</span>
-                        </label>
-
-                        <input type="text"
-                               name="name"
-                               class="form-control"
-                               placeholder="Enter supplier name"
-                               value="{{ old('name') }}"
-                               required>
-
-                    </div>
-
-                    <div class="form-group col-md-6">
-
-                        <label>Company Name</label>
-
-                        <input type="text"
-                               name="company_name"
-                               class="form-control"
-                               placeholder="Enter company name"
-                               value="{{ old('company_name') }}">
-
-                    </div>
-
-                </div>
-
-
-                <div class="form-row">
-
-                    <div class="form-group col-md-6">
-
-                        <label>Email</label>
-
-                        <input type="email"
-                               name="email"
-                               class="form-control"
-                               placeholder="supplier@example.com"
-                               value="{{ old('email') }}">
-
-                    </div>
-
-                    <div class="form-group col-md-6">
-
-                        <label>Phone</label>
-
-                        <input type="text"
-                               name="phone"
-                               class="form-control"
-                               placeholder="9876543210"
-                               value="{{ old('phone') }}">
-
-                    </div>
-
-                </div>
-
-
-                <div class="form-group">
-
-                    <label>Address</label>
-
-                    <textarea name="address"
-                              class="form-control"
-                              rows="4"
-                              placeholder="Enter supplier address">{{ old('address') }}</textarea>
-
-                </div>
-
-
-                <div class="mt-4">
-
-                    <button type="submit"
-                            class="btn btn-success">
-                        Save Supplier
-                    </button>
-
-                    <a href="{{ route('suppliers.index') }}"
-                       class="btn btn-secondary ml-2">
-                        Cancel
-                    </a>
-
-                </div>
-
-            </form>
-
-        </div>
-
-    </div>
-
-</div>
-
-</body>
-</html>
+    <section class="form-card">
+        <div class="form-card-heading"><span class="form-section-icon"><svg><use href="#icon-users"></use></svg></span><div><h2>Supplier information</h2><p>Contact and company details for this supplier.</p></div></div>
+        <form action="{{ route('suppliers.store') }}" method="POST">
+            @csrf
+            <div class="form-grid">
+                <div class="field"><label for="name">Supplier name <span class="required-mark">*</span></label><input class="field-control" id="name" type="text" name="name" value="{{ old('name') }}" placeholder="Supplier contact name" maxlength="255" required>@error('name')<small class="field-error">{{ $message }}</small>@enderror</div>
+                <div class="field"><label for="company_name">Company name</label><input class="field-control" id="company_name" type="text" name="company_name" value="{{ old('company_name') }}" placeholder="Company or business name" maxlength="255">@error('company_name')<small class="field-error">{{ $message }}</small>@enderror</div>
+                <div class="field"><label for="email">Email</label><input class="field-control" id="email" type="email" name="email" value="{{ old('email') }}" placeholder="name@company.com" maxlength="255">@error('email')<small class="field-error">{{ $message }}</small>@enderror</div>
+                <div class="field"><label for="phone">Phone</label><input class="field-control" id="phone" type="text" name="phone" value="{{ old('phone') }}" placeholder="Phone number" maxlength="20">@error('phone')<small class="field-error">{{ $message }}</small>@enderror</div>
+                <div class="field field-wide"><label for="address">Address</label><textarea class="field-control" id="address" name="address" rows="3" placeholder="Supplier address (optional)">{{ old('address') }}</textarea>@error('address')<small class="field-error">{{ $message }}</small>@enderror</div>
+            </div>
+            <div class="form-actions"><a class="button button-light" href="{{ route('suppliers.index') }}">Cancel</a><button class="button button-primary" type="submit">Save Supplier</button></div>
+        </form>
+    </section>
+@endsection

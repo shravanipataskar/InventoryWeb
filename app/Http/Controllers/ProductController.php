@@ -36,6 +36,9 @@ class ProductController extends Controller
         $request->validate([
             'product_code' => 'required|string|max:100|unique:products,product_code',
             'name' => 'required|string|max:255',
+            'hall' => 'required|alpha_num|max:50',
+            'rack' => 'required|alpha_num|max:50',
+            'shell' => 'required|alpha_num|max:50',
             'category_id' => 'required|exists:categories,id',
             'unit_id' => 'required|exists:units,id',
             'barcode' => 'nullable|string|max:100|unique:products,barcode',
@@ -48,6 +51,9 @@ class ProductController extends Controller
         Product::create([
             'product_code' => $request->product_code,
             'name' => $request->name,
+            'hall' => $request->hall,
+            'rack' => $request->rack,
+            'shell' => $request->shell,
             'category_id' => $request->category_id,
             'unit_id' => $request->unit_id,
             'barcode' => $request->barcode,
@@ -89,6 +95,9 @@ class ProductController extends Controller
         $request->validate([
             'product_code' => 'required|string|max:100|unique:products,product_code,' . $id,
             'name' => 'required|string|max:255',
+            'hall' => 'required|alpha_num|max:50',
+            'rack' => 'required|alpha_num|max:50',
+            'shell' => 'required|alpha_num|max:50',
             'category_id' => 'required|exists:categories,id',
             'unit_id' => 'required|exists:units,id',
             'barcode' => 'nullable|string|max:100|unique:products,barcode,' . $id,
@@ -101,6 +110,9 @@ class ProductController extends Controller
         $product->update([
             'product_code' => $request->product_code,
             'name' => $request->name,
+            'hall' => $request->hall,
+            'rack' => $request->rack,
+            'shell' => $request->shell,
             'category_id' => $request->category_id,
             'unit_id' => $request->unit_id,
             'barcode' => $request->barcode,

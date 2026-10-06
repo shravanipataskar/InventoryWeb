@@ -1,157 +1,48 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Suppliers - Inventory System</title>
+@extends('layouts.app')
 
-    <link rel="stylesheet"
-          href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+@section('title', 'Suppliers')
+@section('topbar-title', 'Suppliers')
 
-    <style>
-        body {
-            background: #f5f6fa;
-        }
-
-        .container {
-            margin-top: 50px;
-        }
-
-        .card {
-            border: none;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-        }
-    </style>
-</head>
-
-<body>
-
-<div class="container">
-
-    <div class="d-flex justify-content-between align-items-center mb-4">
-
-        <div>
-            <h2>Suppliers</h2>
-            <p class="text-muted mb-0">
-                Manage inventory suppliers
-            </p>
-        </div>
-
-        <a href="{{ route('suppliers.create') }}"
-           class="btn btn-primary">
-            + Add Supplier
-        </a>
-
+@section('content')
+    <div class="page-heading">
+        <div><span class="section-kicker">PARTNERS</span><h1>Suppliers</h1><p>Manage your inventory suppliers.</p></div>
+        <a class="button button-primary" href="{{ route('suppliers.create') }}"><span class="button-plus">+</span> Add Supplier</a>
     </div>
 
-    @if(session('success'))
-        <div class="alert alert-success">
-            {{ session('success') }}
+    <section class="panel listing-panel" data-enhanced-table data-page-size="10">
+        <div class="table-toolbar">
+            <label class="search-field"><span class="search-glyph" aria-hidden="true">⌕</span><input type="search" placeholder="Search name, company, email or phone..." aria-label="Search suppliers" data-table-search></label>
+            <select class="filter-select" aria-label="Filter by status" data-filter-key="status"><option value="">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option></select>
+            <button class="button button-light" type="button" data-filter-reset>Reset</button>
         </div>
-    @endif
-
-    <div class="card">
-
-        <div class="card-body">
-
-            <table class="table table-bordered table-hover">
-
-                <thead class="thead-light">
-                    <tr>
-                        <th>#</th>
-                        <th>Supplier Name</th>
-                        <th>Company</th>
-                        <th>Email</th>
-                        <th>Phone</th>
-                        <th>Status</th>
-                        <th>Action</th>
-                    </tr>
-                </thead>
-
+        <div class="table-wrap">
+            <table class="data-table listing-table">
+                <thead><tr><th>#</th><th>SUPPLIER</th><th>COMPANY</th><th>EMAIL</th><th>PHONE</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
                 <tbody>
-
-                @forelse($suppliers as $supplier)
-
-                    <tr>
-
-                        <td>{{ $loop->iteration }}</td>
-
-                        <td>{{ $supplier->name }}</td>
-
-                        <td>
-                            {{ $supplier->company_name ?: '-' }}
-                        </td>
-
-                        <td>
-                            {{ $supplier->email ?: '-' }}
-                        </td>
-
-                        <td>
-                            {{ $supplier->phone ?: '-' }}
-                        </td>
-
-                        <td>
-
-                            @if($supplier->is_active)
-
-                                <span class="badge badge-success">
-                                    Active
-                                </span>
-
-                            @else
-
-                                <span class="badge badge-danger">
-                                    Inactive
-                                </span>
-
-                            @endif
-
-                        </td>
-
-                        <td>
-
-                            <a href="{{ route('suppliers.edit', $supplier->id) }}"
-                               class="btn btn-sm btn-warning">
-                                Edit
-                            </a>
-
-                            <form action="{{ route('suppliers.destroy', $supplier->id) }}"
-                                  method="POST"
-                                  style="display:inline-block;">
-
+                @forelse ($suppliers as $supplier)
+                    <tr data-table-row data-status="{{ $supplier->is_active ? 'active' : 'inactive' }}">
+                        <td class="muted-cell">{{ $loop->iteration }}</td>
+                        <td><div class="table-person"><span class="product-avatar">{{ strtoupper(substr($supplier->name, 0, 1)) }}</span><strong class="table-primary-text">{{ $supplier->name }}</strong></div></td>
+                        <td>{{ $supplier->company_name ?: '—' }}</td>
+                        <td>{{ $supplier->email ?: '—' }}</td>
+                        <td>{{ $supplier->phone ?: '—' }}</td>
+                        <td>@include('components.status-badge', ['status' => $supplier->is_active ? 'Active' : 'Inactive'])</td>
+                        <td class="action-cell">
+                            <a class="button button-small button-light" href="{{ route('suppliers.edit', $supplier->id) }}">Edit</a>
+                            <form action="{{ route('suppliers.destroy', $supplier->id) }}" method="POST" onsubmit="return confirm('Delete this supplier? This action cannot be undone.');">
                                 @csrf
                                 @method('DELETE')
-
-                                <button type="submit"
-                                        class="btn btn-sm btn-danger"
-                                        onclick="return confirm('Are you sure you want to delete this supplier?')">
-                                    Delete
-                                </button>
-
+                                <button class="button button-small button-danger" type="submit">Delete</button>
                             </form>
-
                         </td>
-
                     </tr>
-
                 @empty
-
-                    <tr>
-                        <td colspan="7"
-                            class="text-center text-muted py-4">
-                            No suppliers found.
-                        </td>
-                    </tr>
-
+                    <tr><td colspan="7">@include('components.empty-state', ['icon' => 'icon-users', 'title' => 'No suppliers yet', 'message' => 'Add a supplier to record where your stock comes from.'])</td></tr>
                 @endforelse
-
                 </tbody>
-
             </table>
-
         </div>
-
-    </div>
-
-</div>
-
-</body>
-</html>
+        <div class="filter-empty" data-filter-empty hidden>No suppliers match your search or filters.</div>
+        <div class="table-footer"><span class="table-summary" data-table-summary></span><div class="pagination" data-table-pagination></div></div>
+    </section>
+@endsection

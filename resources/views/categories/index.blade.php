@@ -1,158 +1,60 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Categories - Inventory System</title>
+@extends('layouts.app')
 
-    <link rel="stylesheet"
-          href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+@section('title', 'Categories')
+@section('topbar-title', 'Categories')
 
-    <style>
-        body {
-            background: #f5f6fa;
-        }
-
-        .container {
-            margin-top: 50px;
-        }
-
-        .card {
-            border: none;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
-        }
-    </style>
-</head>
-
-<body>
-
-<div class="container">
-
-    <div class="d-flex justify-content-between align-items-center mb-4">
-
+@section('content')
+    <div class="page-heading">
         <div>
-            <h2>Categories</h2>
-
-            <p class="text-muted mb-0">
-                Manage your inventory categories
-            </p>
+            <span class="section-kicker">CATALOGUE</span>
+            <h1>Categories</h1>
+            <p>Manage your inventory categories.</p>
         </div>
-
-        <a href="{{ route('categories.create') }}"
-           class="btn btn-primary">
-            + Add Category
-        </a>
-
+        <a class="button button-primary" href="{{ route('categories.create') }}"><span class="button-plus">+</span> Add Category</a>
     </div>
 
-    @if(session('success'))
-        <div class="alert alert-success">
-            {{ session('success') }}
+    <section class="panel listing-panel" data-enhanced-table data-page-size="10">
+        <div class="table-toolbar">
+            <label class="search-field">
+                <span class="search-glyph" aria-hidden="true">⌕</span>
+                <input type="search" placeholder="Search categories..." aria-label="Search categories" data-table-search>
+            </label>
+            <select class="filter-select" aria-label="Filter by status" data-filter-key="status">
+                <option value="">All statuses</option>
+                <option value="active">Active</option>
+                <option value="inactive">Inactive</option>
+            </select>
+            <button class="button button-light" type="button" data-filter-reset>Reset</button>
         </div>
-    @endif
-
-    <div class="card">
-
-        <div class="card-body">
-
-            <table class="table table-bordered table-hover">
-
-                <thead class="thead-light">
-
-                    <tr>
-                        <th width="80">#</th>
-                        <th>Category Name</th>
-                        <th>Description</th>
-                        <th>Status</th>
-                        <th width="180">Action</th>
-                    </tr>
-
-                </thead>
-
+        <div class="table-wrap">
+            <table class="data-table listing-table">
+                <thead><tr><th>#</th><th>CATEGORY NAME</th><th>DESCRIPTION</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
                 <tbody>
-
-                @forelse($categories as $category)
-
-                    <tr>
-
-                        <td>
-                            {{ $loop->iteration }}
-                        </td>
-
-                        <td>
-                            {{ $category->name }}
-                        </td>
-
-                        <td>
-                            {{ $category->description ?: '-' }}
-                        </td>
-
-                        <td>
-
-                            @if($category->is_active)
-
-                                <span class="badge badge-success">
-                                    Active
-                                </span>
-
-                            @else
-
-                                <span class="badge badge-danger">
-                                    Inactive
-                                </span>
-
-                            @endif
-
-                        </td>
-
-                        <td>
-
-                            <a href="{{ route('categories.edit', $category->id) }}"
-                               class="btn btn-sm btn-warning">
-                                Edit
-                            </a>
-
-                            <form action="{{ route('categories.destroy', $category->id) }}"
-                                  method="POST"
-                                  style="display:inline-block;">
-
+                @forelse ($categories as $category)
+                    <tr data-table-row data-status="{{ $category->is_active ? 'active' : 'inactive' }}">
+                        <td class="muted-cell">{{ $loop->iteration }}</td>
+                        <td><strong class="table-primary-text">{{ $category->name }}</strong></td>
+                        <td class="description-cell">{{ $category->description ?: '—' }}</td>
+                        <td>@include('components.status-badge', ['status' => $category->is_active ? 'Active' : 'Inactive'])</td>
+                        <td class="action-cell">
+                            <a class="button button-small button-light" href="{{ route('categories.edit', $category->id) }}">Edit</a>
+                            <form action="{{ route('categories.destroy', $category->id) }}" method="POST" onsubmit="return confirm('Delete this category? This action cannot be undone.');">
                                 @csrf
                                 @method('DELETE')
-
-                                <button type="submit"
-                                        class="btn btn-sm btn-danger"
-                                        onclick="return confirm('Are you sure you want to delete this category?')">
-                                    Delete
-                                </button>
-
+                                <button class="button button-small button-danger" type="submit">Delete</button>
                             </form>
-
                         </td>
-
                     </tr>
-
                 @empty
-
-                    <tr>
-
-                        <td colspan="5"
-                            class="text-center text-muted py-4">
-
-                            No categories found.
-
-                        </td>
-
-                    </tr>
-
+                    <tr><td colspan="5">@include('components.empty-state', ['icon' => 'icon-layers', 'title' => 'No categories yet', 'message' => 'Add a category to organize your products.'])</td></tr>
                 @endforelse
-
                 </tbody>
-
             </table>
-
         </div>
-
-    </div>
-
-</div>
-
-</body>
-</html>
+        <div class="filter-empty" data-filter-empty hidden>No categories match your search or filters.</div>
+        <div class="table-footer">
+            <span class="table-summary" data-table-summary></span>
+            <div class="pagination" data-table-pagination></div>
+        </div>
+    </section>
+@endsection

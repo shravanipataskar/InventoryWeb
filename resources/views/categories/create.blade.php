@@ -1,74 +1,35 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Add Category - Inventory System</title>
+@extends('layouts.app')
 
-    <link rel="stylesheet"
-          href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
-</head>
+@section('title', 'Add Category')
+@section('topbar-title', 'Add category')
 
-<body>
-
-<div class="container mt-5">
-
-    <h2 class="mb-4">Add Category</h2>
-
-    @if($errors->any())
-        <div class="alert alert-danger">
-            <ul class="mb-0">
-                @foreach($errors->all() as $error)
-                    <li>{{ $error }}</li>
-                @endforeach
-            </ul>
-        </div>
-    @endif
-
-    <div class="card">
-        <div class="card-body">
-
-            <form action="{{ route('categories.store') }}" method="POST">
-
-                @csrf
-
-                <div class="form-group">
-                    <label>
-                        Category Name
-                        <span class="text-danger">*</span>
-                    </label>
-
-                    <input type="text"
-                           name="name"
-                           class="form-control"
-                           placeholder="Enter category name"
-                           value="{{ old('name') }}"
-                           required>
-                </div>
-
-                <div class="form-group">
-                    <label>Description</label>
-
-                    <textarea name="description"
-                              class="form-control"
-                              rows="4"
-                              placeholder="Enter category description">{{ old('description') }}</textarea>
-                </div>
-
-                <button type="submit"
-                        class="btn btn-success">
-                    Save Category
-                </button>
-
-                <a href="{{ route('categories.index') }}"
-                   class="btn btn-secondary">
-                    Back
-                </a>
-
-            </form>
-
-        </div>
+@section('content')
+    <div class="page-heading">
+        <div><span class="section-kicker">CATALOGUE / CATEGORIES</span><h1>Add Category</h1><p>Create a category to keep your inventory organized.</p></div>
+        <a class="button button-light" href="{{ route('categories.index') }}">Back to categories</a>
     </div>
 
-</div>
+    @if ($errors->any())
+        <div class="form-alert" role="alert"><strong>Please check the form:</strong><ul>@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
+    @endif
 
-</body>
-</html>
+    <section class="form-card">
+        <div class="form-card-heading"><span class="form-section-icon"><svg><use href="#icon-layers"></use></svg></span><div><h2>Category information</h2><p>Enter the details for this inventory category.</p></div></div>
+        <form action="{{ route('categories.store') }}" method="POST">
+            @csrf
+            <div class="form-grid">
+                <div class="field field-wide">
+                    <label for="name">Category name <span class="required-mark">*</span></label>
+                    <input class="field-control" id="name" type="text" name="name" value="{{ old('name') }}" placeholder="e.g. Electronics" maxlength="255" required>
+                    @error('name')<small class="field-error">{{ $message }}</small>@enderror
+                </div>
+                <div class="field field-wide">
+                    <label for="description">Description</label>
+                    <textarea class="field-control" id="description" name="description" rows="4" placeholder="Add a short description (optional)">{{ old('description') }}</textarea>
+                    @error('description')<small class="field-error">{{ $message }}</small>@enderror
+                </div>
+            </div>
+            <div class="form-actions"><a class="button button-light" href="{{ route('categories.index') }}">Cancel</a><button class="button button-primary" type="submit">Save Category</button></div>
+        </form>
+    </section>
+@endsection
