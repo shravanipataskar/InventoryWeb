@@ -9,8 +9,15 @@ use Illuminate\Support\Facades\Route;
 |--------------------------------------------------------------------------
 */
 
+/*
+|--------------------------------------------------------------------------
+| Landing Page
+|--------------------------------------------------------------------------
+*/
+
 Route::get('/', [AuthController::class, 'showIndex'])
     ->name('landing');
+
 
 /*
 |--------------------------------------------------------------------------
@@ -24,6 +31,23 @@ Route::get('/login', [AuthController::class, 'showLogin'])
 Route::post('/login', [AuthController::class, 'login'])
     ->name('login.submit');
 
+
+/*
+|--------------------------------------------------------------------------
+| OTP Verification
+|--------------------------------------------------------------------------
+*/
+
+Route::get('/login/verify', [AuthController::class, 'showVerifyOtp'])
+    ->name('login.otp.show');
+
+Route::post('/login/verify', [AuthController::class, 'verifyOtp'])
+    ->name('login.otp.verify');
+
+Route::post('/login/verify/resend', [AuthController::class, 'resendOtp'])
+    ->name('login.otp.resend');
+
+
 /*
 |--------------------------------------------------------------------------
 | Register
@@ -35,6 +59,7 @@ Route::get('/register', [AuthController::class, 'showRegister'])
 
 Route::post('/register', [AuthController::class, 'register'])
     ->name('register.submit');
+
 
 /*
 |--------------------------------------------------------------------------
@@ -48,6 +73,7 @@ Route::get('/forgot-password', [AuthController::class, 'showForgotPassword'])
 Route::post('/forgot-password', [AuthController::class, 'sendResetLink'])
     ->name('password.email');
 
+
 /*
 |--------------------------------------------------------------------------
 | Reset Password
@@ -60,6 +86,7 @@ Route::get('/reset-password/{token}', [AuthController::class, 'showResetPassword
 Route::post('/reset-password', [AuthController::class, 'resetPassword'])
     ->name('password.update');
 
+
 /*
 |--------------------------------------------------------------------------
 | Logout
@@ -69,13 +96,43 @@ Route::post('/reset-password', [AuthController::class, 'resetPassword'])
 Route::post('/logout', [AuthController::class, 'logout'])
     ->name('logout');
 
+
 /*
 |--------------------------------------------------------------------------
-| Protected Inventory Routes
+| Protected Routes
 |--------------------------------------------------------------------------
+|
+| Everything inside this group requires the user to be authenticated.
+|
 */
 
 Route::middleware('auth')->group(function () {
+
+    /*
+    |--------------------------------------------------------------------------
+    | Profile
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get('/profile', [AuthController::class, 'showProfile'])
+        ->name('profile.show');
+
+    Route::put('/profile', [AuthController::class, 'updateProfile'])
+        ->name('profile.update');
+
+
+    /*
+    |--------------------------------------------------------------------------
+    | Change Password
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get('/change-password', [AuthController::class, 'showChangePassword'])
+        ->name('password.change');
+
+    Route::put('/change-password', [AuthController::class, 'updatePassword'])
+        ->name('password.change.update');
+
 
     /*
     |--------------------------------------------------------------------------
@@ -85,6 +142,7 @@ Route::middleware('auth')->group(function () {
 
     Route::get('/dashboard', 'DashboardController@index')
         ->name('dashboard');
+
 
     /*
     |--------------------------------------------------------------------------
@@ -97,6 +155,7 @@ Route::middleware('auth')->group(function () {
         'CategoryController'
     );
 
+
     /*
     |--------------------------------------------------------------------------
     | Units
@@ -107,6 +166,7 @@ Route::middleware('auth')->group(function () {
         'units',
         'UnitController'
     );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -119,6 +179,7 @@ Route::middleware('auth')->group(function () {
         'SupplierController'
     );
 
+
     /*
     |--------------------------------------------------------------------------
     | Products
@@ -129,6 +190,7 @@ Route::middleware('auth')->group(function () {
         'products',
         'ProductController'
     );
+
 
     /*
     |--------------------------------------------------------------------------
@@ -145,6 +207,7 @@ Route::middleware('auth')->group(function () {
         'store',
     ]);
 
+
     /*
     |--------------------------------------------------------------------------
     | Stock Outward
@@ -159,4 +222,5 @@ Route::middleware('auth')->group(function () {
         'create',
         'store',
     ]);
+
 });
