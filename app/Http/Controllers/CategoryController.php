@@ -10,14 +10,6 @@ class CategoryController extends Controller
 {
     public function index(Request $request)
     {
-<<<<<<< Updated upstream
-        $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
-        $categories = Category::where('is_active', $listingStatus === 'active')
-            ->orderBy('id', 'desc')
-            ->get();
-
-        return view('categories.index', compact('categories', 'listingStatus'));
-=======
         $totalCategories = Category::count();
         $activeCategories = Category::where('is_active', 1)->count();
         $inactiveCategories = Category::where('is_active', 0)->count();
@@ -61,7 +53,6 @@ class CategoryController extends Controller
             'totalProductsInCategories',
             'sort'
         ));
->>>>>>> Stashed changes
     }
 
     public function create()
