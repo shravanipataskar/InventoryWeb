@@ -15,6 +15,7 @@ class StockOutward extends Model
         'total_amount',
         'issued_to',
         'remarks',
+        'is_active',
     ];
 
     public function product()

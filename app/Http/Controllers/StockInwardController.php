@@ -10,13 +10,15 @@ use Illuminate\Support\Facades\DB;
 
 class StockInwardController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
+        $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
         $stockInwards = StockInward::with(['product', 'supplier'])
+            ->where('is_active', $listingStatus === 'active')
             ->orderBy('id', 'desc')
             ->get();
 
-        return view('stock_inwards.index', compact('stockInwards'));
+        return view('stock_inwards.index', compact('stockInwards', 'listingStatus'));
     }
 
     public function create()
@@ -74,5 +76,45 @@ class StockInwardController extends Controller
         return redirect()
             ->route('stock-inwards.index')
             ->with('success', 'Stock inward recorded successfully.');
+    }
+
+    public function status(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'is_active' => 'required|boolean',
+            'listing_status' => 'required|in:active,inactive',
+        ]);
+
+        DB::transaction(function () use ($id, $validated) {
+            $stockInward = StockInward::lockForUpdate()->findOrFail($id);
+
+            if ((bool) $stockInward->is_active === (bool) $validated['is_active']) {
+                return;
+            }
+
+            $product = Product::lockForUpdate()->findOrFail($stockInward->product_id);
+
+            if ($validated['is_active']) {
+                $product->increment('current_stock', $stockInward->quantity);
+                $stockInward->is_active = true;
+            } else {
+                if ($product->current_stock < $stockInward->quantity) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'status' => 'This inward cannot be deactivated because the product no longer has enough stock to reverse this receipt.',
+                    ]);
+                }
+
+                $product->decrement('current_stock', $stockInward->quantity);
+                $stockInward->is_active = false;
+            }
+
+            $stockInward->save();
+        });
+
+        return redirect()
+            ->route('stock-inwards.index', ['status' => $validated['listing_status']])
+            ->with('success', $validated['is_active']
+                ? 'Stock inward activated and inventory updated.'
+                : 'Stock inward deactivated and inventory updated.');
     }
 }

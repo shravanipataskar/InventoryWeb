@@ -15,6 +15,7 @@ class StockInward extends Model
         'purchase_price',
         'total_amount',
         'remarks',
+        'is_active',
     ];
 
     public function product()

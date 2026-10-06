@@ -1042,6 +1042,64 @@ button {
     margin-left: 4px;
 }
 
+.status-action-form {
+    align-items: center;
+    gap: 4px;
+}
+
+.status-tabs {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px;
+    border: 1px solid #e7ecef;
+    border-radius: 8px;
+    background: #f7f9fa;
+}
+
+.status-tab {
+    display: inline-flex;
+    min-height: 29px;
+    align-items: center;
+    justify-content: center;
+    padding: 0 11px;
+    border-radius: 6px;
+    color: #71818a;
+    font-size: 9px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.status-tab:hover {
+    color: $teal;
+}
+
+.status-tab.is-selected {
+    color: $teal;
+    background: #fff;
+    box-shadow: 0 1px 3px rgba(24, 48, 60, .1);
+}
+
+.button-deactivate {
+    color: #b16e1b;
+    background: #fff4df;
+}
+
+.button-deactivate:hover {
+    color: #8d5713;
+    background: #ffebc4;
+}
+
+.button-activate {
+    color: #188366;
+    background: #e7f6ef;
+}
+
+.button-activate:hover {
+    color: #fff;
+    background: #188366;
+}
+
 .table-footer {
     display: flex;
     min-height: 54px;

@@ -86,6 +86,19 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', 'DashboardController@index')
         ->name('dashboard');
 
+    Route::patch('categories/{category}/status', 'CategoryController@status')
+        ->name('categories.status');
+    Route::patch('units/{unit}/status', 'UnitController@status')
+        ->name('units.status');
+    Route::patch('suppliers/{supplier}/status', 'SupplierController@status')
+        ->name('suppliers.status');
+    Route::patch('products/{product}/status', 'ProductController@status')
+        ->name('products.status');
+    Route::patch('stock-inwards/{stockInward}/status', 'StockInwardController@status')
+        ->name('stock-inwards.status');
+    Route::patch('stock-outwards/{stockOutward}/status', 'StockOutwardController@status')
+        ->name('stock-outwards.status');
+
     /*
     |--------------------------------------------------------------------------
     | Categories

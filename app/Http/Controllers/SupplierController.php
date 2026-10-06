@@ -7,11 +7,14 @@ use Illuminate\Http\Request;
 
 class SupplierController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $suppliers = Supplier::orderBy('id', 'desc')->get();
+        $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
+        $suppliers = Supplier::where('is_active', $listingStatus === 'active')
+            ->orderBy('id', 'desc')
+            ->get();
 
-        return view('suppliers.index', compact('suppliers'));
+        return view('suppliers.index', compact('suppliers', 'listingStatus'));
     }
 
     public function create()
@@ -75,14 +78,32 @@ class SupplierController extends Controller
             ->with('success', 'Supplier updated successfully.');
     }
 
+    public function status(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'is_active' => 'required|boolean',
+            'listing_status' => 'required|in:active,inactive',
+        ]);
+
+        $supplier = Supplier::findOrFail($id);
+        $supplier->is_active = $validated['is_active'];
+        $supplier->save();
+
+        return redirect()
+            ->route('suppliers.index', ['status' => $validated['listing_status']])
+            ->with('success', $supplier->is_active
+                ? 'Supplier activated successfully.'
+                : 'Supplier deactivated successfully. The record is retained.');
+    }
+
     public function destroy($id)
     {
         $supplier = Supplier::findOrFail($id);
-
-        $supplier->delete();
+        $supplier->is_active = false;
+        $supplier->save();
 
         return redirect()
             ->route('suppliers.index')
-            ->with('success', 'Supplier deleted successfully.');
+            ->with('success', 'Supplier deactivated successfully. The record is retained.');
     }
 }

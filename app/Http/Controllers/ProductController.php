@@ -9,13 +9,18 @@ use Illuminate\Http\Request;
 
 class ProductController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
+        $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
         $products = Product::with(['category', 'unit'])
+            ->where('is_active', $listingStatus === 'active')
             ->orderBy('id', 'desc')
             ->get();
+        $units = Unit::where('is_active', 1)
+            ->orderBy('name')
+            ->get();
 
-        return view('products.index', compact('products'));
+        return view('products.index', compact('products', 'units', 'listingStatus'));
     }
 
     public function create()
@@ -127,14 +132,32 @@ class ProductController extends Controller
             ->with('success', 'Product updated successfully.');
     }
 
+    public function status(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'is_active' => 'required|boolean',
+            'listing_status' => 'required|in:active,inactive',
+        ]);
+
+        $product = Product::findOrFail($id);
+        $product->is_active = $validated['is_active'];
+        $product->save();
+
+        return redirect()
+            ->route('products.index', ['status' => $validated['listing_status']])
+            ->with('success', $product->is_active
+                ? 'Product activated successfully.'
+                : 'Product deactivated successfully. The record is retained.');
+    }
+
     public function destroy($id)
     {
         $product = Product::findOrFail($id);
-
-        $product->delete();
+        $product->is_active = false;
+        $product->save();
 
         return redirect()
             ->route('products.index')
-            ->with('success', 'Product deleted successfully.');
+            ->with('success', 'Product deactivated successfully. The record is retained.');
     }
 }

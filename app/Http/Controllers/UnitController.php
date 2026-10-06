@@ -7,11 +7,14 @@ use Illuminate\Http\Request;
 
 class UnitController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        $units = Unit::orderBy('id', 'desc')->get();
+        $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
+        $units = Unit::where('is_active', $listingStatus === 'active')
+            ->orderBy('id', 'desc')
+            ->get();
 
-        return view('units.index', compact('units'));
+        return view('units.index', compact('units', 'listingStatus'));
     }
 
     public function create()
@@ -63,14 +66,32 @@ class UnitController extends Controller
             ->with('success', 'Unit updated successfully.');
     }
 
+    public function status(Request $request, $id)
+    {
+        $validated = $request->validate([
+            'is_active' => 'required|boolean',
+            'listing_status' => 'required|in:active,inactive',
+        ]);
+
+        $unit = Unit::findOrFail($id);
+        $unit->is_active = $validated['is_active'];
+        $unit->save();
+
+        return redirect()
+            ->route('units.index', ['status' => $validated['listing_status']])
+            ->with('success', $unit->is_active
+                ? 'Unit activated successfully.'
+                : 'Unit deactivated successfully. The record is retained.');
+    }
+
     public function destroy($id)
     {
         $unit = Unit::findOrFail($id);
-
-        $unit->delete();
+        $unit->is_active = false;
+        $unit->save();
 
         return redirect()
             ->route('units.index')
-            ->with('success', 'Unit deleted successfully.');
+            ->with('success', 'Unit deactivated successfully. The record is retained.');
     }
 }

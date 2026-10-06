@@ -13,10 +13,12 @@
         <div class="table-toolbar table-toolbar-wrap">
             <label class="search-field search-field-grow"><span class="search-glyph" aria-hidden="true">⌕</span><input type="search" placeholder="Search by name, SKU or barcode..." aria-label="Search products" data-table-search></label>
             <select class="filter-select" aria-label="Filter by category" data-filter-key="category"><option value="">All categories</option>@foreach ($products->pluck('category.name', 'category_id')->filter()->unique() as $categoryId => $categoryName)<option value="{{ $categoryId }}">{{ $categoryName }}</option>@endforeach</select>
-            <select class="filter-select" aria-label="Filter by unit" data-filter-key="unit"><option value="">All units</option>@foreach ($products->pluck('unit.name', 'unit_id')->filter()->unique() as $unitId => $unitName)<option value="{{ $unitId }}">{{ $unitName }}</option>@endforeach</select>
+            <select class="filter-select" aria-label="Filter by unit" data-filter-key="unit"><option value="">All units</option>@foreach ($units as $unit)<option value="{{ $unit->id }}">{{ $unit->name }}</option>@endforeach</select>
             <select class="filter-select" aria-label="Filter by stock status" data-filter-key="stock-status"><option value="">All stock levels</option><option value="in-stock">In stock</option><option value="low-stock">Low stock</option><option value="out-of-stock">Out of stock</option></select>
-            <select class="filter-select" aria-label="Filter by product status" data-filter-key="status"><option value="">All statuses</option><option value="active">Active</option><option value="inactive">Inactive</option></select>
-            <button class="button button-light" type="button" data-filter-reset>Reset</button>
+            <div class="status-tabs" aria-label="Product status">
+                <a class="status-tab {{ $listingStatus === 'active' ? 'is-selected' : '' }}" href="{{ route('products.index', ['status' => 'active']) }}" {{ $listingStatus === 'active' ? 'aria-current=page' : '' }}>Active</a>
+                <a class="status-tab {{ $listingStatus === 'inactive' ? 'is-selected' : '' }}" href="{{ route('products.index', ['status' => 'inactive']) }}" {{ $listingStatus === 'inactive' ? 'aria-current=page' : '' }}>Inactive</a>
+            </div>
         </div>
         <div class="table-wrap">
             <table class="data-table listing-table product-list-table">
@@ -27,7 +29,7 @@
                         $stockStatus = $product->current_stock <= 0 ? 'out-of-stock' : ($product->current_stock <= $product->minimum_stock ? 'low-stock' : 'in-stock');
                         $stockLabel = $stockStatus === 'out-of-stock' ? 'Out of stock' : ($stockStatus === 'low-stock' ? 'Low stock' : 'In stock');
                     @endphp
-                    <tr data-table-row data-category="{{ $product->category_id }}" data-unit="{{ $product->unit_id }}" data-stock-status="{{ $stockStatus }}" data-status="{{ $product->is_active ? 'active' : 'inactive' }}">
+                    <tr data-table-row data-category="{{ $product->category_id }}" data-unit="{{ $product->unit_id }}" data-stock-status="{{ $stockStatus }}">
                         <td class="muted-cell">{{ $loop->iteration }}</td>
                         <td><div class="product-cell"><span class="product-avatar">{{ strtoupper(substr($product->name, 0, 1)) }}</span><span><strong>{{ $product->name }}</strong><small>{{ $product->product_code }}@if ($product->barcode) · {{ $product->barcode }}@endif</small></span></div></td>
                         <td><span class="unit-code">{{ $product->hall }}</span></td>
@@ -43,10 +45,12 @@
                         <td>@include('components.status-badge', ['status' => $product->is_active ? 'Active' : 'Inactive'])</td>
                         <td class="action-cell">
                             <a class="button button-small button-light" href="{{ route('products.edit', $product->id) }}">Edit</a>
-                            <form action="{{ route('products.destroy', $product->id) }}" method="POST" onsubmit="return confirm('Delete this product? This action cannot be undone.');">
+                            <form class="status-action-form" action="{{ route('products.status', $product->id) }}" method="POST">
                                 @csrf
-                                @method('DELETE')
-                                <button class="button button-small button-danger" type="submit">Delete</button>
+                                @method('PATCH')
+                                <input type="hidden" name="is_active" value="{{ $product->is_active ? 0 : 1 }}">
+                                <input type="hidden" name="listing_status" value="{{ $listingStatus }}">
+                                <button class="button button-small {{ $product->is_active ? 'button-deactivate' : 'button-activate' }}" type="submit">{{ $product->is_active ? 'Inactive' : 'Active' }}</button>
                             </form>
                         </td>
                     </tr>
@@ -56,7 +60,7 @@
                 </tbody>
             </table>
         </div>
-        <div class="filter-empty" data-filter-empty hidden>No products match your search or filters.</div>
+        <div class="filter-empty" data-filter-empty hidden>No {{ $listingStatus }} products match your search and filters.</div>
         <div class="table-footer"><span class="table-summary" data-table-summary></span><div class="pagination" data-table-pagination></div></div>
     </section>
 @endsection

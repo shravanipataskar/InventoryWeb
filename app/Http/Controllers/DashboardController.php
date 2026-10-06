@@ -39,12 +39,14 @@ class DashboardController extends Controller
             ->get();
 
         $recentInwards = StockInward::with(['product', 'supplier'])
+            ->where('is_active', 1)
             ->orderBy('inward_date', 'desc')
             ->orderBy('id', 'desc')
             ->limit(5)
             ->get();
 
         $recentOutwards = StockOutward::with('product')
+            ->where('is_active', 1)
             ->orderBy('outward_date', 'desc')
             ->orderBy('id', 'desc')
             ->limit(5)
