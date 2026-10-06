@@ -18,6 +18,12 @@ class AuthController extends Controller
         $this->middleware('auth')->only('logout');
     }
 
+    /*
+    |--------------------------------------------------------------------------
+    | Landing Page
+    |--------------------------------------------------------------------------
+    */
+
     public function showIndex()
     {
         if (Auth::check()) {
@@ -26,6 +32,12 @@ class AuthController extends Controller
 
         return view('auth.index');
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Login
+    |--------------------------------------------------------------------------
+    */
 
     public function showLogin()
     {
@@ -39,19 +51,31 @@ class AuthController extends Controller
             'password' => ['required', 'string'],
         ]);
 
-        $remember = $request->boolean('remember');
+        $user = User::where('email', $credentials['email'])->first();
 
-        if (Auth::attempt($credentials, $remember)) {
-            $request->session()->regenerate();
-
-            return redirect()->intended(route('dashboard'))
-                ->with('success', 'Welcome back! You are now signed in.');
+        if (!$user || !Hash::check($credentials['password'], $user->password)) {
+            return back()
+                ->withErrors([
+                    'email' => 'The email or password you entered is incorrect.',
+                ])
+                ->withInput($request->only('email', 'remember'));
         }
 
-        return back()->withErrors([
-            'email' => 'The email or password you entered is incorrect.',
-        ])->withInput($request->only('email', 'remember'));
+        $remember = $request->boolean('remember');
+
+        Auth::login($user, $remember);
+
+        $request->session()->regenerate();
+
+        return redirect()->intended(route('dashboard'))
+            ->with('success', 'You have been signed in successfully.');
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Registration
+    |--------------------------------------------------------------------------
+    */
 
     public function showRegister()
     {
@@ -61,11 +85,29 @@ class AuthController extends Controller
     public function register(Request $request)
     {
         $data = $request->validate([
-            'name' => ['required', 'string', 'max:100'],
-            'email' => ['required', 'string', 'email', 'max:255', 'unique:users,email'],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'name' => [
+                'required',
+                'string',
+                'max:100',
+            ],
+
+            'email' => [
+                'required',
+                'string',
+                'email',
+                'max:255',
+                'unique:users,email',
+            ],
+
+            'password' => [
+                'required',
+                'string',
+                'min:8',
+                'confirmed',
+            ],
         ]);
 
+        // Create user
         $user = User::create([
             'name' => $data['name'],
             'email' => $data['email'],
@@ -73,11 +115,21 @@ class AuthController extends Controller
         ]);
 
         Auth::login($user);
+
         $request->session()->regenerate();
 
         return redirect()->route('dashboard')
-            ->with('success', 'Account created successfully. Welcome to Aayojan Ai Inventory.');
+            ->with(
+                'success',
+                'Your account was created successfully and you are now signed in.'
+            );
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Forgot Password
+    |--------------------------------------------------------------------------
+    */
 
     public function showForgotPassword()
     {
@@ -87,39 +139,78 @@ class AuthController extends Controller
     public function sendResetLink(Request $request)
     {
         $request->validate([
-            'email' => ['required', 'email'],
+            'email' => [
+                'required',
+                'email',
+            ],
         ]);
 
-        $status = Password::sendResetLink($request->only('email'));
+        $status = Password::sendResetLink(
+            $request->only('email')
+        );
 
         if ($status === Password::RESET_LINK_SENT) {
-            return back()->with('status', 'If an account exists for this email, a password reset link has been sent.');
+            return back()->with(
+                'status',
+                'If an account exists for this email, a password reset link has been sent.'
+            );
         }
 
-        return back()->withErrors([
-            'email' => __($status),
-        ])->withInput();
+        return back()
+            ->withErrors([
+                'email' => __($status),
+            ])
+            ->withInput();
     }
 
-    public function showResetPassword(Request $request, $token = null)
-    {
-        return view('auth.reset-password', [
-            'token' => $token,
-            'email' => $request->query('email', ''),
-        ]);
+    /*
+    |--------------------------------------------------------------------------
+    | Reset Password
+    |--------------------------------------------------------------------------
+    */
+
+    public function showResetPassword(
+        Request $request,
+        $token = null
+    ) {
+        return view(
+            'auth.reset-password',
+            [
+                'token' => $token,
+                'email' => $request->query(
+                    'email',
+                    ''
+                ),
+            ]
+        );
     }
 
     public function resetPassword(Request $request)
     {
         $data = $request->validate([
-            'token' => ['required'],
-            'email' => ['required', 'email'],
-            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'token' => [
+                'required',
+            ],
+
+            'email' => [
+                'required',
+                'email',
+            ],
+
+            'password' => [
+                'required',
+                'string',
+                'min:8',
+                'confirmed',
+            ],
         ]);
 
         $status = Password::reset(
             $data,
-            function (User $user, $password) {
+            function (
+                User $user,
+                $password
+            ) {
                 $user->forceFill([
                     'password' => Hash::make($password),
                     'remember_token' => Str::random(60),
@@ -128,20 +219,42 @@ class AuthController extends Controller
         );
 
         if ($status === Password::PASSWORD_RESET) {
-            return redirect()->route('login')->with('status', 'Your password has been reset successfully. You can now sign in.');
+            return redirect()
+                ->route('login')
+                ->with(
+                    'status',
+                    'Your password has been reset successfully. You can now sign in.'
+                );
         }
 
-        return back()->withErrors([
-            'email' => __($status),
-        ])->withInput($request->only('email'));
+        return back()
+            ->withErrors([
+                'email' => __($status),
+            ])
+            ->withInput(
+                $request->only('email')
+            );
     }
+
+    /*
+    |--------------------------------------------------------------------------
+    | Logout
+    |--------------------------------------------------------------------------
+    */
 
     public function logout(Request $request)
     {
         Auth::logout();
+
         $request->session()->invalidate();
+
         $request->session()->regenerateToken();
 
-        return redirect()->route('login')->with('status', 'You have been signed out successfully.');
+        return redirect()
+            ->route('login')
+            ->with(
+                'status',
+                'You have been signed out successfully.'
+            );
     }
 }
