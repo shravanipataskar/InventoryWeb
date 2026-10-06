@@ -1,0 +1,34 @@
+/* Aayojan Ai Inventory profile UI */
+.profile-page{max-width:1180px;margin:0 auto;padding:34px 38px 60px;color:#102d3a}
+.profile-eyebrow{color:#14949a;font-size:11px;font-weight:800;letter-spacing:1.4px;text-transform:uppercase;margin-bottom:8px}
+.profile-page-heading{margin-bottom:28px}.profile-page-heading h1{margin:0;font-size:30px;font-weight:800}.profile-page-heading p{margin:8px 0;color:#81909d;font-size:14px}
+.profile-grid{display:grid;grid-template-columns:330px 1fr;gap:22px}
+.profile-card,.password-card,.profile-security-card{background:#fff;border:1px solid #e6edf1;border-radius:18px;box-shadow:0 10px 35px rgba(20,48,62,.06)}
+.profile-card{padding:28px}.profile-summary-card{text-align:center}
+.large-profile-avatar{width:88px;height:88px;margin:0 auto 16px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:#dff5f3;color:#128c92;font-size:29px;font-weight:800}
+.profile-summary-card h2{margin:0;font-size:21px}.profile-email{margin:7px 0 14px;color:#82919d;font-size:13px}
+.profile-status,.profile-online{display:inline-flex;align-items:center;gap:6px;color:#16936b;background:#e9f8f1;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:700}
+.profile-status span,.profile-online span{width:7px;height:7px;background:#27b978;border-radius:50%}
+.profile-summary-details{margin-top:28px;border-top:1px solid #edf1f3;text-align:left}.profile-summary-details div{padding:15px 0;border-bottom:1px solid #edf1f3}
+.profile-summary-details span{display:block;color:#8997a1;font-size:11px;margin-bottom:5px}.profile-summary-details strong{font-size:13px}
+.profile-card-heading{margin-bottom:24px}.profile-card-heading h2{margin:0;font-size:20px}.profile-card-heading p{margin:6px 0;color:#8997a1;font-size:13px}
+.profile-form-group{margin-bottom:19px}.profile-form-group label{display:block;margin-bottom:8px;font-size:12px;font-weight:700;color:#314956}
+.profile-form-group label span{color:#ef6b6b}.profile-form-group input{width:100%;box-sizing:border-box;height:47px;border:1px solid #dce5e9;border-radius:10px;padding:0 14px;color:#173744;background:#fff;outline:none}
+.profile-form-group input:focus{border-color:#159ba0;box-shadow:0 0 0 3px rgba(21,155,160,.10)}
+.profile-form-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:25px}
+.profile-btn{min-height:43px;padding:0 18px;border-radius:9px;display:inline-flex;align-items:center;justify-content:center;text-decoration:none;font-size:12px;font-weight:700;cursor:pointer;box-sizing:border-box}
+.profile-btn-primary{background:#13969b;color:#fff;border:0}.profile-btn-secondary{background:#f4f7f8;color:#39525d;border:1px solid #e1e9ec}
+.profile-security-card{margin-top:22px;padding:20px 24px;display:flex;align-items:center;justify-content:space-between;gap:20px}
+.profile-security-card>div{display:flex;align-items:center;gap:14px}.profile-security-icon,.password-card-icon{width:45px;height:45px;display:flex;align-items:center;justify-content:center;border-radius:12px;background:#eef8f7}
+.profile-security-card h3{margin:0 0 4px;font-size:14px}.profile-security-card p{margin:0;color:#8997a1;font-size:12px}
+.profile-alert{padding:12px 15px;border-radius:10px;margin-bottom:20px;font-size:13px}.profile-alert-success{background:#eaf8f2;color:#187854;border:1px solid #ccefe0}
+.profile-error{display:block;margin-top:6px;color:#d94c4c;font-size:11px}.password-page{max-width:760px}.password-card{padding:34px}.password-card-icon{margin-bottom:18px}.password-help{margin-top:7px;padding:9px 11px;background:#f4f7f8;color:#85939d;border-radius:7px;font-size:10px}
+.profile-menu{position:relative}.profile-trigger{border:0;background:transparent;display:flex;align-items:center;gap:9px;cursor:pointer;padding:5px 7px;color:#173744}
+.profile-avatar{width:34px;height:34px;border-radius:50%;background:#dff5f3;color:#138c92;display:inline-flex;align-items:center;justify-content:center;font-size:11px;font-weight:800}
+.profile-avatar-large{width:58px;height:58px;font-size:18px;flex-shrink:0}.profile-trigger-name{font-size:12px;font-weight:700}.profile-chevron{font-size:16px;color:#80909a}
+.profile-dropdown{display:none;position:absolute;top:calc(100% + 10px);right:0;width:290px;background:#fff;border:1px solid #e2eaed;border-radius:14px;box-shadow:0 18px 50px rgba(20,48,62,.16);padding:12px;z-index:9999}
+.profile-dropdown.show{display:block}.profile-dropdown-header{display:flex;gap:12px;align-items:center;padding:9px}.profile-dropdown-header strong{display:block;font-size:14px}.profile-dropdown-header small{display:block;color:#8a98a1;font-size:11px;margin-top:3px}
+.profile-online{padding:2px 0;background:transparent;font-size:10px;margin-top:4px}.profile-dropdown-divider{height:1px;background:#edf1f3;margin:8px 0}
+.profile-dropdown-item{width:100%;box-sizing:border-box;display:flex;align-items:center;gap:12px;padding:11px 10px;border:0;border-radius:9px;background:transparent;text-decoration:none;color:#294552;font-size:13px;cursor:pointer;text-align:left}
+.profile-dropdown-item:hover{background:#f4f8f8}.profile-dropdown-icon{width:25px;text-align:center;color:#168f95;font-size:17px}.profile-logout{color:#df4f4f}.profile-logout .profile-dropdown-icon{color:#df4f4f}
+@media(max-width:800px){.profile-page{padding:25px 18px}.profile-grid{grid-template-columns:1fr}.profile-security-card{align-items:flex-start;flex-direction:column}.profile-trigger-name{display:none}}
