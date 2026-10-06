@@ -87,10 +87,14 @@
                         <svg><use href="#icon-calendar"></use></svg>
                         <span>{{ now()->format('D, M j, Y') }}</span>
                     </div>
-                    <div class="profile-chip" aria-label="Inventory workspace">
-                        <span class="profile-avatar">AA</span>
-                        <span class="profile-label">Workspace</span>
+                    <div class="profile-chip" aria-label="Signed in user">
+                        <span class="profile-avatar">{{ strtoupper(substr(auth()->user()->name ?? 'U', 0, 2)) }}</span>
+                        <span class="profile-label">{{ auth()->user()->name ?? 'User' }}</span>
                     </div>
+                    <form method="POST" action="{{ route('logout') }}" class="logout-form">
+                        @csrf
+                        <button type="submit" class="logout-button" title="Sign out">↪</button>
+                    </form>
                 </div>
             </header>
 
