@@ -279,8 +279,9 @@ class WorkspaceController extends Controller
     public function locations()
     {
         $locations = DB::table('stores')
-            ->select('name', 'code', 'location', 'is_active')
-            ->orderBy('name')
+            ->leftJoin('companies', 'companies.id', '=', 'stores.company_id')
+            ->select('stores.name', 'stores.code', 'companies.name as company_name', 'stores.location', 'stores.is_active')
+            ->orderBy('stores.name')
             ->paginate(20);
 
         return $this->recordsPage(
@@ -290,6 +291,7 @@ class WorkspaceController extends Controller
             $locations,
             [
                 ['label' => 'Location', 'key' => 'name'],
+                ['label' => 'Company / Brand', 'key' => 'company_name'],
                 ['label' => 'Code', 'key' => 'code'],
                 ['label' => 'Address / Area', 'key' => 'location'],
                 ['label' => 'Status', 'key' => 'is_active', 'type' => 'active'],
@@ -302,7 +304,9 @@ class WorkspaceController extends Controller
 
     public function createLocation()
     {
-        return view('workspace.location-create');
+        $companies = Company::where('is_active', true)->orderBy('name')->get();
+
+        return view('workspace.location-create', compact('companies'));
     }
 
     public function storeLocation(Request $request)
@@ -310,12 +314,15 @@ class WorkspaceController extends Controller
         $validated = $request->validate([
             'name' => 'required|string|max:255',
             'code' => 'required|string|max:255|unique:stores,code',
+            'company_id' => 'required|integer|exists:companies,id,is_active,1',
             'location' => 'nullable|string|max:255',
         ]);
 
         DB::table('stores')->insert([
+            'store_code' => trim($validated['code']),
             'name' => trim($validated['name']),
             'code' => trim($validated['code']),
+            'company_id' => $validated['company_id'],
             'location' => isset($validated['location']) ? trim($validated['location']) : null,
             'is_active' => true,
             'created_at' => now(),

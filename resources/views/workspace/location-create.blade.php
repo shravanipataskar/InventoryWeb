@@ -31,6 +31,19 @@
 
                 <div class="form-grid">
                     <div class="field">
+                        <label for="company_id">Company / Brand <span class="required-mark">*</span></label>
+                        <select class="field-control" id="company_id" name="company_id" required>
+                            <option value="">Select a company or brand</option>
+                            @foreach ($companies as $company)
+                                <option value="{{ $company->id }}" {{ old('company_id') == $company->id ? 'selected' : '' }}>
+                                    {{ $company->name }} ({{ $company->code }})
+                                </option>
+                            @endforeach
+                        </select>
+                        @error('company_id')<small class="field-error">{{ $message }}</small>@enderror
+                    </div>
+
+                    <div class="field">
                         <label for="name">Location name <span class="required-mark">*</span></label>
                         <input class="field-control" id="name" name="name" value="{{ old('name') }}" maxlength="255" required>
                         @error('name')<small class="field-error">{{ $message }}</small>@enderror

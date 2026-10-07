@@ -7,14 +7,24 @@ document.addEventListener('DOMContentLoaded', function () {
     var sidebarScrollKey = 'inventory-sidebar-scroll';
 
     if (sidebarNav) {
-        var savedScroll = sessionStorage.getItem(sidebarScrollKey);
-        if (savedScroll !== null) {
-            sidebarNav.scrollTop = parseInt(savedScroll, 10) || 0;
+        function saveSidebarScroll() {
+            sessionStorage.setItem(sidebarScrollKey, sidebarNav.scrollTop);
         }
 
-        window.addEventListener('pagehide', function () {
-            sessionStorage.setItem(sidebarScrollKey, sidebarNav.scrollTop);
+        var savedScroll = sessionStorage.getItem(sidebarScrollKey);
+        if (savedScroll !== null) {
+            window.requestAnimationFrame(function () {
+                sidebarNav.scrollTop = parseInt(savedScroll, 10) || 0;
+            });
+        }
+
+        sidebarNav.addEventListener('scroll', saveSidebarScroll);
+        sidebarNav.addEventListener('click', function (event) {
+            if (event.target.closest('a')) {
+                saveSidebarScroll();
+            }
         });
+        window.addEventListener('pagehide', saveSidebarScroll);
     }
 
     function closeSidebar() {

@@ -256,14 +256,6 @@
                     <span>Products</span>
                 </a>
 
-                {{-- Categories --}}
-                <a
-                    class="nav-link {{ request()->routeIs('categories.*') ? 'is-active' : '' }}"
-                    href="{{ route('categories.index') }}">
-                    <svg><use href="#icon-layers"></use></svg>
-                    <span>Categories</span>
-                </a>
-
                 {{-- Companies / Brands --}}
                 <a
                     class="nav-link {{ request()->routeIs('companies.*') ? 'is-active' : '' }}"
