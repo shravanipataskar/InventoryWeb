@@ -9,9 +9,9 @@ class Product extends Model
     protected $fillable = [
         'product_code',
         'name',
-        'hall',
-        'rack',
-        'shell',
+        'hall_id',
+        'rack_id',
+        'shelf_id',
         'category_id',
         'unit_id',
         'barcode',
@@ -19,6 +19,7 @@ class Product extends Model
         'selling_price',
         'minimum_stock',
         'description',
+        'image',
         'is_active'
     ];
 
@@ -30,5 +31,20 @@ class Product extends Model
     public function unit()
     {
         return $this->belongsTo(Unit::class);
+    }
+
+    public function hall()
+    {
+        return $this->belongsTo(Hall::class);
+    }
+
+    public function rack()
+    {
+        return $this->belongsTo(Rack::class);
+    }
+
+    public function shelf()
+    {
+        return $this->belongsTo(Shelf::class);
     }
 }

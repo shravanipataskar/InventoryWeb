@@ -206,6 +206,18 @@
                     <span>Units</span>
                 </a>
 
+                {{-- Halls --}}
+                <a
+                    class="nav-link {{ request()->routeIs('halls.*', 'racks.*', 'shelves.*') ? 'is-active' : '' }}"
+                    href="{{ route('halls.index') }}">
+
+                    <svg>
+                        <use href="#icon-layers"></use>
+                    </svg>
+
+                    <span>Hall</span>
+                </a>
+
 
                 {{-- Products --}}
                 <a

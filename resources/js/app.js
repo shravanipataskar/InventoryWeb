@@ -159,6 +159,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 currentPage = 1;
                 renderTable();
             });
+
         });
 
         var reset = tableContainer.querySelector('[data-filter-reset]');
@@ -182,5 +183,211 @@ document.addEventListener('DOMContentLoaded', function () {
         }
 
         renderTable();
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-location-selector]'), function (selector) {
+        var hallSelect = selector.querySelector('[data-location-hall]');
+        var rackSelect = selector.querySelector('[data-location-rack]');
+        var shelfSelect = selector.querySelector('[data-location-shelf]');
+        var errorMessage = selector.querySelector('[data-location-error]');
+        var rackRequest = 0;
+        var shelfRequest = 0;
+        var initialRack = selector.getAttribute('data-initial-rack') || '';
+        var initialShelf = selector.getAttribute('data-initial-shelf') || '';
+        var currentHall = selector.getAttribute('data-current-hall') || '';
+        var preserveRackId = selector.getAttribute('data-preserve-rack-id') || '';
+        var preserveRackName = selector.getAttribute('data-preserve-rack-name') || '';
+        var preserveShelfId = selector.getAttribute('data-preserve-shelf-id') || '';
+        var preserveShelfName = selector.getAttribute('data-preserve-shelf-name') || '';
+
+        if (!hallSelect || !rackSelect || !shelfSelect) {
+            return;
+        }
+
+        function resetSelect(select, placeholder) {
+            select.innerHTML = '';
+            var option = document.createElement('option');
+            option.value = '';
+            option.textContent = placeholder;
+            select.appendChild(option);
+            select.disabled = true;
+        }
+
+        function showError(message) {
+            if (errorMessage) {
+                errorMessage.textContent = message;
+                errorMessage.hidden = false;
+            }
+        }
+
+        function clearError() {
+            if (errorMessage) {
+                errorMessage.textContent = '';
+                errorMessage.hidden = true;
+            }
+        }
+
+        function fetchOptions(url) {
+            return fetch(url, {
+                headers: { Accept: 'application/json' }
+            }).then(function (response) {
+                if (!response.ok) {
+                    throw new Error('Location options could not be loaded.');
+                }
+                return response.json();
+            });
+        }
+
+        function fillSelect(select, placeholder, options, selectedId, preservedId, preservedName) {
+            resetSelect(select, placeholder);
+            var hasPreservedOption = options.some(function (item) {
+                return String(item.id) === String(preservedId);
+            });
+
+            if (preservedId && selectedId && String(preservedId) === String(selectedId) && !hasPreservedOption) {
+                options.push({ id: preservedId, name: preservedName });
+            }
+
+            options.forEach(function (item) {
+                var option = document.createElement('option');
+                option.value = item.id;
+                option.textContent = item.name;
+                select.appendChild(option);
+            });
+
+            select.disabled = false;
+            select.value = selectedId || '';
+        }
+
+        function loadShelves(rackId, selectedShelfId, preserveCurrent) {
+            shelfRequest += 1;
+            var requestId = shelfRequest;
+            resetSelect(shelfSelect, rackId ? 'Loading Shells...' : 'Select Rack First');
+            clearError();
+
+            if (!rackId) {
+                return Promise.resolve();
+            }
+
+            var url = selector.getAttribute('data-shelves-url').replace('__RACK__', encodeURIComponent(rackId));
+            return fetchOptions(url).then(function (options) {
+                if (requestId === shelfRequest) {
+                    fillSelect(
+                        shelfSelect,
+                        'Select Shell (Optional)',
+                        options,
+                        selectedShelfId,
+                        preserveCurrent ? preserveShelfId : '',
+                        preserveCurrent ? preserveShelfName : ''
+                    );
+                }
+            }).catch(function () {
+                if (requestId === shelfRequest) {
+                    showError('Unable to load Shells. Please try again.');
+                }
+            });
+        }
+
+        function loadRacks(hallId, selectedRackId, selectedShelfId, preserveCurrent) {
+            rackRequest += 1;
+            shelfRequest += 1;
+            var requestId = rackRequest;
+            resetSelect(rackSelect, hallId ? 'Loading Racks...' : 'Select Hall First');
+            resetSelect(shelfSelect, 'Select Rack First');
+            clearError();
+
+            if (!hallId) {
+                return Promise.resolve();
+            }
+
+            var url = selector.getAttribute('data-racks-url').replace('__HALL__', encodeURIComponent(hallId));
+            return fetchOptions(url).then(function (options) {
+                if (requestId !== rackRequest) {
+                    return;
+                }
+
+                fillSelect(
+                    rackSelect,
+                    'Select Rack (Optional)',
+                    options,
+                    selectedRackId,
+                    preserveCurrent ? preserveRackId : '',
+                    preserveCurrent ? preserveRackName : ''
+                );
+                return loadShelves(
+                    rackSelect.value,
+                    selectedShelfId,
+                    preserveCurrent && String(rackSelect.value) === String(preserveRackId)
+                );
+            }).catch(function () {
+                if (requestId === rackRequest) {
+                    showError('Unable to load Racks. Please try again.');
+                }
+            });
+        }
+
+        hallSelect.addEventListener('change', function () {
+            initialRack = '';
+            initialShelf = '';
+            loadRacks(hallSelect.value, '', '', false);
+        });
+
+        rackSelect.addEventListener('change', function () {
+            initialShelf = '';
+            loadShelves(rackSelect.value, '', false);
+        });
+
+        if (hallSelect.value) {
+            loadRacks(
+                hallSelect.value,
+                initialRack,
+                initialShelf,
+                String(hallSelect.value) === String(currentHall)
+            );
+        } else {
+            resetSelect(rackSelect, 'Select Hall First');
+            resetSelect(shelfSelect, 'Select Rack First');
+        }
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-image-preview]'), function (preview) {
+        var input = preview.querySelector('[data-image-input]');
+        var previewBox = preview.querySelector('[data-image-preview-box]');
+        var image = preview.querySelector('[data-image-preview-img]');
+        var placeholder = preview.querySelector('[data-image-placeholder]');
+        var previewUrl = null;
+
+        if (!input || !previewBox || !image || !placeholder) {
+            return;
+        }
+
+        input.addEventListener('change', function () {
+            if (previewUrl) {
+                URL.revokeObjectURL(previewUrl);
+                previewUrl = null;
+            }
+
+            if (!input.files || !input.files.length) {
+                var currentImage = image.getAttribute('data-current-image');
+                if (currentImage) {
+                    image.src = currentImage;
+                    image.hidden = false;
+                    placeholder.hidden = true;
+                    previewBox.hidden = false;
+                } else {
+                    image.removeAttribute('src');
+                    image.hidden = true;
+                    placeholder.hidden = false;
+                    previewBox.hidden = true;
+                }
+                return;
+            }
+
+            previewUrl = URL.createObjectURL(input.files[0]);
+            image.src = previewUrl;
+            image.hidden = false;
+            placeholder.hidden = true;
+            previewBox.hidden = false;
+        });
     });
 });

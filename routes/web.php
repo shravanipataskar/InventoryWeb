@@ -135,6 +135,38 @@ Route::middleware('auth')->group(function () {
         ->name('suppliers.status');
     Route::patch('products/{product}/status', 'ProductController@status')
         ->name('products.status');
+    Route::patch('halls/{hall}/status', 'HallController@status')
+        ->name('halls.status');
+    Route::patch('racks/{rack}/status', 'RackController@status')
+        ->name('racks.status');
+    Route::patch('shelves/{shelf}/status', 'ShelfController@status')
+        ->name('shelves.status');
+    Route::get('locations/halls/{hall}/racks', 'HallController@racksOptions')
+        ->name('locations.halls.racks');
+    Route::get('locations/racks/{rack}/shelves', 'RackController@shelvesOptions')
+        ->name('locations.racks.shelves');
+
+    Route::get('halls/{hall}/racks/create', 'RackController@create')
+        ->name('racks.create');
+    Route::post('halls/{hall}/racks', 'RackController@store')
+        ->name('racks.store');
+    Route::get('racks/{rack}', 'RackController@show')
+        ->name('racks.show');
+    Route::get('racks/{rack}/edit', 'RackController@edit')
+        ->name('racks.edit');
+    Route::put('racks/{rack}', 'RackController@update')
+        ->name('racks.update');
+
+    Route::get('racks/{rack}/shelves/create', 'ShelfController@create')
+        ->name('shelves.create');
+    Route::post('racks/{rack}/shelves', 'ShelfController@store')
+        ->name('shelves.store');
+    Route::get('shelves/{shelf}/edit', 'ShelfController@edit')
+        ->name('shelves.edit');
+    Route::put('shelves/{shelf}', 'ShelfController@update')
+        ->name('shelves.update');
+
+    Route::resource('halls', 'HallController')->except(['destroy']);
     Route::patch('stock-inwards/{stockInward}/status', 'StockInwardController@status')
         ->name('stock-inwards.status');
     Route::patch('stock-outwards/{stockOutward}/status', 'StockOutwardController@status')

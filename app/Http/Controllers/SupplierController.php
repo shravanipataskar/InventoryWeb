@@ -24,22 +24,29 @@ class SupplierController extends Controller
 
     public function store(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
+            'supplier_code' => 'required|string|max:100|unique:suppliers,supplier_code',
             'name' => 'required|string|max:255',
-            'company_name' => 'nullable|string|max:255',
-            'email' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string',
+            'company_name' => 'required|string|max:255',
+            'phone' => 'required|string|max:20',
+            'gst_number' => 'nullable|string|max:50',
+            'pan_number' => 'nullable|string|max:20',
+            'address' => 'nullable|string|max:2000',
+            'city' => 'nullable|string|max:255',
+            'state' => 'nullable|string|max:255',
+            'pincode' => 'nullable|string|max:20',
+            'payment_terms' => 'nullable|in:due_on_receipt,net_7,net_15,net_30,net_45,net_60',
+            'bank_name' => 'nullable|string|max:255',
+            'account_holder_name' => 'nullable|string|max:255',
+            'account_number' => 'nullable|string|max:100',
+            'ifsc_code' => 'nullable|string|max:20',
+            'branch_name' => 'nullable|string|max:255',
+            'notes' => 'nullable|string|max:5000',
         ]);
 
-        Supplier::create([
-            'name' => $request->name,
-            'company_name' => $request->company_name,
-            'email' => $request->email,
-            'phone' => $request->phone,
-            'address' => $request->address,
+        Supplier::create(array_merge($validated, [
             'is_active' => 1,
-        ]);
+        ]));
 
         return redirect()
             ->route('suppliers.index')
@@ -55,23 +62,28 @@ class SupplierController extends Controller
 
     public function update(Request $request, $id)
     {
-        $request->validate([
-            'name' => 'required|string|max:255',
-            'company_name' => 'nullable|string|max:255',
-            'email' => 'nullable|email|max:255',
-            'phone' => 'nullable|string|max:20',
-            'address' => 'nullable|string',
-        ]);
-
         $supplier = Supplier::findOrFail($id);
-
-        $supplier->update([
-            'name' => $request->name,
-            'company_name' => $request->company_name,
-            'email' => $request->email,
-            'phone' => $request->phone,
-            'address' => $request->address,
+        $validated = $request->validate([
+            'supplier_code' => 'required|string|max:100|unique:suppliers,supplier_code,' . $supplier->id,
+            'name' => 'required|string|max:255',
+            'company_name' => 'required|string|max:255',
+            'phone' => 'required|string|max:20',
+            'gst_number' => 'nullable|string|max:50',
+            'pan_number' => 'nullable|string|max:20',
+            'address' => 'nullable|string|max:2000',
+            'city' => 'nullable|string|max:255',
+            'state' => 'nullable|string|max:255',
+            'pincode' => 'nullable|string|max:20',
+            'payment_terms' => 'nullable|in:due_on_receipt,net_7,net_15,net_30,net_45,net_60',
+            'bank_name' => 'nullable|string|max:255',
+            'account_holder_name' => 'nullable|string|max:255',
+            'account_number' => 'nullable|string|max:100',
+            'ifsc_code' => 'nullable|string|max:20',
+            'branch_name' => 'nullable|string|max:255',
+            'notes' => 'nullable|string|max:5000',
         ]);
+
+        $supplier->update($validated);
 
         return redirect()
             ->route('suppliers.index')
