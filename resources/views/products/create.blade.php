@@ -21,8 +21,6 @@
                     <div class="field"><label>Product code / SKU</label><div class="product-identifier-display">Generated automatically</div><small class="field-hint">A unique product code is assigned when saved.</small></div>
                     <div class="field"><label>Barcode</label><div class="product-identifier-display">Generated automatically</div><small class="field-hint">A unique barcode is assigned when saved.</small></div>
                     <div class="field"><label for="company_id">Company / Brand</label><select class="field-control" id="company_id" name="company_id"><option value="">No company</option>@foreach ($companies as $company)<option value="{{ $company->id }}" {{ old('company_id') == $company->id ? 'selected' : '' }}>{{ $company->name }} ({{ $company->code }})</option>@endforeach</select>@error('company_id')<small class="field-error">{{ $message }}</small>@enderror</div>
-                    <div class="field"><label for="product_code">Product code / SKU <span class="required-mark">*</span></label><input class="field-control" id="product_code" type="text" name="product_code" value="{{ old('product_code') }}" placeholder="e.g. PROD-001" maxlength="100" required>@error('product_code')<small class="field-error">{{ $message }}</small>@enderror</div>
-                    <div class="field"><label for="barcode">Barcode</label><input class="field-control" id="barcode" type="text" name="barcode" value="{{ old('barcode') }}" placeholder="Optional barcode" maxlength="100">@error('barcode')<small class="field-error">{{ $message }}</small>@enderror</div>
                     <div class="field">
                         <label for="hall_id">Hall <span class="required-mark">*</span></label>
                         <select class="field-control" id="hall_id" name="hall_id" data-location-hall required>
@@ -50,16 +48,6 @@
                     </div>
                     <div class="field"><label for="category_id">Category <span class="required-mark">*</span></label><select class="field-control" id="category_id" name="category_id" required><option value="">Select category</option>@foreach ($categories as $category)<option value="{{ $category->id }}" {{ old('category_id') == $category->id ? 'selected' : '' }}>{{ $category->name }}</option>@endforeach</select>@error('category_id')<small class="field-error">{{ $message }}</small>@enderror</div>
                     <div class="field"><label for="unit_id">Unit <span class="required-mark">*</span></label><select class="field-control" id="unit_id" name="unit_id" required><option value="">Select unit</option>@foreach ($units as $unit)<option value="{{ $unit->id }}" {{ old('unit_id') == $unit->id ? 'selected' : '' }}>{{ $unit->name }} ({{ $unit->short_name }})</option>@endforeach</select>@error('unit_id')<small class="field-error">{{ $message }}</small>@enderror</div>
-                    <div class="field field-wide" data-image-preview>
-                        <label for="image">Product Image</label>
-                        <input class="field-control" id="image" type="file" name="image" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" data-image-input>
-                        <small class="field-hint">JPG, JPEG, PNG or WEBP. Maximum file size: 2 MB. Optional.</small>
-                        @error('image')<small class="field-error">{{ $message }}</small>@enderror
-                        <div class="product-image-preview" data-image-preview-box hidden>
-                            <img src="" alt="Selected product image preview" data-image-preview-img hidden>
-                            <span data-image-placeholder>Product image preview</span>
-                        </div>
-                    </div>
                 </div>
             </div>
 

@@ -22,8 +22,6 @@
                     <div class="field"><label>Product code / SKU</label><div class="product-identifier-display">{{ $product->product_code }}</div></div>
                     <div class="field"><label>Barcode</label><div class="product-identifier-display">{{ $product->barcode ?: 'Not assigned' }}</div></div>
                     <div class="field"><label for="company_id">Company / Brand</label><select class="field-control" id="company_id" name="company_id"><option value="">No company</option>@foreach ($companies as $company)<option value="{{ $company->id }}" {{ old('company_id', $product->company_id) == $company->id ? 'selected' : '' }}>{{ $company->name }} ({{ $company->code }})</option>@endforeach</select>@error('company_id')<small class="field-error">{{ $message }}</small>@enderror</div>
-                    <div class="field"><label for="product_code">Product code / SKU <span class="required-mark">*</span></label><input class="field-control" id="product_code" type="text" name="product_code" value="{{ old('product_code', $product->product_code) }}" maxlength="100" required>@error('product_code')<small class="field-error">{{ $message }}</small>@enderror</div>
-                    <div class="field"><label for="barcode">Barcode</label><input class="field-control" id="barcode" type="text" name="barcode" value="{{ old('barcode', $product->barcode) }}" maxlength="100">@error('barcode')<small class="field-error">{{ $message }}</small>@enderror</div>
                     <div class="field">
                         <label for="hall_id">Hall <span class="required-mark">*</span></label>
                         <select class="field-control" id="hall_id" name="hall_id" data-location-hall required>
@@ -51,21 +49,6 @@
                     </div>
                     <div class="field"><label for="category_id">Category <span class="required-mark">*</span></label><select class="field-control" id="category_id" name="category_id" required><option value="">Select category</option>@foreach ($categories as $category)<option value="{{ $category->id }}" {{ old('category_id', $product->category_id) == $category->id ? 'selected' : '' }}>{{ $category->name }}</option>@endforeach</select>@error('category_id')<small class="field-error">{{ $message }}</small>@enderror</div>
                     <div class="field"><label for="unit_id">Unit <span class="required-mark">*</span></label><select class="field-control" id="unit_id" name="unit_id" required><option value="">Select unit</option>@foreach ($units as $unit)<option value="{{ $unit->id }}" {{ old('unit_id', $product->unit_id) == $unit->id ? 'selected' : '' }}>{{ $unit->name }} ({{ $unit->short_name }})</option>@endforeach</select>@error('unit_id')<small class="field-error">{{ $message }}</small>@enderror</div>
-                    <div class="field field-wide" data-image-preview>
-                        <label for="image">New Product Image</label>
-                        <input class="field-control" id="image" type="file" name="image" accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp" data-image-input>
-                        <small class="field-hint">JPG, JPEG, PNG or WEBP. Maximum file size: 2 MB. Optional.</small>
-                        @error('image')<small class="field-error">{{ $message }}</small>@enderror
-                        <div class="product-image-preview" data-image-preview-box {{ $product->image && Storage::disk('public')->exists($product->image) ? '' : 'hidden' }}>
-                            @if ($product->image && Storage::disk('public')->exists($product->image))
-                                <img src="{{ asset('storage/' . $product->image) }}" alt="Current product image" data-image-preview-img data-current-image="{{ asset('storage/' . $product->image) }}">
-                                <span data-image-placeholder hidden>Product image preview</span>
-                            @else
-                                <img src="" alt="Selected product image preview" data-image-preview-img hidden>
-                                <span data-image-placeholder>Product image preview</span>
-                            @endif
-                        </div>
-                    </div>
                 </div>
             </div>
 

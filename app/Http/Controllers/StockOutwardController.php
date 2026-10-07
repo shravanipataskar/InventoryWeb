@@ -2,17 +2,19 @@
 
 namespace App\Http\Controllers;
 
+use App\Customer;
 use App\StockOutward;
 use App\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class StockOutwardController extends Controller
 {
     public function index(Request $request)
     {
         $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
-        $stockOutwards = StockOutward::with('product')
+        $stockOutwards = StockOutward::with(['product', 'customer'])
             ->where('is_active', $listingStatus === 'active')
             ->orderBy('id', 'desc')
             ->get();
@@ -25,35 +27,44 @@ class StockOutwardController extends Controller
 
     public function create()
     {
-        $products = Product::where('is_active', 1)
+        $products = Product::with(['hall', 'rack', 'shelf'])
+            ->where('is_active', 1)
             ->where('current_stock', '>', 0)
+            ->orderBy('name')
+            ->get();
+        $customers = Customer::where('is_active', true)
             ->orderBy('name')
             ->get();
 
         return view(
             'stock_outwards.create',
-            compact('products')
+            compact('products', 'customers')
         );
     }
 
     public function store(Request $request)
     {
-        $request->validate([
+        $validated = $request->validate([
             'product_id' => 'required|exists:products,id',
             'reference_number' => 'nullable|string|max:100',
             'outward_date' => 'required|date',
             'quantity' => 'required|numeric|min:0.01',
             'selling_price' => 'required|numeric|min:0',
-            'issued_to' => 'nullable|string|max:255',
+            'customer_id' => [
+                'nullable',
+                'required_without:issued_to',
+                'integer',
+                Rule::exists('customers', 'id')->where('is_active', true),
+            ],
+            'issued_to' => 'nullable|required_without:customer_id|string|max:255',
             'remarks' => 'nullable|string',
         ]);
 
-        DB::transaction(function () use ($request) {
+        DB::transaction(function () use ($request, $validated) {
 
-            $product = Product::lockForUpdate()
-                ->findOrFail($request->product_id);
+            $product = Product::lockForUpdate()->findOrFail($validated['product_id']);
 
-            if ($request->quantity > $product->current_stock) {
+            if ($validated['quantity'] > $product->current_stock) {
                 abort(
                     422,
                     'Insufficient stock. Available stock: '
@@ -61,23 +72,30 @@ class StockOutwardController extends Controller
                 );
             }
 
-            $totalAmount =
-                $request->quantity * $request->selling_price;
+            $customer = null;
+            if (!empty($validated['customer_id'])) {
+                $customer = Customer::where('is_active', true)
+                    ->lockForUpdate()
+                    ->findOrFail($validated['customer_id']);
+            }
+
+            $totalAmount = $validated['quantity'] * $validated['selling_price'];
 
             StockOutward::create([
-                'product_id' => $request->product_id,
-                'reference_number' => $request->reference_number,
-                'outward_date' => $request->outward_date,
-                'quantity' => $request->quantity,
-                'selling_price' => $request->selling_price,
+                'product_id' => $validated['product_id'],
+                'customer_id' => $customer ? $customer->id : null,
+                'reference_number' => $validated['reference_number'] ?? null,
+                'outward_date' => $validated['outward_date'],
+                'quantity' => $validated['quantity'],
+                'selling_price' => $validated['selling_price'],
                 'total_amount' => $totalAmount,
-                'issued_to' => $request->issued_to,
-                'remarks' => $request->remarks,
+                'issued_to' => $customer ? $customer->name : ($validated['issued_to'] ?? null),
+                'remarks' => $validated['remarks'] ?? null,
             ]);
 
             $product->decrement(
                 'current_stock',
-                $request->quantity
+                $validated['quantity']
             );
         });
 

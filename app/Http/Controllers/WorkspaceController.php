@@ -99,7 +99,14 @@ class WorkspaceController extends Controller
 
     public function currentStock(Request $request)
     {
-        $query = Product::with(['category', 'company', 'unit'])
+        $query = Product::with([
+            'category',
+            'company',
+            'unit',
+            'hallLocation',
+            'rackLocation',
+            'shelfLocation',
+        ])
             ->where('is_active', true);
 
         if ($request->filled('search')) {
@@ -526,7 +533,28 @@ class WorkspaceController extends Controller
             'remarks' => 'nullable|string|max:2000',
         ]);
 
-        DB::transaction(function () use ($validated) {
+        $legacyTransferSchema = Schema::hasTable('stock_transfer_items')
+            && Schema::hasColumn('stock_transfers', 'from_store_id')
+            && Schema::hasColumn('stock_transfers', 'to_store_id');
+
+        if ($legacyTransferSchema) {
+            $validated['from_store_id'] = DB::table('stores')
+                ->where('name', trim($validated['from_location']))
+                ->where('is_active', true)
+                ->value('id');
+            $validated['to_store_id'] = DB::table('stores')
+                ->where('name', trim($validated['to_location']))
+                ->where('is_active', true)
+                ->value('id');
+
+            if (!$validated['from_store_id'] || !$validated['to_store_id']) {
+                throw ValidationException::withMessages([
+                    'from_location' => 'Select two active locations.',
+                ]);
+            }
+        }
+
+        DB::transaction(function () use ($validated, $legacyTransferSchema) {
             $product = Product::lockForUpdate()->findOrFail($validated['product_id']);
             if (!$product->is_active) {
                 throw ValidationException::withMessages([
@@ -539,16 +567,39 @@ class WorkspaceController extends Controller
                 ]);
             }
 
-            StockTransfer::create([
-                'product_id' => $product->id,
-                'transfer_number' => 'TRF-' . now()->format('Ymd-His') . '-' . Str::upper(Str::random(4)),
-                'transfer_date' => $validated['transfer_date'],
-                'from_location' => trim($validated['from_location']),
-                'to_location' => trim($validated['to_location']),
-                'quantity' => $validated['quantity'],
-                'remarks' => $validated['remarks'] ?? null,
-                'is_active' => true,
-            ]);
+            $transferNumber = 'TRF-' . now()->format('Ymd-His') . '-' . Str::upper(Str::random(4));
+            if ($legacyTransferSchema) {
+                $transferId = DB::table('stock_transfers')->insertGetId([
+                    'transfer_number' => $transferNumber,
+                    'from_store_id' => $validated['from_store_id'],
+                    'to_store_id' => $validated['to_store_id'],
+                    'transfer_date' => $validated['transfer_date'],
+                    'status' => 'completed',
+                    'remarks' => $validated['remarks'] ?? null,
+                    'created_by' => auth()->id(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+
+                DB::table('stock_transfer_items')->insert([
+                    'stock_transfer_id' => $transferId,
+                    'product_id' => $product->id,
+                    'quantity' => $validated['quantity'],
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            } else {
+                StockTransfer::create([
+                    'product_id' => $product->id,
+                    'transfer_number' => $transferNumber,
+                    'transfer_date' => $validated['transfer_date'],
+                    'from_location' => trim($validated['from_location']),
+                    'to_location' => trim($validated['to_location']),
+                    'quantity' => $validated['quantity'],
+                    'remarks' => $validated['remarks'] ?? null,
+                    'is_active' => true,
+                ]);
+            }
         });
 
         return redirect()
@@ -636,21 +687,31 @@ class WorkspaceController extends Controller
             ->with('unit')
             ->orderBy('name')
             ->get(['id', 'name', 'product_code', 'current_stock', 'unit_id']);
+        $locations = DB::table('stores')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+        $requiresStore = Schema::hasColumn('stock_adjustments', 'store_id');
 
-        return view('workspace.stock-adjustment-create', compact('products'));
+        return view('workspace.stock-adjustment-create', compact('products', 'locations', 'requiresStore'));
     }
 
     public function storeStockAdjustment(Request $request)
     {
-        $validated = $request->validate([
+        $rules = [
             'product_id' => 'required|integer|exists:products,id',
             'adjustment_type' => 'required|in:increase,decrease',
             'quantity' => 'required|numeric|min:0.01',
             'reason' => 'required|string|max:255',
             'adjustment_date' => 'required|date',
-        ]);
+        ];
+        if (Schema::hasColumn('stock_adjustments', 'store_id')) {
+            $rules['store_id'] = 'required|integer|exists:stores,id,is_active,1';
+        }
+        $validated = $request->validate($rules);
+        $legacyAdjustmentSchema = Schema::hasColumn('stock_adjustments', 'adjustment_number');
 
-        DB::transaction(function () use ($validated) {
+        DB::transaction(function () use ($validated, $legacyAdjustmentSchema) {
             $product = Product::lockForUpdate()->findOrFail($validated['product_id']);
             if (!$product->is_active) {
                 throw ValidationException::withMessages([
@@ -663,25 +724,82 @@ class WorkspaceController extends Controller
             $adjustmentQuantity = $validated['adjustment_type'] === 'decrease' ? -$quantity : $quantity;
             $quantityAfter = $quantityBefore + $adjustmentQuantity;
 
+            $storeBalance = null;
+            if (isset($validated['store_id']) && Schema::hasTable('stock_transactions')) {
+                $storeBalance = (float) DB::table('stock_transactions')
+                    ->where('product_id', $product->id)
+                    ->where('store_id', $validated['store_id'])
+                    ->lockForUpdate()
+                    ->sum(DB::raw('quantity_in - quantity_out'));
+            }
+
             if ($quantityAfter < 0) {
                 throw ValidationException::withMessages([
                     'quantity' => 'A decrease cannot exceed the product quantity on hand.',
+                ]);
+            }
+            if ($storeBalance !== null
+                && $validated['adjustment_type'] === 'decrease'
+                && $quantity > $storeBalance) {
+                throw ValidationException::withMessages([
+                    'quantity' => 'A decrease cannot exceed the selected location quantity on hand (' . number_format($storeBalance, 2) . ').',
                 ]);
             }
 
             $product->current_stock = $quantityAfter;
             $product->save();
 
-            StockAdjustment::create([
-                'product_id' => $product->id,
-                'reference_number' => 'ADJ-' . now()->format('Ymd-His') . '-' . Str::upper(Str::random(4)),
-                'adjustment_date' => $validated['adjustment_date'],
-                'quantity_before' => $quantityBefore,
-                'adjustment_quantity' => $adjustmentQuantity,
-                'quantity_after' => $quantityAfter,
-                'reason' => $validated['reason'],
-                'is_active' => true,
-            ]);
+            $reference = 'ADJ-' . now()->format('Ymd-His') . '-' . Str::upper(Str::random(4));
+            if ($legacyAdjustmentSchema) {
+                $adjustmentData = [
+                    'adjustment_number' => $reference,
+                    'product_id' => $product->id,
+                    'store_id' => $validated['store_id'],
+                    'type' => $validated['adjustment_type'],
+                    'quantity' => $quantity,
+                    'reason' => $validated['reason'],
+                    'adjustment_date' => $validated['adjustment_date'],
+                ];
+                if (Schema::hasColumn('stock_adjustments', 'remarks')) {
+                    $adjustmentData['remarks'] = $validated['reason'];
+                }
+                if (Schema::hasColumn('stock_adjustments', 'created_by')) {
+                    $adjustmentData['created_by'] = Auth::id();
+                }
+                $adjustmentData['created_at'] = now();
+                $adjustmentData['updated_at'] = now();
+                $adjustmentId = DB::table('stock_adjustments')->insertGetId($adjustmentData);
+            } else {
+                $adjustmentId = StockAdjustment::create([
+                    'product_id' => $product->id,
+                    'reference_number' => $reference,
+                    'adjustment_date' => $validated['adjustment_date'],
+                    'quantity_before' => $quantityBefore,
+                    'adjustment_quantity' => $adjustmentQuantity,
+                    'quantity_after' => $quantityAfter,
+                    'reason' => $validated['reason'],
+                    'is_active' => true,
+                ])->id;
+            }
+
+            if (isset($validated['store_id']) && Schema::hasTable('stock_transactions')) {
+                DB::table('stock_transactions')->insert([
+                    'store_id' => $validated['store_id'],
+                    'product_id' => $product->id,
+                    'transaction_type' => $validated['adjustment_type'] === 'increase' ? 'adjustment_in' : 'adjustment_out',
+                    'reference_type' => 'stock_adjustment',
+                    'reference_id' => $adjustmentId,
+                    'quantity_in' => $validated['adjustment_type'] === 'increase' ? $quantity : 0,
+                    'quantity_out' => $validated['adjustment_type'] === 'decrease' ? $quantity : 0,
+                    'balance_quantity' => ($storeBalance ?? 0) + $adjustmentQuantity,
+                    'unit_price' => $product->purchase_price,
+                    'transaction_date' => $validated['adjustment_date'],
+                    'remarks' => $validated['reason'],
+                    'created_by' => Auth::id(),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
         });
 
         return redirect()

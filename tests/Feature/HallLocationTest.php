@@ -204,6 +204,33 @@ class HallLocationTest extends TestCase
         ]);
     }
 
+    public function test_current_stock_displays_related_hall_rack_and_shelf_names()
+    {
+        $this->actingAs($this->makeUser());
+        list($category, $unit) = $this->makeProductReferences();
+        $suffix = strtoupper(Str::random(6));
+        $hall = Hall::create(['name' => 'H' . $suffix, 'is_active' => true]);
+        $rack = $hall->racks()->create(['name' => 'R' . $suffix, 'is_active' => true]);
+        $shelf = $rack->shelves()->create(['name' => 'S' . $suffix, 'is_active' => true]);
+        Product::create([
+            'product_code' => 'LOC-' . $suffix,
+            'name' => 'Current stock location test product ' . $suffix,
+            'hall_id' => $hall->id,
+            'rack_id' => $rack->id,
+            'shelf_id' => $shelf->id,
+            'category_id' => $category->id,
+            'unit_id' => $unit->id,
+            'purchase_price' => 10,
+            'selling_price' => 15,
+            'minimum_stock' => 1,
+            'is_active' => true,
+        ]);
+
+        $this->get(route('current-stock.index'))
+            ->assertOk()
+            ->assertSee($hall->name . ' / ' . $rack->name . ' / ' . $shelf->name);
+    }
+
     private function makeUser()
     {
         return User::create([

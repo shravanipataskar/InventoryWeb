@@ -43,6 +43,22 @@
                         @error('product_id')<small class="field-error">{{ $message }}</small>@enderror
                     </div>
 
+                    @if ($requiresStore)
+                        <div class="field field-wide">
+                            <label for="store_id">Location <span class="required-mark">*</span></label>
+                            <select class="field-control" id="store_id" name="store_id" required>
+                                <option value="">Select a location</option>
+                                @foreach ($locations as $location)
+                                    <option value="{{ $location->id }}" {{ old('store_id') == $location->id ? 'selected' : '' }}>{{ $location->name }}</option>
+                                @endforeach
+                            </select>
+                            @error('store_id')<small class="field-error">{{ $message }}</small>@enderror
+                            @if (!$locations->count())
+                                <small class="field-hint">Add an active location before recording a stock adjustment.</small>
+                            @endif
+                        </div>
+                    @endif
+
                     <div class="field">
                         <label for="adjustment_type">Adjustment type <span class="required-mark">*</span></label>
                         <select class="field-control" id="adjustment_type" name="adjustment_type" required>
@@ -72,16 +88,16 @@
                 </div>
             </div>
 
-            @if (!$products->count())
+            @if (!$products->count() || ($requiresStore && !$locations->count()))
                 <div class="inventory-notice notice-out">
                     <span class="notice-symbol" aria-hidden="true">!</span>
-                    <div><strong>Setup required</strong><small>Add an active product before recording an adjustment.</small></div>
+                    <div><strong>Setup required</strong><small>@if (!$products->count())Add an active product before recording an adjustment.@elseif ($requiresStore && !$locations->count())Add an active location before recording an adjustment.@endif</small></div>
                 </div>
             @endif
 
             <div class="form-actions">
                 <a class="button button-light" href="{{ route('stock-adjustments.index') }}">Cancel</a>
-                <button class="button button-primary" type="submit" {{ !$products->count() ? 'disabled' : '' }}>Save Adjustment</button>
+                <button class="button button-primary" type="submit" {{ !$products->count() || ($requiresStore && !$locations->count()) ? 'disabled' : '' }}>Save Adjustment</button>
             </div>
         </form>
     </section>

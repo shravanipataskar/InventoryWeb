@@ -42,6 +42,21 @@ class Product extends Model
         return $this->belongsTo(Shelf::class);
     }
 
+    public function hallLocation()
+    {
+        return $this->belongsTo(Hall::class, 'hall_id');
+    }
+
+    public function rackLocation()
+    {
+        return $this->belongsTo(Rack::class, 'rack_id');
+    }
+
+    public function shelfLocation()
+    {
+        return $this->belongsTo(Shelf::class, 'shelf_id');
+    }
+
     public function category()
     {
         return $this->belongsTo(Category::class);

@@ -33,7 +33,7 @@
                         <td>{{ \Carbon\Carbon::parse($stock->outward_date)->format('d M Y') }}</td>
                         <td><strong class="table-primary-text">{{ optional($stock->product)->name ?: '—' }}</strong></td>
                         <td><span class="unit-code">{{ $stock->reference_number ?: '—' }}</span></td>
-                        <td>{{ $stock->issued_to ?: '—' }}</td>
+                        <td>{{ optional($stock->customer)->name ?: ($stock->issued_to ?: '—') }}</td>
                         <td class="number-cell quantity-out">−{{ number_format($stock->quantity, 2) }}</td>
                         <td class="currency-cell">₹{{ number_format($stock->selling_price, 2) }}</td>
                         <td><strong class="total-cell">₹{{ number_format($stock->total_amount, 2) }}</strong></td>

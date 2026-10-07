@@ -8,6 +8,7 @@ class StockOutward extends Model
 {
     protected $fillable = [
         'product_id',
+        'customer_id',
         'reference_number',
         'outward_date',
         'quantity',
@@ -21,5 +22,10 @@ class StockOutward extends Model
     public function product()
     {
         return $this->belongsTo(Product::class);
+    }
+
+    public function customer()
+    {
+        return $this->belongsTo(Customer::class);
     }
 }
