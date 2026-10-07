@@ -1,14 +1,14 @@
 @extends('layouts.app')
 
-@section('title', 'Add Opening Stock')
-@section('topbar-title', 'Add opening stock')
+@section('title', 'Add Initial Stock')
+@section('topbar-title', 'Initial stock setup')
 
 @section('content')
     <div class="page-heading">
         <div>
-            <span class="section-kicker">INVENTORY / OPENING STOCK</span>
-            <h1>Add Opening Stock</h1>
-            <p>Set an initial inventory quantity for a product at a location.</p>
+            <span class="section-kicker">INVENTORY / INITIAL STOCK</span>
+            <h1>Initial Stock Setup</h1>
+            <p>Set the starting inventory quantity once for a product at a location. Daily opening balances are derived from the previous day’s closing stock.</p>
         </div>
         <a class="button button-light" href="{{ route('opening-stock.index') }}">Back to Opening Stock</a>
     </div>
@@ -26,7 +26,7 @@
             <div class="form-section">
                 <div class="form-card-heading">
                     <span class="form-section-icon"><svg><use href="#icon-tray-in"></use></svg></span>
-                    <div><h2>Opening balance</h2><p>The entered quantity will be added to on-hand inventory and recorded in the stock ledger.</p></div>
+                    <div><h2>Initial inventory</h2><p>The entered quantity is treated as the initial on-hand balance only once and is recorded in the stock ledger.</p></div>
                 </div>
 
                 <div class="form-grid">
@@ -36,7 +36,7 @@
                             <option value="">Select a product</option>
                             @foreach ($products as $product)
                                 <option value="{{ $product->id }}" {{ old('product_id') == $product->id ? 'selected' : '' }}>
-                                    {{ $product->name }} ({{ $product->product_code }}) — On hand: {{ number_format($product->current_stock, 2) }} {{ optional($product->unit)->short_name }}
+                                    {{ $product->name }} ({{ $product->product_code }}) — Current on hand: {{ number_format($product->current_stock, 2) }} {{ optional($product->unit)->short_name }}
                                 </option>
                             @endforeach
                         </select>
@@ -57,20 +57,20 @@
                     </div>
 
                     <div class="field">
-                        <label for="quantity">Opening quantity <span class="required-mark">*</span></label>
+                        <label for="quantity">Initial quantity <span class="required-mark">*</span></label>
                         <input class="field-control" id="quantity" type="number" name="quantity" value="{{ old('quantity') }}" min="0.01" step="0.01" required>
                         @error('quantity')<small class="field-error">{{ $message }}</small>@enderror
                     </div>
 
                     <div class="field">
-                        <label for="transaction_date">Opening date <span class="required-mark">*</span></label>
+                        <label for="transaction_date">Initial date <span class="required-mark">*</span></label>
                         <input class="field-control" id="transaction_date" type="date" name="transaction_date" value="{{ old('transaction_date', now()->toDateString()) }}" required>
                         @error('transaction_date')<small class="field-error">{{ $message }}</small>@enderror
                     </div>
 
                     <div class="field field-wide">
                         <label for="remarks">Notes</label>
-                        <textarea class="field-control" id="remarks" name="remarks" rows="3" maxlength="2000" placeholder="Optional notes about this opening balance">{{ old('remarks') }}</textarea>
+                        <textarea class="field-control" id="remarks" name="remarks" rows="3" maxlength="2000" placeholder="Optional notes about this initial stock setup">{{ old('remarks') }}</textarea>
                         @error('remarks')<small class="field-error">{{ $message }}</small>@enderror
                     </div>
                 </div>
@@ -83,11 +83,11 @@
                         <strong>Setup required</strong>
                         <small>
                             @if (!$products->count() && !$locations->count())
-                                Add an active product and an active location before recording opening stock.
+                                Add an active product and an active location before recording initial stock.
                             @elseif (!$products->count())
-                                Add an active product before recording opening stock.
+                                Add an active product before recording initial stock.
                             @else
-                                Add an active location before recording opening stock.
+                                Add an active location before recording initial stock.
                             @endif
                         </small>
                     </div>
@@ -96,7 +96,7 @@
 
             <div class="form-actions">
                 <a class="button button-light" href="{{ route('opening-stock.index') }}">Cancel</a>
-                <button class="button button-primary" type="submit" {{ !$products->count() || !$locations->count() ? 'disabled' : '' }}>Save Opening Stock</button>
+                <button class="button button-primary" type="submit" {{ !$products->count() || !$locations->count() ? 'disabled' : '' }}>Save Initial Stock</button>
             </div>
         </form>
     </section>

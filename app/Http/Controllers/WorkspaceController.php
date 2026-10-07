@@ -399,17 +399,31 @@ class WorkspaceController extends Controller
             'remarks' => 'nullable|string|max:2000',
         ]);
 
-        DB::transaction(function () use ($validated) {
-            $product = Product::lockForUpdate()->findOrFail($validated['product_id']);
+        $product = Product::findOrFail($validated['product_id']);
+        $hasInitialStockSetup = (float) $product->opening_stock > 0
+            || (float) $product->current_stock > 0
+            || DB::table('stock_transactions')
+                ->where('product_id', $product->id)
+                ->whereIn('reference_type', ['opening_stock', 'initial_stock'])
+                ->exists();
+
+        if ($hasInitialStockSetup) {
+            throw ValidationException::withMessages([
+                'product_id' => 'Initial stock has already been set for this product. Use a stock adjustment or stock movement to correct the balance.',
+            ]);
+        }
+
+        DB::transaction(function () use ($validated, $product) {
             $quantity = (float) $validated['quantity'];
-            $storeBalance = DB::table('stock_transactions')
+            $storeBalance = (float) DB::table('stock_transactions')
                 ->where('product_id', $product->id)
                 ->where('store_id', $validated['store_id'])
                 ->sum(DB::raw('quantity_in - quantity_out'));
-            $newBalance = (float) $storeBalance + $quantity;
+            $newBalance = $storeBalance + $quantity;
 
-            $product->increment('opening_stock', $quantity);
-            $product->increment('current_stock', $quantity);
+            $product->opening_stock = $quantity;
+            $product->current_stock = $quantity;
+            $product->save();
 
             DB::table('stock_transactions')->insert([
                 'store_id' => $validated['store_id'],
@@ -422,7 +436,7 @@ class WorkspaceController extends Controller
                 'balance_quantity' => $newBalance,
                 'unit_price' => $product->purchase_price,
                 'transaction_date' => $validated['transaction_date'],
-                'remarks' => $validated['remarks'] ?: 'Opening stock entry',
+                'remarks' => $validated['remarks'] ?: 'Initial stock setup',
                 'created_by' => Auth::id(),
                 'created_at' => now(),
                 'updated_at' => now(),
@@ -431,7 +445,7 @@ class WorkspaceController extends Controller
 
         return redirect()
             ->route('opening-stock.index')
-            ->with('success', 'Opening stock added and inventory balance updated.');
+            ->with('success', 'Initial stock setup saved. Daily opening balances are derived from the previous closing stock.');
     }
 
     public function stockTransfers()

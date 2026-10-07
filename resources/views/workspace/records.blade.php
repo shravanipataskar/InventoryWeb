@@ -11,7 +11,7 @@
             <p>{{ $description }}</p>
         </div>
         @if ($showOpeningStockAction)
-            <a class="button button-primary" href="{{ route('opening-stock.create') }}"><span class="button-plus">+</span> Add Opening Stock</a>
+                    <a class="button button-primary" href="{{ route('opening-stock.create') }}"><span class="button-plus">+</span> Add Initial Stock</a>
         @elseif ($createRoute)
             <a class="button button-primary" href="{{ route($createRoute) }}"><span class="button-plus">+</span> {{ $createLabel }}</a>
         @elseif (request()->routeIs('stock-movement.index'))
@@ -130,7 +130,7 @@
                 <h2>No {{ strtolower($title) }} found</h2>
                 <p>{{ $description }}</p>
                 @if ($showOpeningStockAction)
-                    <a class="button button-primary" href="{{ route('opening-stock.create') }}"><span class="button-plus">+</span> Add Opening Stock</a>
+                    <a class="button button-primary" href="{{ route('opening-stock.create') }}"><span class="button-plus">+</span> Add Initial Stock</a>
                 @elseif ($createRoute)
                     <a class="button button-primary" href="{{ route($createRoute) }}"><span class="button-plus">+</span> {{ $createLabel }}</a>
                 @endif
