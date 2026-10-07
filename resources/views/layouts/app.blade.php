@@ -231,7 +231,7 @@
                     <span>Units</span>
                 </a>
 
-                {{-- Halls --}}
+                {{-- Locations --}}
                 <a
                     class="nav-link {{ request()->routeIs('halls.*', 'racks.*', 'shelves.*') ? 'is-active' : '' }}"
                     href="{{ route('halls.index') }}">
@@ -240,7 +240,7 @@
                         <use href="#icon-layers"></use>
                     </svg>
 
-                    <span>Hall</span>
+                    <span>Location</span>
                 </a>
 
 
@@ -256,12 +256,12 @@
                     <span>Products</span>
                 </a>
 
-                {{-- Companies / Brands --}}
+                {{-- Companies --}}
                 <a
                     class="nav-link {{ request()->routeIs('companies.*') ? 'is-active' : '' }}"
                     href="{{ route('companies.index') }}">
                     <svg><use href="#icon-building"></use></svg>
-                    <span>Companies / Brands</span>
+                    <span>Companies</span>
                 </a>
 
                 {{-- Suppliers --}}
@@ -281,13 +281,7 @@
                     class="nav-link {{ request()->routeIs('customers.*') ? 'is-active' : '' }}"
                     href="{{ route('customers.index') }}">
                     <svg><use href="#icon-users"></use></svg>
-                    <span>Customers / Recipients</span>
-                </a>
-
-                <a class="nav-link {{ request()->routeIs('locations.*') ? 'is-active' : '' }}"
-                   href="{{ route('locations.index') }}">
-                    <svg><use href="#icon-location"></use></svg>
-                    <span>Locations</span>
+                    <span>Customers</span>
                 </a>
 
                 <div class="sidebar-caption sidebar-caption-spaced">INVENTORY</div>

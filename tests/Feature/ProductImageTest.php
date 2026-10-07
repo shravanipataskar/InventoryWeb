@@ -18,6 +18,18 @@ class ProductImageTest extends TestCase
 {
     use DatabaseTransactions;
 
+    public function test_product_create_hides_generated_identifiers_and_uses_location_navigation_label()
+    {
+        $this->actingAs($this->makeUser());
+
+        $this->get(route('products.create'))
+            ->assertOk()
+            ->assertSee('Location')
+            ->assertDontSee('Product code / SKU')
+            ->assertDontSee('Generated automatically')
+            ->assertDontSee('<span>Hall</span>', false);
+    }
+
     public function test_image_is_optional_and_uploaded_product_images_are_stored_and_displayed()
     {
         Storage::fake('public');
