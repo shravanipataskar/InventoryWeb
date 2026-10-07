@@ -264,14 +264,6 @@
                     <span>Companies / Brands</span>
                 </a>
 
-                {{-- Units --}}
-                <a
-                    class="nav-link {{ request()->routeIs('units.*') ? 'is-active' : '' }}"
-                    href="{{ route('units.index') }}">
-                    <svg><use href="#icon-ruler"></use></svg>
-                    <span>Units</span>
-                </a>
-
                 {{-- Suppliers --}}
                 <a
                     class="nav-link {{ request()->routeIs('suppliers.*') ? 'is-active' : '' }}"
