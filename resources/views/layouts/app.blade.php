@@ -55,6 +55,35 @@
             <path d="M21 20v-1.5a4 4 0 0 0-3-3.9"/>
         </symbol>
 
+        <symbol id="icon-building" viewBox="0 0 24 24">
+            <path d="M4 21V5.5L12 2l8 3.5V21"/>
+            <path d="M2 21h20M8 8h1M15 8h1M8 12h1M15 12h1M8 16h1M15 16h1M11 21v-4h2v4"/>
+        </symbol>
+
+        <symbol id="icon-chart" viewBox="0 0 24 24">
+            <path d="M3 20h18M5 17V9h3v8M11 17V4h3v13M17 17v-6h3v6"/>
+        </symbol>
+
+        <symbol id="icon-location" viewBox="0 0 24 24">
+            <path d="M20 10c0 5-8 12-8 12S4 15 4 10a8 8 0 1 1 16 0Z"/>
+            <circle cx="12" cy="10" r="2.5"/>
+        </symbol>
+
+        <symbol id="icon-transfer" viewBox="0 0 24 24">
+            <path d="M4 7h15l-3-3M20 17H5l3 3"/>
+            <path d="M19 7v4M5 17v-4"/>
+        </symbol>
+
+        <symbol id="icon-adjustment" viewBox="0 0 24 24">
+            <path d="M12 5v14M5 12h14"/>
+            <circle cx="12" cy="12" r="9"/>
+        </symbol>
+
+        <symbol id="icon-settings" viewBox="0 0 24 24">
+            <circle cx="12" cy="12" r="3"/>
+            <path d="m19.4 15 .1.1 1.1.9-1.5 2.6-1.3-.5a7.8 7.8 0 0 1-1.6.9l-.2 1.4h-3l-.3-1.4a7.8 7.8 0 0 1-1.6-.9l-1.3.5-1.5-2.6 1.1-.9a7.6 7.6 0 0 1 0-1.9l-1.1-.9 1.5-2.6 1.3.5a7.8 7.8 0 0 1 1.6-.9l.3-1.4h3l.2 1.4a7.8 7.8 0 0 1 1.6.9l1.3-.5 1.5 2.6-1.1.9a7.6 7.6 0 0 1-.1 1.8Z"/>
+        </symbol>
+
         <symbol id="icon-ruler" viewBox="0 0 24 24">
             <path d="m4 16 12-12 4 4L8 20H4v-4Z"/>
             <path d="m13 7 4 4"/>
@@ -161,11 +190,6 @@
             </a>
 
 
-            {{-- Workspace --}}
-            <div class="sidebar-caption">
-                WORKSPACE
-            </div>
-
             <nav class="sidebar-nav" aria-label="Main navigation">
 
                 {{-- Dashboard --}}
@@ -180,6 +204,7 @@
                     <span>Dashboard</span>
                 </a>
 
+                <div class="sidebar-caption">MASTER</div>
 
                 {{-- Categories --}}
                 <a
@@ -231,6 +256,29 @@
                     <span>Products</span>
                 </a>
 
+                {{-- Categories --}}
+                <a
+                    class="nav-link {{ request()->routeIs('categories.*') ? 'is-active' : '' }}"
+                    href="{{ route('categories.index') }}">
+                    <svg><use href="#icon-layers"></use></svg>
+                    <span>Categories</span>
+                </a>
+
+                {{-- Companies / Brands --}}
+                <a
+                    class="nav-link {{ request()->routeIs('companies.*') ? 'is-active' : '' }}"
+                    href="{{ route('companies.index') }}">
+                    <svg><use href="#icon-building"></use></svg>
+                    <span>Companies / Brands</span>
+                </a>
+
+                {{-- Units --}}
+                <a
+                    class="nav-link {{ request()->routeIs('units.*') ? 'is-active' : '' }}"
+                    href="{{ route('units.index') }}">
+                    <svg><use href="#icon-ruler"></use></svg>
+                    <span>Units</span>
+                </a>
 
                 {{-- Suppliers --}}
                 <a
@@ -244,11 +292,27 @@
                     <span>Suppliers</span>
                 </a>
 
+                {{-- Customers --}}
+                <a
+                    class="nav-link {{ request()->routeIs('customers.*') ? 'is-active' : '' }}"
+                    href="{{ route('customers.index') }}">
+                    <svg><use href="#icon-users"></use></svg>
+                    <span>Customers / Recipients</span>
+                </a>
 
-                {{-- Stock Movement --}}
-                <div class="sidebar-caption sidebar-caption-spaced">
-                    STOCK MOVEMENT
-                </div>
+                <a class="nav-link {{ request()->routeIs('locations.*') ? 'is-active' : '' }}"
+                   href="{{ route('locations.index') }}">
+                    <svg><use href="#icon-location"></use></svg>
+                    <span>Locations</span>
+                </a>
+
+                <div class="sidebar-caption sidebar-caption-spaced">INVENTORY</div>
+
+                <a class="nav-link {{ request()->routeIs('opening-stock.*') ? 'is-active' : '' }}"
+                   href="{{ route('opening-stock.index') }}">
+                    <svg><use href="#icon-box"></use></svg>
+                    <span>Opening Stock</span>
+                </a>
 
 
                 {{-- Stock Inward --}}
@@ -274,6 +338,79 @@
                     </svg>
 
                     <span>Stock Outward</span>
+                </a>
+
+                <a class="nav-link {{ request()->routeIs('stock-transfers.*') ? 'is-active' : '' }}"
+                   href="{{ route('stock-transfers.index') }}">
+                    <svg><use href="#icon-transfer"></use></svg>
+                    <span>Stock Transfer</span>
+                </a>
+
+                <a class="nav-link {{ request()->routeIs('stock-adjustments.*') ? 'is-active' : '' }}"
+                   href="{{ route('stock-adjustments.index') }}">
+                    <svg><use href="#icon-adjustment"></use></svg>
+                    <span>Stock Adjustment</span>
+                </a>
+
+                <a
+                    class="nav-link {{ request()->routeIs('current-stock.*') ? 'is-active' : '' }}"
+                    href="{{ route('current-stock.index') }}">
+                    <svg><use href="#icon-box"></use></svg>
+                    <span>Current Stock</span>
+                </a>
+
+                <a class="nav-link {{ request()->routeIs('stock-movement.*') ? 'is-active' : '' }}"
+                   href="{{ route('stock-movement.index') }}">
+                    <svg><use href="#icon-tray-in"></use></svg>
+                    <span>Stock Movement</span>
+                </a>
+
+                <div class="sidebar-caption sidebar-caption-spaced">REPORTS</div>
+
+                <a
+                    class="nav-link {{ request()->routeIs('reports.*') ? 'is-active' : '' }}"
+                    href="{{ route('reports.index') }}">
+                    <svg><use href="#icon-chart"></use></svg>
+                    <span>Inventory Reports</span>
+                </a>
+
+                <a class="nav-link {{ request()->routeIs('purchase-reports.*') ? 'is-active' : '' }}"
+                   href="{{ route('purchase-reports.index') }}">
+                    <svg><use href="#icon-tray-in"></use></svg>
+                    <span>Purchase Reports</span>
+                </a>
+
+                <a class="nav-link {{ request()->routeIs('issue-reports.*') ? 'is-active' : '' }}"
+                   href="{{ route('issue-reports.index') }}">
+                    <svg><use href="#icon-tray-out"></use></svg>
+                    <span>Issue Reports</span>
+                </a>
+
+                <a class="nav-link {{ request()->routeIs('stock-valuation.*') ? 'is-active' : '' }}"
+                   href="{{ route('stock-valuation.index') }}">
+                    <svg><use href="#icon-chart"></use></svg>
+                    <span>Stock Valuation</span>
+                </a>
+
+                <div class="sidebar-caption sidebar-caption-spaced">SETTINGS</div>
+
+                <a class="nav-link {{ request()->routeIs('users.*') ? 'is-active' : '' }}"
+                   href="{{ route('users.index') }}">
+                    <svg><use href="#icon-users"></use></svg>
+                    <span>Users</span>
+                </a>
+
+                <a class="nav-link {{ request()->routeIs('activity-log.*') ? 'is-active' : '' }}"
+                   href="{{ route('activity-log.index') }}">
+                    <svg><use href="#icon-chart"></use></svg>
+                    <span>Activity Log</span>
+                </a>
+
+                <a
+                    class="nav-link {{ request()->routeIs('settings.*', 'general-settings.*') ? 'is-active' : '' }}"
+                    href="{{ route('general-settings.index') }}">
+                    <svg><use href="#icon-settings"></use></svg>
+                    <span>General Settings</span>
                 </a>
 
             </nav>

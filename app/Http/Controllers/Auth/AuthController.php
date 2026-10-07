@@ -3,11 +3,14 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Support\ActivityLogger;
 use App\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Password;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 
 class AuthController extends Controller
@@ -122,11 +125,25 @@ class AuthController extends Controller
                 );
         }
 
+        if (Schema::hasColumn('users', 'is_active') && !$user->is_active) {
+            return back()
+                ->withErrors([
+                    'email' => 'This account is inactive. Contact your system administrator.',
+                ])
+                ->withInput($request->only('email', 'remember'));
+        }
+
         $remember = $request->boolean('remember');
 
         Auth::login($user, $remember);
 
         $request->session()->regenerate();
+        if (Schema::hasColumn('users', 'last_login_at')) {
+            DB::table('users')
+                ->where('id', $user->id)
+                ->update(['last_login_at' => now(), 'updated_at' => now()]);
+        }
+        ActivityLogger::log('Signed in', 'Account', 'User signed in.', $user);
 
         return redirect()
             ->intended(
@@ -191,16 +208,17 @@ class AuthController extends Controller
                 $data['password']
             ),
         ]);
-
-        Auth::login($user);
-        $request->session()->regenerate();
+        ActivityLogger::log('Registered', 'Account', 'A new account was registered.', $user);
 
         return redirect()
-            ->route('dashboard')
+            ->route('login')
             ->with(
-                'success',
-                'Your account was created successfully and you are now signed in.'
-            );
+                'status',
+                'Registration successful. Please sign in with your new account.'
+            )
+            ->withInput([
+                'email' => $data['email'],
+            ]);
     }
 
 
@@ -485,6 +503,7 @@ class AuthController extends Controller
     public function logout(
         Request $request
     ) {
+        ActivityLogger::log('Signed out', 'Account', 'User signed out.');
         Auth::logout();
 
         $request->session()->invalidate();
@@ -492,7 +511,7 @@ class AuthController extends Controller
         $request->session()->regenerateToken();
 
         return redirect()
-            ->route('login')
+            ->route('landing')
             ->with(
                 'status',
                 'You have been signed out successfully.'

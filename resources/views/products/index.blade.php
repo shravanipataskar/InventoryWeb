@@ -22,6 +22,7 @@
         </div>
         <div class="table-wrap">
             <table class="data-table listing-table product-list-table">
+                <thead><tr><th>#</th><th>PRODUCT</th><th>HALL</th><th>RACK</th><th>SHELF</th><th>COMPANY</th><th>CATEGORY</th><th>UNIT</th><th>PURCHASE</th><th>SELLING</th><th>CURRENT</th><th>MINIMUM</th><th>STOCK STATUS</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
                 <thead><tr><th>#</th><th>IMAGE</th><th>PRODUCT</th><th>HALL</th><th>RACK</th><th>SHELL</th><th>CATEGORY</th><th>UNIT</th><th>PURCHASE</th><th>SELLING</th><th>CURRENT</th><th>MINIMUM</th><th>STOCK STATUS</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
                 <tbody>
                 @forelse ($products as $product)
@@ -31,6 +32,11 @@
                     @endphp
                     <tr data-table-row data-category="{{ $product->category_id }}" data-unit="{{ $product->unit_id }}" data-stock-status="{{ $stockStatus }}">
                         <td class="muted-cell">{{ $loop->iteration }}</td>
+                        <td><div class="product-cell">@if ($product->image)<img class="product-avatar product-avatar-image" src="{{ asset('storage/' . $product->image) }}" alt="">@else<span class="product-avatar">{{ strtoupper(substr($product->name, 0, 1)) }}</span>@endif<span><strong>{{ $product->name }}</strong><small>{{ $product->product_code }}@if ($product->barcode) · {{ $product->barcode }}@endif</small></span></div></td>
+                        <td><span class="unit-code">{{ $product->hall }}</span></td>
+                        <td><span class="unit-code">{{ $product->rack }}</span></td>
+                        <td><span class="unit-code">{{ $product->shell }}</span></td>
+                        <td>{{ optional($product->company)->name ?: '—' }}</td>
                         <td>
                             @if ($product->image && Storage::disk('public')->exists($product->image))
                                 <img class="product-thumbnail" src="{{ asset('storage/' . $product->image) }}" alt="{{ $product->name }}">
@@ -62,6 +68,7 @@
                         </td>
                     </tr>
                 @empty
+                    <tr><td colspan="15">@include('components.empty-state', ['icon' => 'icon-box', 'title' => 'No products yet', 'message' => 'Add your first product to start managing inventory.'])</td></tr>
                     <tr><td colspan="15">@include('components.empty-state', ['icon' => 'icon-box', 'title' => 'No products yet', 'message' => 'Add your first product to start managing inventory.'])</td></tr>
                 @endforelse
                 </tbody>

@@ -28,4 +28,9 @@ class Supplier extends Model
         'opening_balance',
         'is_active',
     ];
+
+    public function stockInwards()
+    {
+        return $this->hasMany(StockInward::class);
+    }
 }

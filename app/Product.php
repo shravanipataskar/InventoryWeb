@@ -13,11 +13,15 @@ class Product extends Model
         'rack_id',
         'shelf_id',
         'category_id',
+        'company_id',
         'unit_id',
         'barcode',
+        'image',
         'purchase_price',
         'selling_price',
         'minimum_stock',
+        'reorder_level',
+        'reorder_quantity',
         'description',
         'image',
         'is_active'
@@ -28,23 +32,23 @@ class Product extends Model
         return $this->belongsTo(Category::class);
     }
 
+    public function company()
+    {
+        return $this->belongsTo(Company::class);
+    }
+
     public function unit()
     {
         return $this->belongsTo(Unit::class);
     }
 
-    public function hall()
+    public function stockInwards()
     {
-        return $this->belongsTo(Hall::class);
+        return $this->hasMany(StockInward::class);
     }
 
-    public function rack()
+    public function stockOutwards()
     {
-        return $this->belongsTo(Rack::class);
-    }
-
-    public function shelf()
-    {
-        return $this->belongsTo(Shelf::class);
+        return $this->hasMany(StockOutward::class);
     }
 }

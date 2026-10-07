@@ -3,6 +3,19 @@ require('./bootstrap');
 document.addEventListener('DOMContentLoaded', function () {
     var openButton = document.querySelector('[data-sidebar-open]');
     var closeButtons = document.querySelectorAll('[data-sidebar-close]');
+    var sidebarNav = document.querySelector('.sidebar-nav');
+    var sidebarScrollKey = 'inventory-sidebar-scroll';
+
+    if (sidebarNav) {
+        var savedScroll = sessionStorage.getItem(sidebarScrollKey);
+        if (savedScroll !== null) {
+            sidebarNav.scrollTop = parseInt(savedScroll, 10) || 0;
+        }
+
+        window.addEventListener('pagehide', function () {
+            sessionStorage.setItem(sidebarScrollKey, sidebarNav.scrollTop);
+        });
+    }
 
     function closeSidebar() {
         document.body.classList.remove('sidebar-open');
@@ -29,6 +42,71 @@ document.addEventListener('DOMContentLoaded', function () {
                 toast.remove();
             }
         });
+    });
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-product-image-input]'), function (input) {
+        var preview = document.querySelector('[data-product-image-preview]');
+        var previewImage = preview ? preview.querySelector('[data-product-image]') : null;
+        var clearButton = preview ? preview.querySelector('[data-clear-product-image]') : null;
+        var removeCheckbox = document.querySelector('[data-remove-product-image]');
+        var currentImage = document.querySelector('[data-current-product-image]');
+        var previewUrl = null;
+
+        function clearPreview() {
+            input.value = '';
+            if (previewUrl) {
+                URL.revokeObjectURL(previewUrl);
+                previewUrl = null;
+            }
+            if (preview) {
+                preview.hidden = true;
+            }
+            if (previewImage) {
+                previewImage.removeAttribute('src');
+            }
+        }
+
+        input.addEventListener('change', function () {
+            var file = input.files && input.files[0];
+
+            if (!file) {
+                clearPreview();
+                return;
+            }
+
+            if (previewUrl) {
+                URL.revokeObjectURL(previewUrl);
+            }
+            previewUrl = URL.createObjectURL(file);
+            previewImage.src = previewUrl;
+            preview.hidden = false;
+
+            if (removeCheckbox) {
+                removeCheckbox.checked = false;
+            }
+            if (currentImage) {
+                currentImage.hidden = true;
+            }
+        });
+
+        if (clearButton) {
+            clearButton.addEventListener('click', function () {
+                clearPreview();
+                if (currentImage) {
+                    currentImage.hidden = !!(removeCheckbox && removeCheckbox.checked);
+                }
+            });
+        }
+
+        if (removeCheckbox && currentImage) {
+            removeCheckbox.addEventListener('change', function () {
+                currentImage.hidden = removeCheckbox.checked;
+                if (removeCheckbox.checked) {
+                    clearPreview();
+                }
+            });
+            currentImage.hidden = removeCheckbox.checked;
+        }
     });
 
     Array.prototype.forEach.call(document.querySelectorAll('[data-enhanced-table]'), function (tableContainer) {

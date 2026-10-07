@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Auth\AuthController;
+use App\Http\Controllers\WorkspaceController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -127,8 +128,67 @@ Route::middleware('auth')->group(function () {
     Route::get('/dashboard', 'DashboardController@index')
         ->name('dashboard');
 
+    Route::get('/customers', [WorkspaceController::class, 'customers'])
+        ->name('customers.index');
+    Route::get('/current-stock', [WorkspaceController::class, 'currentStock'])
+        ->name('current-stock.index');
+    Route::get('/reports', [WorkspaceController::class, 'reports'])
+        ->name('reports.index');
+    Route::get('/reports/download', [WorkspaceController::class, 'downloadReports'])
+        ->name('reports.download');
+    Route::get('/settings', [WorkspaceController::class, 'settings'])
+        ->name('settings.index');
+    Route::get('/general-settings', [WorkspaceController::class, 'generalSettings'])
+        ->name('general-settings.index');
+    Route::put('/general-settings', [WorkspaceController::class, 'updateGeneralSettings'])
+        ->name('general-settings.update');
+    Route::get('/locations', [WorkspaceController::class, 'locations'])
+        ->name('locations.index');
+    Route::get('/locations/create', [WorkspaceController::class, 'createLocation'])
+        ->name('locations.create');
+    Route::post('/locations', [WorkspaceController::class, 'storeLocation'])
+        ->name('locations.store');
+    Route::get('/opening-stock', [WorkspaceController::class, 'openingStock'])
+        ->name('opening-stock.index');
+    Route::get('/opening-stock/create', [WorkspaceController::class, 'createOpeningStock'])
+        ->name('opening-stock.create');
+    Route::post('/opening-stock', [WorkspaceController::class, 'storeOpeningStock'])
+        ->name('opening-stock.store');
+    Route::get('/stock-transfers/create', [WorkspaceController::class, 'createStockTransfer'])
+        ->name('stock-transfers.create');
+    Route::post('/stock-transfers', [WorkspaceController::class, 'storeStockTransfer'])
+        ->name('stock-transfers.store');
+    Route::get('/stock-transfers', [WorkspaceController::class, 'stockTransfers'])
+        ->name('stock-transfers.index');
+    Route::get('/stock-adjustments/create', [WorkspaceController::class, 'createStockAdjustment'])
+        ->name('stock-adjustments.create');
+    Route::post('/stock-adjustments', [WorkspaceController::class, 'storeStockAdjustment'])
+        ->name('stock-adjustments.store');
+    Route::get('/stock-adjustments', [WorkspaceController::class, 'stockAdjustments'])
+        ->name('stock-adjustments.index');
+    Route::get('/stock-movement', [WorkspaceController::class, 'stockMovement'])
+        ->name('stock-movement.index');
+    Route::get('/purchase-reports', [WorkspaceController::class, 'purchaseReports'])
+        ->name('purchase-reports.index');
+    Route::get('/issue-reports', [WorkspaceController::class, 'issueReports'])
+        ->name('issue-reports.index');
+    Route::get('/stock-valuation', [WorkspaceController::class, 'stockValuation'])
+        ->name('stock-valuation.index');
+    Route::get('/users', [WorkspaceController::class, 'users'])
+        ->name('users.index');
+    Route::get('/activity-log', [WorkspaceController::class, 'activityLog'])
+        ->name('activity-log.index');
+
     Route::patch('categories/{category}/status', 'CategoryController@status')
         ->name('categories.status');
+    Route::patch('companies/{company}/status', 'CompanyController@status')
+        ->name('companies.status');
+    Route::post('companies/{company}/documents', 'CompanyController@storeDocument')
+        ->name('companies.documents.store');
+    Route::get('companies/{company}/documents/{document}', 'CompanyController@downloadDocument')
+        ->name('companies.documents.download');
+    Route::delete('companies/{company}/documents/{document}', 'CompanyController@destroyDocument')
+        ->name('companies.documents.destroy');
     Route::patch('units/{unit}/status', 'UnitController@status')
         ->name('units.status');
     Route::patch('suppliers/{supplier}/status', 'SupplierController@status')
@@ -182,6 +242,13 @@ Route::middleware('auth')->group(function () {
         'categories',
         'CategoryController'
     );
+
+    Route::resource(
+        'companies',
+        'CompanyController'
+    )->except(['destroy']);
+    Route::delete('companies/{company}', 'CompanyController@destroy')
+        ->name('companies.destroy');
 
 
     /*

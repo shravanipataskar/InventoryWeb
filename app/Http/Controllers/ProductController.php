@@ -4,10 +4,10 @@ namespace App\Http\Controllers;
 
 use App\Product;
 use App\Category;
-use App\Hall;
-use App\Rack;
-use App\Shelf;
+use App\Company;
 use App\Unit;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
@@ -27,7 +27,14 @@ class ProductController extends Controller
             $query->where('category_id', $request->input('category_id'));
         }
 
-        $products = $query->orderBy('id', 'desc')->get();
+        if ($request->filled('company_id')) {
+            $request->validate([
+                'company_id' => 'integer|exists:companies,id',
+            ]);
+            $query->where('company_id', $request->input('company_id'));
+        }
+
+        $products = $query->with('company')->orderBy('id', 'desc')->get();
         $units = Unit::where('is_active', 1)
             ->orderBy('name')
             ->get();
@@ -44,65 +51,54 @@ class ProductController extends Controller
         $units = Unit::where('is_active', 1)
             ->orderBy('name')
             ->get();
-
-        $halls = Hall::where('is_active', 1)
-            ->orderBy('name')
-            ->get();
-
-        return view('products.create', compact('categories', 'units', 'halls'));
+        $companies = Company::where('is_active', 1)->orderBy('name')->get();
+        return view('products.create', compact('categories', 'units', 'companies'));
     }
 
     public function store(Request $request)
     {
-        $validated = $request->validate([
-            'product_code' => 'required|string|max:100|unique:products,product_code',
+        $request->validate([
             'name' => 'required|string|max:255',
             'hall_id' => 'required|integer|exists:halls,id',
             'rack_id' => 'nullable|integer|exists:racks,id',
             'shelf_id' => 'nullable|integer|exists:shelves,id',
             'category_id' => 'required|exists:categories,id',
+            'company_id' => 'nullable|exists:companies,id',
             'unit_id' => 'required|exists:units,id',
-            'barcode' => 'nullable|string|max:100|unique:products,barcode',
-            'purchase_price' => 'required|numeric|min:0',
-            'selling_price' => 'required|numeric|min:0',
             'minimum_stock' => 'required|numeric|min:0',
+            'reorder_level' => 'required|numeric|min:0',
+            'reorder_quantity' => 'required|numeric|min:0',
             'description' => 'nullable|string',
-            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
         ]);
 
-        $this->validateLocation($validated);
-
-        $imagePath = $request->hasFile('image')
-            ? $request->file('image')->store('products', 'public')
-            : null;
-        if ($request->hasFile('image') && !$imagePath) {
-            throw new \RuntimeException('The product image could not be stored.');
-        }
-
-        try {
-            Product::create([
-                'product_code' => $request->product_code,
-                'name' => $request->name,
-                'hall_id' => $validated['hall_id'],
-                'rack_id' => !empty($validated['rack_id']) ? $validated['rack_id'] : null,
-                'shelf_id' => !empty($validated['shelf_id']) ? $validated['shelf_id'] : null,
-                'category_id' => $request->category_id,
-                'unit_id' => $request->unit_id,
-                'barcode' => $request->barcode,
-                'purchase_price' => $request->purchase_price,
-                'selling_price' => $request->selling_price,
-                'minimum_stock' => $request->minimum_stock,
-                'description' => $request->description,
-                'image' => $imagePath,
-                'is_active' => 1,
-            ]);
-        } catch (\Throwable $exception) {
-            if ($this->isProductImagePath($imagePath)) {
-                Storage::disk('public')->delete($imagePath);
+        $productCode = $this->generateProductCode();
+        $barcode = $this->generateBarcode();
+        $imagePath = null;
+        if ($request->hasFile('image')) {
+            $imagePath = $request->file('image')->store('products', 'public');
+            if (!$imagePath) {
+                throw new \RuntimeException('The product image could not be saved.');
             }
-
-            throw $exception;
         }
+
+        Product::create([
+            'product_code' => $productCode,
+            'name' => $request->name,
+            'hall' => $request->hall,
+            'rack' => $request->rack,
+            'shell' => $request->shell,
+            'category_id' => $request->category_id,
+            'company_id' => $request->input('company_id') ?: null,
+            'unit_id' => $request->unit_id,
+            'barcode' => $barcode,
+            'image' => $imagePath,
+            'minimum_stock' => $request->minimum_stock,
+            'reorder_level' => $request->reorder_level,
+            'reorder_quantity' => $request->reorder_quantity,
+            'description' => $request->description,
+            'is_active' => 1,
+        ]);
 
         return redirect()
             ->route('products.index')
@@ -120,19 +116,16 @@ class ProductController extends Controller
         $units = Unit::where('is_active', 1)
             ->orderBy('name')
             ->get();
-
-        $halls = Hall::where('is_active', 1)
+        $companies = Company::where('is_active', 1)
+            ->orWhere('id', $product->company_id)
             ->orderBy('name')
             ->get();
-        if ($product->hall && !$halls->contains('id', $product->hall->id)) {
-            $halls->push($product->hall);
-        }
 
         return view('products.edit', compact(
             'product',
             'categories',
             'units',
-            'halls'
+            'companies'
         ));
     }
 
@@ -140,58 +133,52 @@ class ProductController extends Controller
     {
         $product = Product::findOrFail($id);
 
-        $validated = $request->validate([
-            'product_code' => 'required|string|max:100|unique:products,product_code,' . $id,
+        $request->validate([
             'name' => 'required|string|max:255',
             'hall_id' => 'required|integer|exists:halls,id',
             'rack_id' => 'nullable|integer|exists:racks,id',
             'shelf_id' => 'nullable|integer|exists:shelves,id',
             'category_id' => 'required|exists:categories,id',
+            'company_id' => 'nullable|exists:companies,id',
             'unit_id' => 'required|exists:units,id',
-            'barcode' => 'nullable|string|max:100|unique:products,barcode,' . $id,
-            'purchase_price' => 'required|numeric|min:0',
-            'selling_price' => 'required|numeric|min:0',
             'minimum_stock' => 'required|numeric|min:0',
+            'reorder_level' => 'required|numeric|min:0',
+            'reorder_quantity' => 'required|numeric|min:0',
             'description' => 'nullable|string',
-            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:2048',
+            'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
+            'remove_image' => 'nullable|boolean',
         ]);
 
-        $this->validateLocation($validated, $product);
-
-        $oldImagePath = $product->image;
-        $newImagePath = $request->hasFile('image')
+        $oldImage = $product->image;
+        $newImage = $request->hasFile('image')
             ? $request->file('image')->store('products', 'public')
             : null;
-        if ($request->hasFile('image') && !$newImagePath) {
-            throw new \RuntimeException('The product image could not be stored.');
+        if ($request->hasFile('image') && !$newImage) {
+            throw new \RuntimeException('The product image could not be saved.');
         }
 
-        try {
-            $product->update([
-                'product_code' => $request->product_code,
-                'name' => $request->name,
-                'hall_id' => $validated['hall_id'],
-                'rack_id' => !empty($validated['rack_id']) ? $validated['rack_id'] : null,
-                'shelf_id' => !empty($validated['shelf_id']) ? $validated['shelf_id'] : null,
-                'category_id' => $request->category_id,
-                'unit_id' => $request->unit_id,
-                'barcode' => $request->barcode,
-                'purchase_price' => $request->purchase_price,
-                'selling_price' => $request->selling_price,
-                'minimum_stock' => $request->minimum_stock,
-                'description' => $request->description,
-                'image' => $newImagePath ?: $oldImagePath,
-            ]);
-        } catch (\Throwable $exception) {
-            if ($this->isProductImagePath($newImagePath)) {
-                Storage::disk('public')->delete($newImagePath);
+        $product->update([
+            'name' => $request->name,
+            'hall' => $request->hall,
+            'rack' => $request->rack,
+            'shell' => $request->shell,
+            'category_id' => $request->category_id,
+            'company_id' => $request->input('company_id') ?: null,
+            'unit_id' => $request->unit_id,
+            'image' => $newImage ?: ($request->boolean('remove_image') ? null : $oldImage),
+            'minimum_stock' => $request->minimum_stock,
+            'reorder_level' => $request->reorder_level,
+            'reorder_quantity' => $request->reorder_quantity,
+            'description' => $request->description,
+        ]);
+
+        if ($oldImage && ($newImage || $request->boolean('remove_image'))) {
+            if (!Storage::disk('public')->delete($oldImage)) {
+                \Illuminate\Support\Facades\Log::warning('Unable to remove replaced product image.', [
+                    'product_id' => $product->id,
+                    'image_path' => $oldImage,
+                ]);
             }
-
-            throw $exception;
-        }
-
-        if ($newImagePath && $oldImagePath !== $newImagePath && $this->isProductImagePath($oldImagePath)) {
-            Storage::disk('public')->delete($oldImagePath);
         }
 
         return redirect()
@@ -228,69 +215,30 @@ class ProductController extends Controller
             ->with('success', 'Product deactivated successfully. The record is retained.');
     }
 
-    private function validateLocation(array $location, Product $product = null)
+    private function generateProductCode()
     {
-        $hall = Hall::findOrFail($location['hall_id']);
-        $currentHallId = $product ? $product->hall_id : null;
-        $currentRackId = $product ? $product->rack_id : null;
-        $currentShelfId = $product ? $product->shelf_id : null;
-        $rackId = empty($location['rack_id']) ? null : $location['rack_id'];
-        $shelfId = empty($location['shelf_id']) ? null : $location['shelf_id'];
+        do {
+            $code = 'PRD-' . now()->format('ymd') . '-' . Str::upper(Str::random(6));
+        } while (Product::where('product_code', $code)->exists());
 
-        if (!$hall->is_active && (string) $currentHallId !== (string) $hall->id) {
-            throw ValidationException::withMessages([
-                'hall_id' => 'Only active Halls can be selected for a new product location.',
-            ]);
-        }
-
-        if ($rackId === null && $shelfId !== null) {
-            throw ValidationException::withMessages([
-                'shelf_id' => 'Select a Rack before selecting a Shell.',
-            ]);
-        }
-
-        $rack = null;
-        if ($rackId !== null) {
-            $rack = Rack::findOrFail($rackId);
-
-            if ((string) $rack->hall_id !== (string) $hall->id) {
-                throw ValidationException::withMessages([
-                    'rack_id' => 'The selected Rack does not belong to the selected Hall.',
-                ]);
-            }
-
-            $preservingInactiveRack = (string) $currentRackId === (string) $rack->id;
-            if ((!$rack->is_active || !$hall->is_active) && !$preservingInactiveRack) {
-                throw ValidationException::withMessages([
-                    'rack_id' => 'Only active Racks under an active Hall can be selected.',
-                ]);
-            }
-        }
-
-        if ($shelfId !== null) {
-            $shelf = Shelf::findOrFail($shelfId);
-
-            if ((string) $shelf->rack_id !== (string) $rack->id) {
-                throw ValidationException::withMessages([
-                    'shelf_id' => 'The selected Shell does not belong to the selected Rack.',
-                ]);
-            }
-
-            $preservingInactiveShelf = (string) $currentShelfId === (string) $shelf->id;
-            if ((!$shelf->is_active || !$rack->is_active || !$hall->is_active)
-                && !$preservingInactiveShelf) {
-                throw ValidationException::withMessages([
-                    'shelf_id' => 'Only active Shells under an active Rack and Hall can be selected.',
-                ]);
-            }
-        }
+        return $code;
     }
 
-    private function isProductImagePath($path)
+    private function generateBarcode()
     {
-        return is_string($path)
-            && strpos($path, 'products/') === 0
-            && strpos($path, '..') === false
-            && strpos($path, '\\') === false;
+        do {
+            $digits = '';
+            for ($index = 0; $index < 12; $index++) {
+                $digits .= (string) random_int(0, 9);
+            }
+
+            $sum = 0;
+            for ($index = 0; $index < 12; $index++) {
+                $sum += ((int) $digits[$index]) * ($index % 2 === 0 ? 1 : 3);
+            }
+            $barcode = $digits . ((10 - ($sum % 10)) % 10);
+        } while (Product::where('barcode', $barcode)->exists());
+
+        return $barcode;
     }
 }
