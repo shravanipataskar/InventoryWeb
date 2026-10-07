@@ -25,7 +25,7 @@
         </div>
         <div class="table-wrap">
             <table class="data-table listing-table">
-                <thead><tr><th>#</th><th>DATE</th><th>PRODUCT</th><th>SUPPLIER</th><th>INVOICE</th><th>QUANTITY</th><th>PURCHASE PRICE</th><th>TOTAL AMOUNT</th><th>ACTIONS</th></tr></thead>
+                <thead><tr><th>#</th><th>DATE</th><th>PRODUCT</th><th>SUPPLIER</th><th>INVOICE</th><th>QUANTITY</th><th>PURCHASE PRICE</th><th>SUBTOTAL</th><th>SGST</th><th>CGST</th><th>TAX TOTAL</th><th>GRAND TOTAL</th><th>ACTIONS</th></tr></thead>
                 <tbody>
                 @forelse ($stockInwards as $stock)
                     <tr data-table-row data-date="{{ \Carbon\Carbon::parse($stock->inward_date)->format('Y-m-d') }}">
@@ -36,7 +36,11 @@
                         <td><span class="unit-code">{{ $stock->invoice_number ?: '—' }}</span></td>
                         <td class="number-cell quantity-in">+{{ number_format($stock->quantity, 2) }}</td>
                         <td class="currency-cell">₹{{ number_format($stock->purchase_price, 2) }}</td>
-                        <td><strong class="total-cell">₹{{ number_format($stock->total_amount, 2) }}</strong></td>
+                        <td class="currency-cell">₹{{ number_format($stock->subtotal, 2) }}</td>
+                        <td class="currency-cell">{{ number_format($stock->sgst_rate, 2) }}% / ₹{{ number_format($stock->sgst_amount, 2) }}</td>
+                        <td class="currency-cell">{{ number_format($stock->cgst_rate, 2) }}% / ₹{{ number_format($stock->cgst_amount, 2) }}</td>
+                        <td class="currency-cell">₹{{ number_format($stock->tax_total, 2) }}</td>
+                        <td><strong class="total-cell">₹{{ number_format($stock->grand_total, 2) }}</strong></td>
                         <td class="action-cell">
                             <form class="status-action-form" action="{{ route('stock-inwards.status', $stock->id) }}" method="POST">
                                 @csrf
@@ -48,7 +52,7 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="9">@include('components.empty-state', ['icon' => 'icon-tray-in', 'title' => 'No ' . $listingStatus . ' inward records', 'message' => $listingStatus === 'active' ? 'Stock received from suppliers will appear here.' : 'Deactivated stock receipts will appear here.'])</td></tr>
+                    <tr><td colspan="13">@include('components.empty-state', ['icon' => 'icon-tray-in', 'title' => 'No ' . $listingStatus . ' inward records', 'message' => $listingStatus === 'active' ? 'Stock received from suppliers will appear here.' : 'Deactivated stock receipts will appear here.'])</td></tr>
                 @endforelse
                 </tbody>
             </table>

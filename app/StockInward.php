@@ -14,6 +14,13 @@ class StockInward extends Model
         'quantity',
         'purchase_price',
         'total_amount',
+        'sgst_rate',
+        'cgst_rate',
+        'sgst_amount',
+        'cgst_amount',
+        'tax_total',
+        'subtotal',
+        'grand_total',
         'remarks',
         'is_active',
     ];
