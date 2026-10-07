@@ -5,10 +5,12 @@ namespace App\Http\Controllers;
 use App\Product;
 use App\Category;
 use App\Company;
+use App\Hall;
 use App\Unit;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class ProductController extends Controller
@@ -47,11 +49,15 @@ class ProductController extends Controller
             ->orderBy('name')
             ->get();
 
+        $halls = Hall::where('is_active', 1)
+            ->orderBy('name')
+            ->get();
+
         $units = Unit::where('is_active', 1)
             ->orderBy('name')
             ->get();
         $companies = Company::where('is_active', 1)->orderBy('name')->get();
-        return view('products.create', compact('categories', 'units', 'companies'));
+        return view('products.create', compact('categories', 'halls', 'units', 'companies'));
     }
 
     public function store(Request $request)
@@ -59,8 +65,8 @@ class ProductController extends Controller
         $request->validate([
             'name' => 'required|string|max:255',
             'hall_id' => 'required|integer|exists:halls,id',
-            'rack_id' => 'nullable|integer|exists:racks,id',
-            'shelf_id' => 'nullable|integer|exists:shelves,id',
+            'rack_id' => ['nullable', 'integer', Rule::exists('racks', 'id')->where('hall_id', $request->input('hall_id'))],
+            'shelf_id' => ['nullable', 'integer', Rule::exists('shelves', 'id')->where('rack_id', $request->input('rack_id'))],
             'category_id' => 'required|exists:categories,id',
             'company_id' => 'nullable|exists:companies,id',
             'unit_id' => 'required|exists:units,id',
@@ -84,9 +90,9 @@ class ProductController extends Controller
         Product::create([
             'product_code' => $productCode,
             'name' => $request->name,
-            'hall' => $request->hall,
-            'rack' => $request->rack,
-            'shell' => $request->shell,
+            'hall_id' => $request->hall_id,
+            'rack_id' => $request->input('rack_id') ?: null,
+            'shelf_id' => $request->input('shelf_id') ?: null,
             'category_id' => $request->category_id,
             'company_id' => $request->input('company_id') ?: null,
             'unit_id' => $request->unit_id,
@@ -112,6 +118,11 @@ class ProductController extends Controller
             ->orderBy('name')
             ->get();
 
+        $halls = Hall::where('is_active', 1)
+            ->orWhere('id', optional($product->hall)->id)
+            ->orderBy('name')
+            ->get();
+
         $units = Unit::where('is_active', 1)
             ->orderBy('name')
             ->get();
@@ -123,6 +134,7 @@ class ProductController extends Controller
         return view('products.edit', compact(
             'product',
             'categories',
+            'halls',
             'units',
             'companies'
         ));
@@ -135,8 +147,8 @@ class ProductController extends Controller
         $request->validate([
             'name' => 'required|string|max:255',
             'hall_id' => 'required|integer|exists:halls,id',
-            'rack_id' => 'nullable|integer|exists:racks,id',
-            'shelf_id' => 'nullable|integer|exists:shelves,id',
+            'rack_id' => ['nullable', 'integer', Rule::exists('racks', 'id')->where('hall_id', $request->input('hall_id'))],
+            'shelf_id' => ['nullable', 'integer', Rule::exists('shelves', 'id')->where('rack_id', $request->input('rack_id'))],
             'category_id' => 'required|exists:categories,id',
             'company_id' => 'nullable|exists:companies,id',
             'unit_id' => 'required|exists:units,id',
@@ -158,9 +170,9 @@ class ProductController extends Controller
 
         $product->update([
             'name' => $request->name,
-            'hall' => $request->hall,
-            'rack' => $request->rack,
-            'shell' => $request->shell,
+            'hall_id' => $request->hall_id,
+            'rack_id' => $request->input('rack_id') ?: null,
+            'shelf_id' => $request->input('shelf_id') ?: null,
             'category_id' => $request->category_id,
             'company_id' => $request->input('company_id') ?: null,
             'unit_id' => $request->unit_id,

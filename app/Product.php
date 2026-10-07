@@ -27,6 +27,21 @@ class Product extends Model
         'is_active'
     ];
 
+    public function hall()
+    {
+        return $this->belongsTo(Hall::class);
+    }
+
+    public function rack()
+    {
+        return $this->belongsTo(Rack::class);
+    }
+
+    public function shelf()
+    {
+        return $this->belongsTo(Shelf::class);
+    }
+
     public function category()
     {
         return $this->belongsTo(Category::class);

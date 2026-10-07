@@ -350,7 +350,7 @@ document.addEventListener('DOMContentLoaded', function () {
         function loadShelves(rackId, selectedShelfId, preserveCurrent) {
             shelfRequest += 1;
             var requestId = shelfRequest;
-            resetSelect(shelfSelect, rackId ? 'Loading Shells...' : 'Select Rack First');
+            resetSelect(shelfSelect, rackId ? 'Loading Shelves...' : 'Select Rack First');
             clearError();
 
             if (!rackId) {
@@ -362,7 +362,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 if (requestId === shelfRequest) {
                     fillSelect(
                         shelfSelect,
-                        'Select Shell (Optional)',
+                        'Select Shelf (Optional)',
                         options,
                         selectedShelfId,
                         preserveCurrent ? preserveShelfId : '',
@@ -371,7 +371,7 @@ document.addEventListener('DOMContentLoaded', function () {
                 }
             }).catch(function () {
                 if (requestId === shelfRequest) {
-                    showError('Unable to load Shells. Please try again.');
+                    showError('Unable to load Shelves. Please try again.');
                 }
             });
         }
