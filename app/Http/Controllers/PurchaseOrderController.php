@@ -23,7 +23,7 @@ class PurchaseOrderController extends Controller
         return view('purchase_orders.index', compact('purchaseOrders'));
     }
 
-    public function create()
+    public function create(Request $request)
     {
         $suppliers = Supplier::where('is_active', true)->orderBy('name')->get();
         $categories = Category::orderBy('name')->get();
@@ -32,8 +32,27 @@ class PurchaseOrderController extends Controller
             ->orderBy('name')
             ->get();
         $stores = DB::table('stores')->where('is_active', true)->orderBy('name')->get();
+        $prefillProduct = $products->firstWhere('id', (int) $request->query('product_id'));
+        $requestedQuantity = filter_var($request->query('ordered_quantity'), FILTER_VALIDATE_FLOAT);
+        $prefillItems = $prefillProduct ? [[
+            'product_id' => $prefillProduct->id,
+            'category_id' => $prefillProduct->category_id,
+            'ordered_quantity' => $requestedQuantity !== false && $requestedQuantity > 0
+                ? $requestedQuantity
+                : ($prefillProduct->reorder_quantity > 0 ? $prefillProduct->reorder_quantity : 1),
+            'purchase_rate' => $prefillProduct->purchase_price,
+        ]] : null;
+        $prefillStore = $stores->firstWhere('id', (int) $request->query('store_id'));
+        $prefillStoreId = $prefillStore ? $prefillStore->id : null;
 
-        return view('purchase_orders.create', compact('suppliers', 'categories', 'products', 'stores'));
+        return view('purchase_orders.create', compact(
+            'suppliers',
+            'categories',
+            'products',
+            'stores',
+            'prefillItems',
+            'prefillStoreId'
+        ));
     }
 
     public function store(Request $request)

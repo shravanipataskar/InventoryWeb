@@ -17,7 +17,7 @@
             <div class="form-section">
                 <div class="form-grid">
                     <div class="field"><label for="supplier_id">Supplier <span class="required-mark">*</span></label><select class="field-control" id="supplier_id" name="supplier_id" required><option value="">Select supplier</option>@foreach ($suppliers as $supplier)<option value="{{ $supplier->id }}" {{ old('supplier_id') == $supplier->id ? 'selected' : '' }}>{{ $supplier->name }}</option>@endforeach</select></div>
-                    <div class="field"><label for="store_id">Order location <span class="required-mark">*</span></label><select class="field-control" id="store_id" name="store_id" required><option value="">Select location</option>@foreach ($stores as $store)<option value="{{ $store->id }}" {{ old('store_id') == $store->id ? 'selected' : '' }}>{{ $store->name }}</option>@endforeach</select></div>
+                    <div class="field"><label for="store_id">Order location <span class="required-mark">*</span></label><select class="field-control" id="store_id" name="store_id" required><option value="">Select location</option>@foreach ($stores as $store)<option value="{{ $store->id }}" {{ old('store_id', $prefillStoreId) == $store->id ? 'selected' : '' }}>{{ $store->name }}</option>@endforeach</select></div>
                     <div class="field"><label for="order_date">Order date <span class="required-mark">*</span></label><input class="field-control" id="order_date" name="order_date" type="date" value="{{ old('order_date', date('Y-m-d')) }}" required></div>
                     <div class="field"><label for="expected_date">Expected date</label><input class="field-control" id="expected_date" name="expected_date" type="date" value="{{ old('expected_date') }}"></div>
                 </div>
@@ -25,7 +25,7 @@
             <div class="form-section">
                 <div class="form-card-heading"><span class="form-section-icon form-icon-violet"><svg><use href="#icon-box"></use></svg></span><div><h2>Products</h2><p>Enter the ordered quantity and purchase rate for each product.</p></div></div>
                 <div id="purchase-order-lines">
-                    @foreach (old('items', [['product_id' => '', 'ordered_quantity' => '', 'purchase_rate' => '']]) as $index => $oldItem)
+                    @foreach (old('items', $prefillItems ?: [['product_id' => '', 'ordered_quantity' => '', 'purchase_rate' => '']]) as $index => $oldItem)
                         @php
                             $selectedProduct = $products->firstWhere('id', $oldItem['product_id'] ?? null);
                             $selectedCategoryId = $oldItem['category_id'] ?? optional($selectedProduct)->category_id;

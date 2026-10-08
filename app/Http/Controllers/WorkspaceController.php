@@ -9,6 +9,7 @@ use App\StockAdjustment;
 use App\StockInward;
 use App\StockOutward;
 use App\User;
+use App\Services\InventoryReportsService;
 use App\Support\ActivityLogger;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Request;
@@ -120,16 +121,11 @@ class WorkspaceController extends Controller
         }
 
         if ($request->input('stock') === 'low') {
-            $query->where('current_stock', '>', 0)
-                ->whereColumn('current_stock', '<=', 'minimum_stock');
+            $query->whereRaw('current_stock > 0 AND current_stock <= COALESCE(NULLIF(reorder_level, 0), minimum_stock)');
         } elseif ($request->input('stock') === 'out') {
             $query->where('current_stock', '<=', 0);
         } elseif ($request->input('stock') === 'available') {
-            $query->where('current_stock', '>', 0)
-                ->where(function ($productQuery) {
-                    $productQuery->whereColumn('current_stock', '>', 'minimum_stock')
-                        ->orWhere('minimum_stock', '<=', 0);
-                });
+            $query->whereRaw('current_stock > COALESCE(NULLIF(reorder_level, 0), minimum_stock)');
         }
 
         $products = $query->orderBy('name')
@@ -142,8 +138,7 @@ class WorkspaceController extends Controller
             'quantity' => (clone $summaryQuery)->sum('current_stock'),
             'value' => (clone $summaryQuery)->sum(DB::raw('current_stock * purchase_price')),
             'low_stock' => (clone $summaryQuery)
-                ->where('current_stock', '>', 0)
-                ->whereColumn('current_stock', '<=', 'minimum_stock')
+                ->whereRaw('current_stock > 0 AND current_stock <= COALESCE(NULLIF(reorder_level, 0), minimum_stock)')
                 ->count(),
             'out_of_stock' => (clone $summaryQuery)->where('current_stock', '<=', 0)->count(),
         ];
@@ -151,132 +146,119 @@ class WorkspaceController extends Controller
         return view('workspace.current-stock', compact('products', 'summary'));
     }
 
-    public function reports()
+    public function reports(Request $request, InventoryReportsService $reports)
     {
-        return view('workspace.reports', $this->reportData());
+        $today = now()->toDateString();
+        $validated = $request->validate([
+            'date_from' => 'nullable|date',
+            'date_to' => 'nullable|date|after_or_equal:date_from',
+            'as_of_date' => 'nullable|date',
+            'location_id' => 'nullable|integer|exists:stores,id',
+            'category_id' => 'nullable|integer|exists:categories,id',
+            'company_id' => 'nullable|integer|exists:companies,id',
+            'product_id' => 'nullable|integer|exists:products,id',
+            'stock_status' => 'nullable|in:all,low,out,healthy',
+            'movement_type' => 'nullable|in:opening,purchase_in,sales_out,issue_out,transfer_in,transfer_out,adjustment_in,adjustment_out',
+            'search' => 'nullable|string|max:100',
+            'tab' => 'nullable|in:overview,stock-movement,stock-valuation,low-reorder,purchase-inward,outward,transfer,adjustment',
+            'page' => 'nullable|integer|min:1',
+        ]);
+        $filters = [
+            'date_from' => $validated['date_from'] ?? now()->startOfMonth()->toDateString(),
+            'date_to' => $validated['date_to'] ?? $today,
+            'as_of_date' => $validated['as_of_date'] ?? $today,
+            'location_id' => $validated['location_id'] ?? '',
+            'category_id' => $validated['category_id'] ?? '',
+            'company_id' => $validated['company_id'] ?? '',
+            'product_id' => $validated['product_id'] ?? '',
+            'stock_status' => $validated['stock_status'] ?? 'all',
+            'movement_type' => $validated['movement_type'] ?? '',
+            'search' => trim($validated['search'] ?? ''),
+        ];
+        $tab = $validated['tab'] ?? 'overview';
+        $overview = $reports->overview($filters);
+        $rows = $tab === 'overview' ? null : $reports->paginatedReport($tab, $filters)->appends($request->query());
+        $options = $reports->options();
+
+        return view('workspace.reports', compact('filters', 'tab', 'overview', 'rows', 'options'));
     }
 
-    public function downloadReports()
+    public function downloadReports(Request $request, InventoryReportsService $reports)
     {
-        $report = $this->reportData();
-        $business = DB::table('system_settings')
-            ->whereIn('key', ['business_name', 'business_email', 'business_phone', 'business_address'])
-            ->pluck('value', 'key');
+        $validated = $request->validate([
+            'type' => 'required|in:current-report,stock-details,stock-movement,reorder,stock-valuation',
+            'format' => 'required|in:csv,excel',
+            'date_from' => 'nullable|date',
+            'date_to' => 'nullable|date|after_or_equal:date_from',
+            'as_of_date' => 'nullable|date',
+            'location_id' => 'nullable|integer|exists:stores,id',
+            'category_id' => 'nullable|integer|exists:categories,id',
+            'company_id' => 'nullable|integer|exists:companies,id',
+            'product_id' => 'nullable|integer|exists:products,id',
+            'stock_status' => 'nullable|in:all,low,out,healthy',
+            'movement_type' => 'nullable|in:opening,purchase_in,sales_out,issue_out,transfer_in,transfer_out,adjustment_in,adjustment_out',
+            'search' => 'nullable|string|max:100',
+        ]);
+        $today = now()->toDateString();
+        $filters = [
+            'date_from' => $validated['date_from'] ?? now()->startOfMonth()->toDateString(),
+            'date_to' => $validated['date_to'] ?? $today,
+            'as_of_date' => $validated['as_of_date'] ?? $today,
+            'location_id' => $validated['location_id'] ?? '',
+            'category_id' => $validated['category_id'] ?? '',
+            'company_id' => $validated['company_id'] ?? '',
+            'product_id' => $validated['product_id'] ?? '',
+            'stock_status' => $validated['stock_status'] ?? 'all',
+            'movement_type' => $validated['movement_type'] ?? '',
+            'search' => trim($validated['search'] ?? ''),
+        ];
+        $type = $validated['type'];
+        $format = $validated['format'];
+        $query = $reports->exportQuery($type, $filters);
+        $headers = $reports->exportHeaders($type);
+        $extension = $format === 'excel' ? 'xls' : 'csv';
+        $contentType = $format === 'excel' ? 'application/vnd.ms-excel; charset=UTF-8' : 'text/csv; charset=UTF-8';
 
-        return response()->streamDownload(function () use ($report, $business) {
+        return response()->streamDownload(function () use ($query, $headers, $reports, $type, $format) {
+            if ($format === 'excel') {
+                echo "\xEF\xBB\xBF<table><thead><tr>";
+                foreach ($headers as $header) {
+                    echo '<th>' . htmlspecialchars($header, ENT_QUOTES, 'UTF-8') . '</th>';
+                }
+                echo '</tr></thead><tbody>';
+                $query->chunk(500, function ($batch) use ($reports, $type) {
+                    foreach ($batch as $row) {
+                        echo '<tr>';
+                        foreach ($reports->exportValues($type, $row) as $value) {
+                            echo '<td>' . htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8') . '</td>';
+                        }
+                        echo '</tr>';
+                    }
+                });
+                echo '</tbody></table>';
+
+                return;
+            }
+
             $output = fopen('php://output', 'w');
             fwrite($output, "\xEF\xBB\xBF");
+            fputcsv($output, $headers);
+            $query->chunk(500, function ($batch) use ($output, $reports, $type) {
+                foreach ($batch as $row) {
+                    $values = array_map(function ($value) {
+                        if (is_string($value) && preg_match('/^\s*[=+\-@]/', $value)) {
+                            return "'" . $value;
+                        }
 
-            $writeRow = function (array $row) use ($output) {
-                $row = array_map(function ($value) {
-                    if (is_string($value) && preg_match('/^\s*[=+\-@]/', $value)) {
-                        return "'" . $value;
-                    }
-
-                    return $value;
-                }, $row);
-
-                fputcsv($output, $row);
-            };
-
-            $writeRow([$business->get('business_name', 'Aayojan Ai Inventory System')]);
-            if ($business->get('business_email')) {
-                $writeRow(['Email', $business->get('business_email')]);
-            }
-            if ($business->get('business_phone')) {
-                $writeRow(['Phone', $business->get('business_phone')]);
-            }
-            if ($business->get('business_address')) {
-                $writeRow(['Address', $business->get('business_address')]);
-            }
-            $writeRow(['Inventory Report']);
-            $writeRow(['Generated at', now()->format('Y-m-d H:i:s')]);
-            $writeRow([]);
-            $writeRow(['Summary', 'Value']);
-            $writeRow(['Stock received quantity', $report['movement']['inward_quantity']]);
-            $writeRow(['Stock received purchase value', $report['movement']['inward_value']]);
-            $writeRow(['Stock issued quantity', $report['movement']['outward_quantity']]);
-            $writeRow(['Stock issued sale value', $report['movement']['outward_value']]);
-            $writeRow(['On-hand quantity', $report['stock']['quantity']]);
-            $writeRow(['Current stock value', $report['stock']['value']]);
-            $writeRow(['Low stock products', $report['stock']['low_stock']]);
-            $writeRow(['Out of stock products', $report['stock']['out_of_stock']]);
-            $writeRow([]);
-            $writeRow(['Stock Value by Category']);
-            $writeRow(['Category', 'Products', 'Quantity', 'Stock Value']);
-            foreach ($report['categoryReport'] as $category) {
-                $writeRow([
-                    $category->name,
-                    $category->products_count,
-                    $category->quantity_total,
-                    $category->value_total,
-                ]);
-            }
-            $writeRow([]);
-            $writeRow(['Stock Value by Company']);
-            $writeRow(['Company', 'Code', 'Products', 'Stock Value']);
-            foreach ($report['companyReport'] as $company) {
-                $writeRow([
-                    $company->name,
-                    $company->code,
-                    $company->products_count,
-                    $company->value_total,
-                ]);
-            }
-
+                        return $value;
+                    }, $reports->exportValues($type, $row));
+                    fputcsv($output, $values);
+                }
+            });
             fclose($output);
-        }, 'inventory-report-' . now()->format('Y-m-d-His') . '.csv', [
-            'Content-Type' => 'text/csv; charset=UTF-8',
+        }, 'inventory-' . $type . '-' . now()->format('Y-m-d-His') . '.' . $extension, [
+            'Content-Type' => $contentType,
         ]);
-    }
-
-    private function reportData()
-    {
-        $products = Product::where('is_active', true);
-        $stock = [
-            'quantity' => (clone $products)->sum('current_stock'),
-            'value' => (clone $products)->sum(DB::raw('current_stock * purchase_price')),
-            'low_stock' => (clone $products)
-                ->where('current_stock', '>', 0)
-                ->whereColumn('current_stock', '<=', 'minimum_stock')
-                ->count(),
-            'out_of_stock' => (clone $products)->where('current_stock', '<=', 0)->count(),
-        ];
-
-        $categoryReport = Category::leftJoin('products', function ($join) {
-            $join->on('categories.id', '=', 'products.category_id')
-                ->where('products.is_active', true);
-        })->select(
-            'categories.id',
-            'categories.name',
-            DB::raw('COUNT(products.id) as products_count'),
-            DB::raw('COALESCE(SUM(products.current_stock), 0) as quantity_total'),
-            DB::raw('COALESCE(SUM(products.current_stock * products.purchase_price), 0) as value_total')
-        )->groupBy('categories.id', 'categories.name')
-            ->orderBy('value_total', 'desc')
-            ->get();
-
-        $companyReport = Company::leftJoin('products', function ($join) {
-            $join->on('companies.id', '=', 'products.company_id')
-                ->where('products.is_active', true);
-        })->select(
-            'companies.id',
-            'companies.name',
-            'companies.code',
-            DB::raw('COUNT(products.id) as products_count'),
-            DB::raw('COALESCE(SUM(products.current_stock * products.purchase_price), 0) as value_total')
-        )->groupBy('companies.id', 'companies.name', 'companies.code')
-            ->orderBy('value_total', 'desc')
-            ->get();
-
-        $movement = [
-            'inward_quantity' => StockInward::where('is_active', true)->sum('quantity'),
-            'inward_value' => StockInward::where('is_active', true)->sum('total_amount'),
-            'outward_quantity' => StockOutward::where('is_active', true)->sum('quantity'),
-            'outward_value' => StockOutward::where('is_active', true)->sum('total_amount'),
-        ];
-
-        return compact('stock', 'categoryReport', 'companyReport', 'movement');
     }
 
     public function settings()

@@ -147,6 +147,10 @@
             <path d="M17 7 7 17"/>
         </symbol>
 
+        <symbol id="icon-chevron" viewBox="0 0 24 24">
+            <path d="m6 9 6 6 6-6"/>
+        </symbol>
+
     </svg>
 
 
@@ -204,8 +208,6 @@
                     <span>Dashboard</span>
                 </a>
 
-                <div class="sidebar-caption">MASTER</div>
-
                 {{-- Categories --}}
                 <a
                     class="nav-link {{ request()->routeIs('categories.*') ? 'is-active' : '' }}"
@@ -240,7 +242,7 @@
                         <use href="#icon-layers"></use>
                     </svg>
 
-                    <span>Location</span>
+                    <span>Locations</span>
                 </a>
 
 
@@ -284,120 +286,154 @@
                     <span>Customers</span>
                 </a>
 
-                <div class="sidebar-caption sidebar-caption-spaced">INVENTORY</div>
+                @php
+                    $stockRoutes = ['opening-stock.*', 'stock-inwards.*', 'purchase-orders.*', 'goods-receipts.*', 'stock-outwards.*', 'stock-transfers.*', 'stock-adjustments.*', 'current-stock.*', 'stock-movement.*'];
+                    $reportRoutes = ['reports.*', 'purchase-reports.*', 'issue-reports.*', 'stock-valuation.*'];
+                    $settingsRoutes = ['users.*', 'activity-log.*', 'settings.*', 'general-settings.*'];
+                    $stockIsActive = request()->routeIs(...$stockRoutes);
+                    $reportsAreActive = request()->routeIs(...$reportRoutes);
+                    $settingsAreActive = request()->routeIs(...$settingsRoutes);
+                    $inwardRelatedRoutes = ['purchase-orders.*', 'goods-receipts.*'];
+                    $inwardRelatedIsActive = request()->routeIs(...$inwardRelatedRoutes);
+                @endphp
 
-                <a class="nav-link {{ request()->routeIs('opening-stock.*') ? 'is-active' : '' }}"
-                   href="{{ route('opening-stock.index') }}">
-                    <svg><use href="#icon-box"></use></svg>
-                    <span>Opening Stock</span>
-                </a>
-
-                <div class="nav-group">
-                    <a
-                        class="nav-link {{ request()->routeIs('stock-inwards.*') ? 'is-active' : '' }}"
-                        href="{{ route('stock-inwards.index') }}">
-                        <svg><use href="#icon-tray-in"></use></svg>
-                        <span>Stock Inward</span>
-                    </a>
-                    <div class="nav-submenu" aria-label="Stock inward options">
-                        <a class="nav-link {{ request()->routeIs('purchase-orders.*') ? 'is-active' : '' }}"
-                           href="{{ route('purchase-orders.index') }}">
-                            <svg><use href="#icon-tray-in"></use></svg>
-                            <span>Purchase Orders</span>
+                <div class="nav-group {{ $stockIsActive ? 'is-open' : '' }}" data-nav-group>
+                    <button class="nav-link nav-group-toggle {{ $stockIsActive ? 'is-active' : '' }}"
+                            type="button"
+                            aria-expanded="{{ $stockIsActive ? 'true' : 'false' }}"
+                            aria-controls="stock-submenu"
+                            data-nav-toggle>
+                        <svg><use href="#icon-box"></use></svg>
+                        <span>Stock</span>
+                        <svg class="nav-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
+                    </button>
+                    <div class="nav-submenu {{ $stockIsActive ? 'is-open' : '' }}"
+                         id="stock-submenu"
+                         aria-label="Stock"
+                         aria-hidden="{{ $stockIsActive ? 'false' : 'true' }}"
+                         data-nav-panel>
+                        <a class="nav-link {{ request()->routeIs('opening-stock.*') ? 'is-active' : '' }}"
+                           href="{{ route('opening-stock.index') }}">
+                            <svg><use href="#icon-box"></use></svg><span>Opening Stock</span>
                         </a>
-                        <a class="nav-link {{ request()->routeIs('goods-receipts.*') ? 'is-active' : '' }}"
-                           href="{{ route('goods-receipts.index') }}">
-                            <svg><use href="#icon-check"></use></svg>
-                            <span>Goods Received</span>
+
+                        <div class="nav-nested-group {{ $inwardRelatedIsActive ? 'is-open' : '' }}" data-nav-group>
+                            <div class="nav-nested-row">
+                                <a class="nav-link {{ request()->routeIs('stock-inwards.*') ? 'is-active' : '' }}"
+                                   href="{{ route('stock-inwards.index') }}">
+                                    <svg><use href="#icon-tray-in"></use></svg><span>Stock Inward</span>
+                                </a>
+                                <button class="nav-nested-toggle"
+                                        type="button"
+                                        aria-label="Toggle purchase order and goods received links"
+                                        aria-expanded="{{ $inwardRelatedIsActive ? 'true' : 'false' }}"
+                                        aria-controls="inward-related-submenu"
+                                        data-nav-toggle>
+                                    <svg class="nav-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
+                                </button>
+                            </div>
+                            <div class="nav-submenu nav-submenu-nested {{ $inwardRelatedIsActive ? 'is-open' : '' }}"
+                                 id="inward-related-submenu"
+                                 aria-label="Purchase and receipt records"
+                                 aria-hidden="{{ $inwardRelatedIsActive ? 'false' : 'true' }}"
+                                 data-nav-panel>
+                                <a class="nav-link {{ request()->routeIs('purchase-orders.*') ? 'is-active' : '' }}"
+                                   href="{{ route('purchase-orders.index') }}">
+                                    <svg><use href="#icon-tray-in"></use></svg><span>Purchase Orders</span>
+                                </a>
+                                <a class="nav-link {{ request()->routeIs('goods-receipts.*') ? 'is-active' : '' }}"
+                                   href="{{ route('goods-receipts.index') }}">
+                                    <svg><use href="#icon-check"></use></svg><span>Goods Received</span>
+                                </a>
+                            </div>
+                        </div>
+
+                        <a class="nav-link {{ request()->routeIs('stock-outwards.*') ? 'is-active' : '' }}"
+                           href="{{ route('stock-outwards.index') }}">
+                            <svg><use href="#icon-tray-out"></use></svg><span>Stock Outward</span>
+                        </a>
+                        <a class="nav-link {{ request()->routeIs('stock-transfers.*') ? 'is-active' : '' }}"
+                           href="{{ route('stock-transfers.index') }}">
+                            <svg><use href="#icon-transfer"></use></svg><span>Stock Transfer</span>
+                        </a>
+                        <a class="nav-link {{ request()->routeIs('stock-adjustments.*') ? 'is-active' : '' }}"
+                           href="{{ route('stock-adjustments.index') }}">
+                            <svg><use href="#icon-adjustment"></use></svg><span>Stock Adjustment</span>
+                        </a>
+                        <a class="nav-link {{ request()->routeIs('current-stock.*') ? 'is-active' : '' }}"
+                           href="{{ route('current-stock.index') }}">
+                            <svg><use href="#icon-box"></use></svg><span>Current Stock</span>
+                        </a>
+                        <a class="nav-link {{ request()->routeIs('stock-movement.*') ? 'is-active' : '' }}"
+                           href="{{ route('stock-movement.index') }}">
+                            <svg><use href="#icon-transfer"></use></svg><span>Stock Movement</span>
                         </a>
                     </div>
                 </div>
 
+                <div class="nav-group {{ $reportsAreActive ? 'is-open' : '' }}" data-nav-group>
+                    <button class="nav-link nav-group-toggle {{ $reportsAreActive ? 'is-active' : '' }}"
+                            type="button"
+                            aria-expanded="{{ $reportsAreActive ? 'true' : 'false' }}"
+                            aria-controls="reports-submenu"
+                            data-nav-toggle>
+                        <svg><use href="#icon-chart"></use></svg>
+                        <span>Reports</span>
+                        <svg class="nav-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
+                    </button>
+                    <div class="nav-submenu {{ $reportsAreActive ? 'is-open' : '' }}"
+                         id="reports-submenu"
+                         aria-label="Reports"
+                         aria-hidden="{{ $reportsAreActive ? 'false' : 'true' }}"
+                         data-nav-panel>
+                        <a class="nav-link {{ request()->routeIs('reports.*') ? 'is-active' : '' }}"
+                           href="{{ route('reports.index') }}">
+                            <svg><use href="#icon-chart"></use></svg><span>Inventory Reports</span>
+                        </a>
+                        <a class="nav-link {{ request()->routeIs('purchase-reports.*') ? 'is-active' : '' }}"
+                           href="{{ route('purchase-reports.index') }}">
+                            <svg><use href="#icon-tray-in"></use></svg><span>Purchase Reports</span>
+                        </a>
+                        <a class="nav-link {{ request()->routeIs('issue-reports.*') ? 'is-active' : '' }}"
+                           href="{{ route('issue-reports.index') }}">
+                            <svg><use href="#icon-tray-out"></use></svg><span>Issue Reports</span>
+                        </a>
+                        <a class="nav-link {{ request()->routeIs('stock-valuation.*') ? 'is-active' : '' }}"
+                           href="{{ route('stock-valuation.index') }}">
+                            <svg><use href="#icon-chart"></use></svg><span>Stock Valuation</span>
+                        </a>
+                    </div>
+                </div>
 
-                {{-- Stock Outward --}}
-                <a
-                    class="nav-link {{ request()->routeIs('stock-outwards.*') ? 'is-active' : '' }}"
-                    href="{{ route('stock-outwards.index') }}">
-
-                    <svg>
-                        <use href="#icon-tray-out"></use>
-                    </svg>
-
-                    <span>Stock Outward</span>
-                </a>
-
-                <a class="nav-link {{ request()->routeIs('stock-transfers.*') ? 'is-active' : '' }}"
-                   href="{{ route('stock-transfers.index') }}">
-                    <svg><use href="#icon-transfer"></use></svg>
-                    <span>Stock Transfer</span>
-                </a>
-
-                <a class="nav-link {{ request()->routeIs('stock-adjustments.*') ? 'is-active' : '' }}"
-                   href="{{ route('stock-adjustments.index') }}">
-                    <svg><use href="#icon-adjustment"></use></svg>
-                    <span>Stock Adjustment</span>
-                </a>
-
-                <a
-                    class="nav-link {{ request()->routeIs('current-stock.*') ? 'is-active' : '' }}"
-                    href="{{ route('current-stock.index') }}">
-                    <svg><use href="#icon-box"></use></svg>
-                    <span>Current Stock</span>
-                </a>
-
-                <a class="nav-link {{ request()->routeIs('stock-movement.*') ? 'is-active' : '' }}"
-                   href="{{ route('stock-movement.index') }}">
-                    <svg><use href="#icon-tray-in"></use></svg>
-                    <span>Stock Movement</span>
-                </a>
-
-                <div class="sidebar-caption sidebar-caption-spaced">REPORTS</div>
-
-                <a
-                    class="nav-link {{ request()->routeIs('reports.*') ? 'is-active' : '' }}"
-                    href="{{ route('reports.index') }}">
-                    <svg><use href="#icon-chart"></use></svg>
-                    <span>Inventory Reports</span>
-                </a>
-
-                <a class="nav-link {{ request()->routeIs('purchase-reports.*') ? 'is-active' : '' }}"
-                   href="{{ route('purchase-reports.index') }}">
-                    <svg><use href="#icon-tray-in"></use></svg>
-                    <span>Purchase Reports</span>
-                </a>
-
-                <a class="nav-link {{ request()->routeIs('issue-reports.*') ? 'is-active' : '' }}"
-                   href="{{ route('issue-reports.index') }}">
-                    <svg><use href="#icon-tray-out"></use></svg>
-                    <span>Issue Reports</span>
-                </a>
-
-                <a class="nav-link {{ request()->routeIs('stock-valuation.*') ? 'is-active' : '' }}"
-                   href="{{ route('stock-valuation.index') }}">
-                    <svg><use href="#icon-chart"></use></svg>
-                    <span>Stock Valuation</span>
-                </a>
-
-                <div class="sidebar-caption sidebar-caption-spaced">SETTINGS</div>
-
-                <a class="nav-link {{ request()->routeIs('users.*') ? 'is-active' : '' }}"
-                   href="{{ route('users.index') }}">
-                    <svg><use href="#icon-users"></use></svg>
-                    <span>Users</span>
-                </a>
-
-                <a class="nav-link {{ request()->routeIs('activity-log.*') ? 'is-active' : '' }}"
-                   href="{{ route('activity-log.index') }}">
-                    <svg><use href="#icon-chart"></use></svg>
-                    <span>Activity Log</span>
-                </a>
-
-                <a
-                    class="nav-link {{ request()->routeIs('settings.*', 'general-settings.*') ? 'is-active' : '' }}"
-                    href="{{ route('general-settings.index') }}">
-                    <svg><use href="#icon-settings"></use></svg>
-                    <span>General Settings</span>
-                </a>
+                <div class="nav-group {{ $settingsAreActive ? 'is-open' : '' }}" data-nav-group>
+                    <button class="nav-link nav-group-toggle {{ $settingsAreActive ? 'is-active' : '' }}"
+                            type="button"
+                            aria-expanded="{{ $settingsAreActive ? 'true' : 'false' }}"
+                            aria-controls="settings-submenu"
+                            data-nav-toggle>
+                        <svg><use href="#icon-settings"></use></svg>
+                        <span>Settings</span>
+                        <svg class="nav-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
+                    </button>
+                    <div class="nav-submenu {{ $settingsAreActive ? 'is-open' : '' }}"
+                         id="settings-submenu"
+                         aria-label="Settings"
+                         aria-hidden="{{ $settingsAreActive ? 'false' : 'true' }}"
+                         data-nav-panel>
+                        <a class="nav-link {{ request()->routeIs('users.*') ? 'is-active' : '' }}"
+                           href="{{ route('users.index') }}">
+                            <svg><use href="#icon-users"></use></svg><span>Users</span>
+                        </a>
+                        <a class="nav-link {{ request()->routeIs('activity-log.*') ? 'is-active' : '' }}"
+                           href="{{ route('activity-log.index') }}">
+                            <svg><use href="#icon-chart"></use></svg><span>Activity Log</span>
+                        </a>
+                        <a class="nav-link {{ request()->routeIs('settings.*', 'general-settings.*') ? 'is-active' : '' }}"
+                           href="{{ route('general-settings.index') }}">
+                            <svg><use href="#icon-settings"></use></svg><span>General Settings</span>
+                        </a>
+                    </div>
+                </div>
 
             </nav>
 

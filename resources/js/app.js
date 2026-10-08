@@ -6,6 +6,43 @@ document.addEventListener('DOMContentLoaded', function () {
     var sidebarNav = document.querySelector('.sidebar-nav');
     var sidebarScrollKey = 'inventory-sidebar-scroll';
 
+    function setNavGroupOpen(group, isOpen) {
+        var toggle = group.querySelector('[data-nav-toggle]');
+        var panel = group.querySelector('[data-nav-panel]');
+
+        group.classList.toggle('is-open', isOpen);
+        if (toggle) {
+            toggle.setAttribute('aria-expanded', isOpen ? 'true' : 'false');
+        }
+        if (panel) {
+            panel.classList.toggle('is-open', isOpen);
+            panel.setAttribute('aria-hidden', isOpen ? 'false' : 'true');
+        }
+
+        if (!isOpen) {
+            Array.prototype.forEach.call(group.querySelectorAll('[data-nav-group]'), function (nestedGroup) {
+                setNavGroupOpen(nestedGroup, false);
+            });
+        }
+    }
+
+    Array.prototype.forEach.call(document.querySelectorAll('[data-nav-toggle]'), function (toggle) {
+        toggle.addEventListener('click', function () {
+            var group = toggle.closest('[data-nav-group]');
+            var shouldOpen = !group.classList.contains('is-open');
+
+            if (shouldOpen && sidebarNav && group.parentElement === sidebarNav) {
+                Array.prototype.forEach.call(sidebarNav.children, function (otherGroup) {
+                    if (otherGroup.hasAttribute('data-nav-group') && otherGroup !== group) {
+                        setNavGroupOpen(otherGroup, false);
+                    }
+                });
+            }
+
+            setNavGroupOpen(group, shouldOpen);
+        });
+    });
+
     if (sidebarNav) {
         function saveSidebarScroll() {
             sessionStorage.setItem(sidebarScrollKey, sidebarNav.scrollTop);
