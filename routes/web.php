@@ -173,6 +173,9 @@ Route::middleware('auth')->group(function () {
         ->name('stock-transfers.store');
     Route::get('/stock-transfers', [WorkspaceController::class, 'stockTransfers'])
         ->name('stock-transfers.index');
+    Route::get('/stock-transfers/{transfer}', [WorkspaceController::class, 'showStockTransfer'])
+        ->where('transfer', '[0-9]+')
+        ->name('stock-transfers.show');
     Route::get('/stock-adjustments/create', [WorkspaceController::class, 'createStockAdjustment'])
         ->name('stock-adjustments.create');
     Route::post('/stock-adjustments', [WorkspaceController::class, 'storeStockAdjustment'])

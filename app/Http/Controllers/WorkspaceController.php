@@ -8,13 +8,14 @@ use App\Product;
 use App\StockAdjustment;
 use App\StockInward;
 use App\StockOutward;
-use App\StockTransfer;
+use App\User;
 use App\Support\ActivityLogger;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -344,32 +345,58 @@ class WorkspaceController extends Controller
 
     public function openingStock()
     {
-        $products = Product::with(['category', 'unit'])
-            ->where('opening_stock', '>', 0)
-            ->orderBy('name')
+        $initialStock = DB::table('stock_transactions')
+            ->join('products', 'products.id', '=', 'stock_transactions.product_id')
+            ->leftJoin('stores', 'stores.id', '=', 'stock_transactions.store_id')
+            ->leftJoin('users', 'users.id', '=', 'stock_transactions.created_by')
+            ->whereIn('stock_transactions.reference_type', ['opening_stock', 'initial_stock'])
+            ->select(
+                'stock_transactions.reference_number',
+                'products.name as product_name',
+                'products.product_code',
+                'stores.name as location_name',
+                'stock_transactions.quantity_in as opening_quantity',
+                'stock_transactions.unit_price',
+                DB::raw('(stock_transactions.quantity_in * stock_transactions.unit_price) as opening_value'),
+                'stock_transactions.transaction_date',
+                'users.name as created_by_name',
+                'stock_transactions.created_at',
+                'stock_transactions.remarks'
+            )
+            ->orderBy('stock_transactions.transaction_date', 'desc')
+            ->orderBy('stock_transactions.id', 'desc')
             ->paginate(20);
 
         return $this->recordsPage(
             'Opening Stock',
             'INVENTORY',
-            'Starting inventory quantities recorded for each product.',
-            $products,
+            'One-time starting inventory recorded by product and location.',
+            $initialStock,
             [
-                ['label' => 'Product', 'key' => 'name'],
+                ['label' => 'Reference No.', 'key' => 'reference_number'],
+                ['label' => 'Product', 'key' => 'product_name'],
                 ['label' => 'Code', 'key' => 'product_code'],
-                ['label' => 'Category', 'key' => 'category.name'],
-                ['label' => 'Opening Quantity', 'key' => 'opening_stock', 'type' => 'quantity'],
-                ['label' => 'Unit', 'key' => 'unit.short_name'],
-                ['label' => 'Current Quantity', 'key' => 'current_stock', 'type' => 'quantity'],
+                ['label' => 'Location', 'key' => 'location_name'],
+                ['label' => 'Opening Quantity', 'key' => 'opening_quantity', 'type' => 'quantity'],
+                ['label' => 'Unit Purchase Rate', 'key' => 'unit_price', 'type' => 'currency'],
+                ['label' => 'Opening Value', 'key' => 'opening_value', 'type' => 'currency'],
+                ['label' => 'Opening Date', 'key' => 'transaction_date', 'type' => 'date'],
+                ['label' => 'Created By', 'key' => 'created_by_name'],
+                ['label' => 'Created At', 'key' => 'created_at', 'type' => 'datetime'],
+                ['label' => 'Remarks', 'key' => 'remarks'],
             ],
             [[
-                'label' => 'Products with Opening Stock',
-                'value' => Product::where('opening_stock', '>', 0)->count(),
+                'label' => 'Opening Stock Entries',
+                'value' => DB::table('stock_transactions')
+                    ->whereIn('reference_type', ['opening_stock', 'initial_stock'])
+                    ->count(),
                 'icon' => 'icon-box',
                 'tone' => 'blue',
             ], [
-                'label' => 'Opening Units',
-                'value' => number_format(Product::sum('opening_stock'), 2),
+                'label' => 'Opening Value',
+                'value' => '₹' . number_format((float) DB::table('stock_transactions')
+                    ->whereIn('reference_type', ['opening_stock', 'initial_stock'])
+                    ->sum(DB::raw('quantity_in * unit_price')), 2),
                 'icon' => 'icon-tray-in',
                 'tone' => 'green',
             ]]
@@ -378,9 +405,14 @@ class WorkspaceController extends Controller
 
     public function createOpeningStock()
     {
+        $categories = Category::where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name']);
         $products = Product::where('is_active', true)
             ->with('unit', 'category')
+            ->with('unit', 'category')
             ->orderBy('name')
+            ->get(['id', 'name', 'product_code', 'category_id', 'purchase_price', 'current_stock', 'unit_id']);
             ->get(['id', 'name', 'product_code', 'current_stock', 'unit_id', 'category_id']);
 
         $locations = DB::table('stores')
@@ -388,30 +420,49 @@ class WorkspaceController extends Controller
             ->orderBy('name')
             ->get(['id', 'name', 'code']);
 
-        return view('workspace.opening-stock-create', compact('products', 'locations'));
+        return view('workspace.opening-stock-create', compact('categories', 'products', 'locations'));
     }
 
     public function storeOpeningStock(Request $request)
     {
         $validated = $request->validate([
+            'category_id' => ['nullable', 'integer', 'exists:categories,id,is_active,1'],
+            'product_id' => ['required', 'integer', 'exists:products,id,is_active,1', function ($attribute, $value, $fail) use ($request) {
+                $categoryId = $request->input('category_id');
+                if ($categoryId === null || $categoryId === '') {
+                    return;
+                }
+
+                $product = Product::where('id', $value)->where('is_active', true)->first();
+                if (!$product || (int) $product->category_id !== (int) $categoryId) {
+                    $fail('Selected product does not belong to the selected category.');
+                }
+            }],
+            'store_id' => 'required|integer|exists:stores,id,is_active,1',
             'product_id' => 'required|integer|exists:products,id,is_active,1',
             'quantity' => 'required|numeric|min:0.01',
+            'unit_purchase_rate' => 'required|numeric|min:0',
             'transaction_date' => 'required|date',
             'remarks' => 'nullable|string|max:2000',
             'store_id' => 'required|integer|exists:stores,id,is_active,1',
         ]);
 
         $product = Product::findOrFail($validated['product_id']);
-        $hasInitialStockSetup = (float) $product->opening_stock > 0
-            || (float) $product->current_stock > 0
-            || DB::table('stock_transactions')
-                ->where('product_id', $product->id)
-                ->whereIn('reference_type', ['opening_stock', 'initial_stock'])
-                ->exists();
-
-        if ($hasInitialStockSetup) {
+        if (!empty($validated['category_id']) && (int) $product->category_id !== (int) $validated['category_id']) {
             throw ValidationException::withMessages([
-                'product_id' => 'Initial stock has already been set for this product. Use a stock adjustment or stock movement to correct the balance.',
+                'product_id' => 'Selected product does not belong to the selected category.',
+            ]);
+        }
+
+        $duplicateExists = DB::table('stock_transactions')
+            ->where('product_id', $product->id)
+            ->where('store_id', $validated['store_id'])
+            ->where('reference_type', 'opening_stock')
+            ->exists();
+
+        if ($duplicateExists) {
+            throw ValidationException::withMessages([
+                'product_id' => 'Initial stock has already been configured for this product at this location. Use Stock Adjustment to make corrections.',
             ]);
         }
 
@@ -419,6 +470,11 @@ class WorkspaceController extends Controller
 
         DB::transaction(function () use ($validated, $product, $storeId) {
             $quantity = (float) $validated['quantity'];
+            $unitPurchaseRate = (float) $validated['unit_purchase_rate'];
+            $storeBalance = (float) DB::table('stock_transactions')
+                ->where('product_id', $product->id)
+                ->where('store_id', $validated['store_id'])
+                ->sum(DB::raw('quantity_in - quantity_out'));
             $storeBalance = 0.0;
             if ($storeId) {
                 $storeBalance = (float) DB::table('stock_transactions')
@@ -427,9 +483,11 @@ class WorkspaceController extends Controller
                     ->sum(DB::raw('quantity_in - quantity_out'));
             }
             $newBalance = $storeBalance + $quantity;
+            $referenceNumber = 'OPEN-' . now()->format('Ymd') . '-' . Str::upper(Str::random(6));
 
             $product->opening_stock = $quantity;
             $product->current_stock = $quantity;
+            $product->purchase_price = $product->purchase_price ?: $unitPurchaseRate;
             $product->save();
 
             DB::table('stock_transactions')->insert([
@@ -438,10 +496,11 @@ class WorkspaceController extends Controller
                 'transaction_type' => 'opening',
                 'reference_type' => 'opening_stock',
                 'reference_id' => null,
+                'reference_number' => $referenceNumber,
                 'quantity_in' => $quantity,
                 'quantity_out' => 0,
                 'balance_quantity' => $newBalance,
-                'unit_price' => $product->purchase_price,
+                'unit_price' => $unitPurchaseRate,
                 'transaction_date' => $validated['transaction_date'],
                 'remarks' => $validated['remarks'] ?: 'Initial stock setup',
                 'created_by' => Auth::id(),
@@ -457,23 +516,9 @@ class WorkspaceController extends Controller
 
     public function stockTransfers()
     {
-        if (Schema::hasColumn('stock_transfers', 'product_id')) {
-            $transfersQuery = DB::table('stock_transfers')
-                ->join('products', 'products.id', '=', 'stock_transfers.product_id')
-                ->select(
-                    'stock_transfers.transfer_number',
-                    'products.name as product_name',
-                    'stock_transfers.from_location',
-                    'stock_transfers.to_location',
-                    'stock_transfers.quantity',
-                    'stock_transfers.transfer_date'
-                );
-            if (Schema::hasColumn('stock_transfers', 'is_active')) {
-                $transfersQuery->where('stock_transfers.is_active', true);
-            }
-            $transferCount = (clone $transfersQuery)->count();
-            $transferQuantity = (clone $transfersQuery)->sum('stock_transfers.quantity');
-        } else {
+        if (Schema::hasTable('stock_transfer_items')
+            && Schema::hasColumn('stock_transfers', 'from_store_id')
+            && Schema::hasColumn('stock_transfers', 'to_store_id')) {
             $transfersQuery = DB::table('stock_transfers')
                 ->join('stock_transfer_items', 'stock_transfer_items.stock_transfer_id', '=', 'stock_transfers.id')
                 ->join('products', 'products.id', '=', 'stock_transfer_items.product_id')
@@ -481,6 +526,7 @@ class WorkspaceController extends Controller
                 ->join('stores as to_store', 'to_store.id', '=', 'stock_transfers.to_store_id')
                 ->where('stock_transfers.status', '<>', 'cancelled')
                 ->select(
+                    'stock_transfers.id',
                     'stock_transfers.transfer_number',
                     'products.name as product_name',
                     'from_store.name as from_location',
@@ -493,6 +539,23 @@ class WorkspaceController extends Controller
                 ->join('stock_transfers', 'stock_transfers.id', '=', 'stock_transfer_items.stock_transfer_id')
                 ->where('stock_transfers.status', '<>', 'cancelled')
                 ->sum('stock_transfer_items.quantity');
+        } else {
+            $transfersQuery = DB::table('stock_transfers')
+                ->join('products', 'products.id', '=', 'stock_transfers.product_id')
+                ->select(
+                    'stock_transfers.id',
+                    'stock_transfers.transfer_number',
+                    'products.name as product_name',
+                    'stock_transfers.from_location',
+                    'stock_transfers.to_location',
+                    'stock_transfers.quantity',
+                    'stock_transfers.transfer_date'
+                );
+            if (Schema::hasColumn('stock_transfers', 'is_active')) {
+                $transfersQuery->where('stock_transfers.is_active', true);
+            }
+            $transferCount = (clone $transfersQuery)->count();
+            $transferQuantity = (clone $transfersQuery)->sum('stock_transfers.quantity');
         }
 
         $transfers = $transfersQuery
@@ -505,7 +568,7 @@ class WorkspaceController extends Controller
             'Review recorded movements between inventory locations.',
             $transfers,
             [
-                ['label' => 'Reference', 'key' => 'transfer_number'],
+                ['label' => 'Reference', 'key' => 'id', 'type' => 'transfer-link'],
                 ['label' => 'Product', 'key' => 'product_name'],
                 ['label' => 'From', 'key' => 'from_location'],
                 ['label' => 'To', 'key' => 'to_location'],
@@ -528,104 +591,349 @@ class WorkspaceController extends Controller
         );
     }
 
+    public function showStockTransfer($id)
+    {
+        $transfer = DB::table('stock_transfers')->where('id', $id)->first();
+        abort_unless($transfer, 404);
+
+        $transfer->from_location_label = isset($transfer->from_store_id)
+            ? DB::table('stores')->where('id', $transfer->from_store_id)->value('name')
+            : ($transfer->from_location ?? '—');
+        $transfer->to_location_label = isset($transfer->to_store_id)
+            ? DB::table('stores')->where('id', $transfer->to_store_id)->value('name')
+            : ($transfer->to_location ?? '—');
+        $transfer->requested_by_name = isset($transfer->created_by)
+            ? DB::table('users')->where('id', $transfer->created_by)->value('name')
+            : null;
+        $transfer->approved_by_name = isset($transfer->approved_by)
+            ? DB::table('users')->where('id', $transfer->approved_by)->value('name')
+            : null;
+
+        if (Schema::hasTable('stock_transfer_items')) {
+            $itemColumns = [
+                'products.name as product_name',
+                'products.product_code',
+                'categories.name as category_name',
+                'units.short_name as unit_name',
+                'stock_transfer_items.quantity',
+            ];
+            $itemColumns[] = Schema::hasColumn('products', 'sku')
+                ? 'products.sku'
+                : DB::raw('products.product_code as sku');
+            $itemColumns[] = Schema::hasColumn('stock_transfer_items', 'remarks')
+                ? 'stock_transfer_items.remarks'
+                : DB::raw('NULL as remarks');
+            $itemColumns[] = Schema::hasColumn('stock_transfer_items', 'source_before')
+                ? 'stock_transfer_items.source_before'
+                : DB::raw('NULL as source_before');
+            $itemColumns[] = Schema::hasColumn('stock_transfer_items', 'destination_before')
+                ? 'stock_transfer_items.destination_before'
+                : DB::raw('NULL as destination_before');
+            $items = DB::table('stock_transfer_items')
+                ->join('products', 'products.id', '=', 'stock_transfer_items.product_id')
+                ->leftJoin('categories', 'categories.id', '=', 'products.category_id')
+                ->leftJoin('units', 'units.id', '=', 'products.unit_id')
+                ->where('stock_transfer_items.stock_transfer_id', $id)
+                ->select($itemColumns)
+                ->get();
+        } elseif (isset($transfer->product_id)) {
+            $itemColumns = [
+                'products.name as product_name',
+                'products.product_code',
+                'categories.name as category_name',
+                'units.short_name as unit_name',
+                'stock_transfers.quantity',
+                'stock_transfers.remarks',
+                DB::raw('NULL as source_before'),
+                DB::raw('NULL as destination_before'),
+            ];
+            $itemColumns[] = Schema::hasColumn('products', 'sku')
+                ? 'products.sku'
+                : DB::raw('products.product_code as sku');
+            $items = DB::table('stock_transfers')
+                ->join('products', 'products.id', '=', 'stock_transfers.product_id')
+                ->leftJoin('categories', 'categories.id', '=', 'products.category_id')
+                ->leftJoin('units', 'units.id', '=', 'products.unit_id')
+                ->where('stock_transfers.id', $id)
+                ->select($itemColumns)
+                ->get();
+        } else {
+            $items = collect();
+        }
+
+        $movements = Schema::hasTable('stock_transactions')
+            ? DB::table('stock_transactions')
+                ->leftJoin('stores', 'stores.id', '=', 'stock_transactions.store_id')
+                ->where('stock_transactions.reference_type', 'stock_transfer')
+                ->where('stock_transactions.reference_id', $id)
+                ->select(
+                    'stock_transactions.transaction_type',
+                    'stock_transactions.quantity_in',
+                    'stock_transactions.quantity_out',
+                    'stock_transactions.transaction_date',
+                    'stores.name as location_name'
+                )
+                ->orderBy('stock_transactions.id')
+                ->get()
+            : collect();
+
+        return view('workspace.stock-transfer-show', compact('transfer', 'items', 'movements'));
+    }
+
     public function createStockTransfer()
     {
+        $categories = Category::where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+        $productColumns = ['id', 'name', 'product_code', 'category_id', 'current_stock', 'unit_id'];
+        if (Schema::hasColumn('products', 'sku')) {
+            $productColumns[] = 'sku';
+        }
         $products = Product::where('is_active', true)
             ->where('current_stock', '>', 0)
-            ->with('unit')
+            ->with(['unit', 'category'])
             ->orderBy('name')
-            ->get(['id', 'name', 'product_code', 'current_stock', 'unit_id']);
+            ->get($productColumns);
         $locations = DB::table('stores')
             ->where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'name']);
+        $approvers = User::where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name']);
 
-        return view('workspace.stock-transfer-create', compact('products', 'locations'));
+        $stockBalances = [];
+        if (Schema::hasTable('stock_transactions')) {
+            $balances = DB::table('stock_transactions')
+                ->select('product_id', 'store_id')
+                ->selectRaw('SUM(quantity_in - quantity_out) as quantity')
+                ->groupBy('product_id', 'store_id')
+                ->get();
+
+            foreach ($balances as $balance) {
+                $stockBalances[$balance->product_id][$balance->store_id] = (float) $balance->quantity;
+            }
+        }
+
+        return view('workspace.stock-transfer-create', compact(
+            'categories',
+            'products',
+            'locations',
+            'stockBalances',
+            'approvers'
+        ));
     }
 
     public function storeStockTransfer(Request $request)
     {
+        if (!$request->has('items') && $request->has('product_id')) {
+            $product = Product::find($request->input('product_id'));
+            $request->merge([
+                'transfer_reason' => $request->input('transfer_reason', 'Stock Replenishment'),
+                'items' => [[
+                    'category_id' => $product ? $product->category_id : null,
+                    'product_id' => $request->input('product_id'),
+                    'quantity' => $request->input('quantity'),
+                    'remarks' => $request->input('remarks'),
+                ]],
+            ]);
+        }
+
         $validated = $request->validate([
-            'product_id' => 'required|integer|exists:products,id',
             'from_location' => 'required|string|max:120|exists:stores,name,is_active,1',
             'to_location' => 'required|string|max:120|different:from_location|exists:stores,name,is_active,1',
-            'quantity' => 'required|numeric|min:0.01',
             'transfer_date' => 'required|date',
+            'transfer_reason' => 'required|in:Stock Replenishment,Department Requirement,Hall Requirement,Branch Requirement,Customer/Project Requirement,Overstock Balancing,Location Reorganization,Other',
+            'reference_no' => 'nullable|string|max:100',
+            'approved_by' => 'nullable|integer|exists:users,id,is_active,1',
             'remarks' => 'nullable|string|max:2000',
+            'items' => 'required|array|min:1',
+            'items.*.category_id' => 'required|integer|exists:categories,id,is_active,1',
+            'items.*.product_id' => 'required|integer|distinct|exists:products,id,is_active,1',
+            'items.*.quantity' => 'required|numeric|min:0.01',
+            'items.*.remarks' => 'nullable|string|max:1000',
+            'submission_key' => ['nullable', 'string', 'uuid', Rule::unique('stock_transfers', 'submission_key')],
         ]);
 
-        $legacyTransferSchema = Schema::hasTable('stock_transfer_items')
-            && Schema::hasColumn('stock_transfers', 'from_store_id')
-            && Schema::hasColumn('stock_transfers', 'to_store_id');
+        if (!Schema::hasTable('stock_transfer_items')
+            || !Schema::hasColumn('stock_transfers', 'from_store_id')
+            || !Schema::hasColumn('stock_transfers', 'to_store_id')) {
+            throw ValidationException::withMessages([
+                'items' => 'Stock Transfer setup is incomplete. Apply the Stock Transfer database migration first.',
+            ]);
+        }
 
-        if ($legacyTransferSchema) {
-            $validated['from_store_id'] = DB::table('stores')
-                ->where('name', trim($validated['from_location']))
-                ->where('is_active', true)
-                ->value('id');
-            $validated['to_store_id'] = DB::table('stores')
-                ->where('name', trim($validated['to_location']))
-                ->where('is_active', true)
-                ->value('id');
+        $fromStoreId = DB::table('stores')->where('name', $validated['from_location'])->where('is_active', true)->value('id');
+        $toStoreId = DB::table('stores')->where('name', $validated['to_location'])->where('is_active', true)->value('id');
+        if (!$fromStoreId || !$toStoreId || $fromStoreId == $toStoreId) {
+            throw ValidationException::withMessages([
+                'from_location' => 'From Location and To Location must be different active locations.',
+            ]);
+        }
+        $validated['from_store_id'] = $fromStoreId;
+        $validated['to_store_id'] = $toStoreId;
+        if (!Schema::hasTable('stock_transactions')) {
+            throw ValidationException::withMessages([
+                'items' => 'Location-based stock ledger is unavailable. Transfers cannot be safely completed.',
+            ]);
+        }
 
-            if (!$validated['from_store_id'] || !$validated['to_store_id']) {
+        foreach ($validated['items'] as $index => $item) {
+            $product = Product::where('is_active', true)->find($item['product_id']);
+            if (!$product || (int) $product->category_id !== (int) $item['category_id']) {
                 throw ValidationException::withMessages([
-                    'from_location' => 'Select two active locations.',
+                    'items.' . $index . '.product_id' => 'Select a product belonging to the chosen category.',
                 ]);
             }
         }
 
-        DB::transaction(function () use ($validated, $legacyTransferSchema) {
-            $product = Product::lockForUpdate()->findOrFail($validated['product_id']);
-            if (!$product->is_active) {
+        DB::transaction(function () use ($validated, $fromStoreId, $toStoreId) {
+            $activeStoreIds = DB::table('stores')
+                ->whereIn('id', [$fromStoreId, $toStoreId])
+                ->where('is_active', true)
+                ->lockForUpdate()
+                ->pluck('id')
+                ->all();
+            if (count($activeStoreIds) !== 2) {
                 throw ValidationException::withMessages([
-                    'product_id' => 'Select an active product.',
-                ]);
-            }
-            if ((float) $validated['quantity'] > (float) $product->current_stock) {
-                throw ValidationException::withMessages([
-                    'quantity' => 'Transfer quantity cannot exceed the product quantity on hand.',
+                    'from_location' => 'Select two active locations.',
                 ]);
             }
 
+            $activeCategoryIds = DB::table('categories')
+                ->whereIn('id', array_unique(array_column($validated['items'], 'category_id')))
+                ->where('is_active', true)
+                ->lockForUpdate()
+                ->pluck('id')
+                ->all();
+            $products = Product::whereIn('id', array_column($validated['items'], 'product_id'))
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
+            $preparedItems = [];
+
+            foreach ($validated['items'] as $index => $item) {
+                $product = $products->get($item['product_id']);
+                if (!in_array($item['category_id'], $activeCategoryIds)
+                    || !$product || !$product->is_active
+                    || (int) $product->category_id !== (int) $item['category_id']) {
+                    throw ValidationException::withMessages([
+                        'items.' . $index . '.product_id' => 'Select an active product belonging to the selected active category.',
+                    ]);
+                }
+
+                $available = (float) DB::table('stock_transactions')
+                    ->where('product_id', $product->id)
+                    ->where('store_id', $fromStoreId)
+                    ->sum(DB::raw('quantity_in - quantity_out'));
+                $quantity = (float) $item['quantity'];
+                if ($quantity > $available) {
+                    throw ValidationException::withMessages([
+                        'items.' . $index . '.quantity' => 'Insufficient stock at the source location. Available: '
+                            . number_format($available, 2) . ', requested: ' . number_format($quantity, 2) . '.',
+                    ]);
+                }
+
+                $destinationBalance = (float) DB::table('stock_transactions')
+                    ->where('product_id', $product->id)
+                    ->where('store_id', $toStoreId)
+                    ->sum(DB::raw('quantity_in - quantity_out'));
+                $preparedItems[] = [
+                    'product' => $product,
+                    'category_id' => $item['category_id'],
+                    'quantity' => $quantity,
+                    'remarks' => $item['remarks'] ?? null,
+                    'source_before' => $available,
+                    'destination_before' => $destinationBalance,
+                ];
+            }
+
             $transferNumber = 'TRF-' . now()->format('Ymd-His') . '-' . Str::upper(Str::random(4));
-            if ($legacyTransferSchema) {
-                $transferId = DB::table('stock_transfers')->insertGetId([
+            $totalQuantity = array_sum(array_column($preparedItems, 'quantity'));
+            $firstItem = $preparedItems[0];
+            $header = [
                     'transfer_number' => $transferNumber,
+                    'product_id' => $firstItem['product']->id,
+                    'quantity' => $totalQuantity,
+                    'from_location' => trim($validated['from_location']),
+                    'to_location' => trim($validated['to_location']),
                     'from_store_id' => $validated['from_store_id'],
                     'to_store_id' => $validated['to_store_id'],
                     'transfer_date' => $validated['transfer_date'],
                     'status' => 'completed',
+                    'transfer_type' => 'Internal Stock Transfer',
                     'remarks' => $validated['remarks'] ?? null,
+                    'transfer_reason' => $validated['transfer_reason'],
+                    'reference_no' => $validated['reference_no'] ?? null,
+                    'created_by' => auth()->id(),
+                    'approved_by' => $validated['approved_by'] ?? null,
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+
+            if (Schema::hasColumn('stock_transfers', 'submission_key') && !empty($validated['submission_key'])) {
+                $header['submission_key'] = $validated['submission_key'];
+            }
+
+            $header = array_intersect_key($header, array_flip(Schema::getColumnListing('stock_transfers')));
+            $transferId = DB::table('stock_transfers')->insertGetId($header);
+
+            foreach ($preparedItems as $index => $item) {
+                $product = $item['product'];
+                $quantity = $item['quantity'];
+                $itemRecord = [
+                    'stock_transfer_id' => $transferId,
+                    'product_id' => $product->id,
+                    'quantity' => $quantity,
+                    'category_id' => $item['category_id'],
+                    'remarks' => $item['remarks'],
+                    'source_before' => $item['source_before'],
+                    'destination_before' => $item['destination_before'],
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ];
+                DB::table('stock_transfer_items')->insert(
+                    array_intersect_key($itemRecord, array_flip(Schema::getColumnListing('stock_transfer_items')))
+                );
+
+                $sourceAfter = $item['source_before'] - $quantity;
+                $destinationAfter = $item['destination_before'] + $quantity;
+                $baseMovement = [
+                    'product_id' => $product->id,
+                    'reference_type' => 'stock_transfer',
+                    'reference_id' => $transferId,
+                    'unit_price' => 0,
+                    'transaction_date' => $validated['transfer_date'],
                     'created_by' => auth()->id(),
                     'created_at' => now(),
                     'updated_at' => now(),
-                ]);
+                ];
 
-                DB::table('stock_transfer_items')->insert([
-                    'stock_transfer_id' => $transferId,
-                    'product_id' => $product->id,
-                    'quantity' => $validated['quantity'],
-                    'created_at' => now(),
-                    'updated_at' => now(),
-                ]);
-            } else {
-                StockTransfer::create([
-                    'product_id' => $product->id,
-                    'transfer_number' => $transferNumber,
-                    'transfer_date' => $validated['transfer_date'],
-                    'from_location' => trim($validated['from_location']),
-                    'to_location' => trim($validated['to_location']),
-                    'quantity' => $validated['quantity'],
-                    'remarks' => $validated['remarks'] ?? null,
-                    'is_active' => true,
-                ]);
+                DB::table('stock_transactions')->insert(array_intersect_key(array_merge($baseMovement, [
+                    'reference_number' => $transferNumber . '-' . ($index + 1) . '-OUT',
+                    'store_id' => $fromStoreId,
+                    'transaction_type' => 'transfer_out',
+                    'quantity_in' => 0,
+                    'quantity_out' => $quantity,
+                    'balance_quantity' => $sourceAfter,
+                    'remarks' => 'Transfer out: ' . $transferNumber,
+                ]), array_flip(Schema::getColumnListing('stock_transactions'))));
+                DB::table('stock_transactions')->insert(array_intersect_key(array_merge($baseMovement, [
+                    'reference_number' => $transferNumber . '-' . ($index + 1) . '-IN',
+                    'store_id' => $toStoreId,
+                    'transaction_type' => 'transfer_in',
+                    'quantity_in' => $quantity,
+                    'quantity_out' => 0,
+                    'balance_quantity' => $destinationAfter,
+                    'remarks' => 'Transfer in: ' . $transferNumber,
+                ]), array_flip(Schema::getColumnListing('stock_transactions'))));
             }
         });
 
         return redirect()
             ->route('stock-transfers.index')
-            ->with('success', 'Stock transfer recorded.');
+            ->with('success', 'Stock transfer completed. Location stock balances were updated without changing total inventory.');
     }
 
     public function stockAdjustments()
@@ -838,11 +1146,13 @@ class WorkspaceController extends Controller
                     ->where('inward_transactions.reference_type', '=', 'stock_inward');
             })
             ->where('stock_inwards.is_active', true)
+            ->selectRaw("'Stock Inward' as movement_type, stock_inwards.invoice_number as reference, products.name as product_name, stock_inwards.quantity as quantity, stock_inwards.total_amount as amount, stock_inwards.inward_date as movement_date, NULL as location_name")
             ->selectRaw("'Stock Inward' as movement_type, COALESCE(stock_inwards.inward_number, stock_inwards.invoice_number) as reference, products.name as product_name, stores.name as location_name, stock_inwards.quantity as quantity, inward_transactions.balance_quantity as balance_quantity, stock_inwards.total_amount as amount, stock_inwards.inward_date as movement_date")
             ->unionAll(
                 DB::table('stock_outwards')
                     ->join('products', 'products.id', '=', 'stock_outwards.product_id')
                     ->where('stock_outwards.is_active', true)
+                    ->selectRaw("'Stock Outward' as movement_type, stock_outwards.reference_number as reference, products.name as product_name, stock_outwards.quantity as quantity, stock_outwards.total_amount as amount, stock_outwards.outward_date as movement_date, NULL as location_name")
                     ->selectRaw("'Stock Outward' as movement_type, stock_outwards.reference_number as reference, products.name as product_name, NULL as location_name, stock_outwards.quantity as quantity, NULL as balance_quantity, stock_outwards.total_amount as amount, stock_outwards.outward_date as movement_date")
             )
             ->unionAll($this->transferMovementQuery())
@@ -872,6 +1182,7 @@ class WorkspaceController extends Controller
                 ['label' => 'Type', 'key' => 'movement_type'],
                 ['label' => 'Reference', 'key' => 'reference'],
                 ['label' => 'Product', 'key' => 'product_name'],
+                ['label' => 'Location', 'key' => 'location_name'],
                 ['label' => 'Location', 'key' => 'location_name'],
                 ['label' => 'Quantity', 'key' => 'quantity', 'type' => 'quantity'],
                 ['label' => 'Balance', 'key' => 'balance_quantity', 'type' => 'quantity'],
@@ -1185,10 +1496,46 @@ class WorkspaceController extends Controller
 
     private function transferMovementQuery()
     {
-        if (Schema::hasColumn('stock_transfers', 'product_id')) {
+        if (Schema::hasTable('stock_transactions')
+            && Schema::hasColumn('stock_transactions', 'reference_type')
+            && Schema::hasColumn('stock_transactions', 'reference_id')
+            && Schema::hasColumn('stock_transactions', 'transaction_type')) {
+            $ledgerMovements = DB::table('stock_transactions')
+                ->join('stock_transfers', 'stock_transfers.id', '=', 'stock_transactions.reference_id')
+                ->join('products', 'products.id', '=', 'stock_transactions.product_id')
+                ->leftJoin('stores', 'stores.id', '=', 'stock_transactions.store_id')
+                ->where('stock_transactions.reference_type', 'stock_transfer')
+                ->selectRaw("CASE WHEN stock_transactions.transaction_type = 'transfer_out' THEN 'Transfer Out' ELSE 'Transfer In' END as movement_type, stock_transfers.transfer_number as reference, products.name as product_name, (stock_transactions.quantity_in - stock_transactions.quantity_out) as quantity, 0 as amount, stock_transactions.transaction_date as movement_date, stores.name as location_name");
+
+            if (Schema::hasTable('stock_transfer_items')
+                && Schema::hasColumn('stock_transfers', 'from_store_id')
+                && Schema::hasColumn('stock_transfers', 'to_store_id')) {
+                $legacyMovements = DB::table('stock_transfers')
+                    ->join('stock_transfer_items', 'stock_transfer_items.stock_transfer_id', '=', 'stock_transfers.id')
+                    ->join('products', 'products.id', '=', 'stock_transfer_items.product_id')
+                    ->join('stores as from_store', 'from_store.id', '=', 'stock_transfers.from_store_id')
+                    ->where('stock_transfers.status', '<>', 'cancelled')
+                    ->whereNotExists(function ($query) {
+                        $query->select(DB::raw(1))
+                            ->from('stock_transactions')
+                            ->whereColumn('stock_transactions.reference_id', 'stock_transfers.id')
+                            ->where('stock_transactions.reference_type', 'stock_transfer');
+                    })
+                    ->selectRaw("'Stock Transfer (legacy)' as movement_type, stock_transfers.transfer_number as reference, products.name as product_name, stock_transfer_items.quantity as quantity, 0 as amount, stock_transfers.transfer_date as movement_date, from_store.name as location_name");
+
+                return $ledgerMovements->unionAll($legacyMovements);
+            }
+
+            return $ledgerMovements;
+        }
+
+        if (Schema::hasColumn('stock_transfers', 'product_id')
+            && (!Schema::hasTable('stock_transfer_items')
+                || !Schema::hasColumn('stock_transfers', 'from_store_id'))) {
             return DB::table('stock_transfers')
                 ->join('products', 'products.id', '=', 'stock_transfers.product_id')
                 ->where('stock_transfers.is_active', true)
+                ->selectRaw("'Stock Transfer' as movement_type, stock_transfers.transfer_number as reference, products.name as product_name, stock_transfers.quantity as quantity, 0 as amount, stock_transfers.transfer_date as movement_date, NULL as location_name");
                 ->selectRaw("'Stock Transfer' as movement_type, stock_transfers.transfer_number as reference, products.name as product_name, NULL as location_name, stock_transfers.quantity as quantity, NULL as balance_quantity, 0 as amount, stock_transfers.transfer_date as movement_date");
         }
 
@@ -1196,6 +1543,7 @@ class WorkspaceController extends Controller
             ->join('stock_transfer_items', 'stock_transfer_items.stock_transfer_id', '=', 'stock_transfers.id')
             ->join('products', 'products.id', '=', 'stock_transfer_items.product_id')
             ->where('stock_transfers.status', '<>', 'cancelled')
+            ->selectRaw("'Stock Transfer' as movement_type, stock_transfers.transfer_number as reference, products.name as product_name, stock_transfer_items.quantity as quantity, 0 as amount, stock_transfers.transfer_date as movement_date, NULL as location_name");
             ->selectRaw("'Stock Transfer' as movement_type, stock_transfers.transfer_number as reference, products.name as product_name, NULL as location_name, stock_transfer_items.quantity as quantity, NULL as balance_quantity, 0 as amount, stock_transfers.transfer_date as movement_date");
     }
 
@@ -1204,12 +1552,14 @@ class WorkspaceController extends Controller
         if (Schema::hasColumn('stock_adjustments', 'adjustment_number')) {
             return DB::table('stock_adjustments')
                 ->join('products', 'products.id', '=', 'stock_adjustments.product_id')
+                ->selectRaw("'Stock Adjustment' as movement_type, stock_adjustments.adjustment_number as reference, products.name as product_name, CASE WHEN LOWER(stock_adjustments.type) LIKE '%decreas%' OR LOWER(stock_adjustments.type) LIKE '%out%' THEN -stock_adjustments.quantity ELSE stock_adjustments.quantity END as quantity, 0 as amount, stock_adjustments.adjustment_date as movement_date, NULL as location_name");
                 ->selectRaw("'Stock Adjustment' as movement_type, stock_adjustments.adjustment_number as reference, products.name as product_name, NULL as location_name, CASE WHEN LOWER(stock_adjustments.type) LIKE '%decreas%' OR LOWER(stock_adjustments.type) LIKE '%out%' THEN -stock_adjustments.quantity ELSE stock_adjustments.quantity END as quantity, NULL as balance_quantity, 0 as amount, stock_adjustments.adjustment_date as movement_date");
         }
 
         return DB::table('stock_adjustments')
             ->join('products', 'products.id', '=', 'stock_adjustments.product_id')
             ->where('stock_adjustments.is_active', true)
+            ->selectRaw("'Stock Adjustment' as movement_type, stock_adjustments.reference_number as reference, products.name as product_name, stock_adjustments.adjustment_quantity as quantity, 0 as amount, stock_adjustments.adjustment_date as movement_date, NULL as location_name");
             ->selectRaw("'Stock Adjustment' as movement_type, stock_adjustments.reference_number as reference, products.name as product_name, NULL as location_name, stock_adjustments.adjustment_quantity as quantity, NULL as balance_quantity, 0 as amount, stock_adjustments.adjustment_date as movement_date");
     }
 

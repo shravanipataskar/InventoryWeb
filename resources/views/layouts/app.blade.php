@@ -289,7 +289,7 @@
                 <a class="nav-link {{ request()->routeIs('opening-stock.*') ? 'is-active' : '' }}"
                    href="{{ route('opening-stock.index') }}">
                     <svg><use href="#icon-box"></use></svg>
-                    <span>Initial Stock</span>
+                    <span>Opening Stock</span>
                 </a>
 
                 <div class="nav-group">

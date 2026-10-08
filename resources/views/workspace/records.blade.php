@@ -11,7 +11,7 @@
             <p>{{ $description }}</p>
         </div>
         @if ($showOpeningStockAction)
-                    <a class="button button-primary" href="{{ route('opening-stock.create') }}"><span class="button-plus">+</span> Add Initial Stock</a>
+                    <a class="button button-primary" href="{{ route('opening-stock.create') }}"><span class="button-plus">+</span> Add Opening Stock</a>
         @elseif ($createRoute)
             <a class="button button-primary" href="{{ route($createRoute) }}"><span class="button-plus">+</span> {{ $createLabel }}</a>
         @elseif (request()->routeIs('stock-movement.index'))
@@ -102,8 +102,12 @@
                                     <td>
                                         @if (($column['type'] ?? '') === 'active')
                                             @include('components.status-badge', ['status' => $value ? 'Active' : 'Inactive'])
+                                        @elseif (($column['type'] ?? '') === 'transfer-link')
+                                            <a href="{{ route('stock-transfers.show', $value) }}">{{ $row->transfer_number }}</a>
                                         @elseif (($column['type'] ?? '') === 'date')
                                             {{ $value ? \Carbon\Carbon::parse($value)->format('d M Y') : '—' }}
+                                        @elseif (($column['type'] ?? '') === 'datetime')
+                                            {{ $value ? \Carbon\Carbon::parse($value)->format('d M Y, h:i A') : '—' }}
                                         @elseif (($column['type'] ?? '') === 'quantity')
                                             {{ is_numeric($value) ? number_format((float) $value, 2) : '—' }}
                                         @elseif (($column['type'] ?? '') === 'currency')
@@ -130,7 +134,7 @@
                 <h2>No {{ strtolower($title) }} found</h2>
                 <p>{{ $description }}</p>
                 @if ($showOpeningStockAction)
-                    <a class="button button-primary" href="{{ route('opening-stock.create') }}"><span class="button-plus">+</span> Add Initial Stock</a>
+                    <a class="button button-primary" href="{{ route('opening-stock.create') }}"><span class="button-plus">+</span> Add Opening Stock</a>
                 @elseif ($createRoute)
                     <a class="button button-primary" href="{{ route($createRoute) }}"><span class="button-plus">+</span> {{ $createLabel }}</a>
                 @endif

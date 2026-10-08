@@ -18,11 +18,17 @@ class OpeningStockSetupTest extends TestCase
 
     public function test_initial_stock_is_kept_as_a_single_setup_event()
     {
-        $this->actingAs(User::create([
+        $user = User::create([
             'name' => 'Opening Stock User',
             'email' => Str::uuid() . '@example.test',
             'password' => Hash::make('test-password'),
-        ]));
+        ]);
+        $this->actingAs($user);
+        $this->get(route('opening-stock.create'))
+            ->assertOk()
+            ->assertSee('Opening Stock Setup')
+            ->assertSee('Unit purchase rate')
+            ->assertSee('Opening value');
 
         $suffix = strtoupper(Str::random(8));
         $category = Category::create([
@@ -48,9 +54,11 @@ class OpeningStockSetupTest extends TestCase
         $storeId = $this->createStore('Initial Store ' . $suffix, $suffix);
 
         $response = $this->post(route('opening-stock.store'), [
+            'category_id' => $category->id,
             'product_id' => $product->id,
             'store_id' => $storeId,
-            'quantity' => 25,
+            'quantity' => 10,
+            'unit_purchase_rate' => 55000,
             'transaction_date' => now()->toDateString(),
             'remarks' => 'Initial inventory setup',
         ]);
@@ -58,28 +66,43 @@ class OpeningStockSetupTest extends TestCase
         $response->assertSessionHasNoErrors()
             ->assertRedirect(route('opening-stock.index'));
 
-        $this->assertSame('25.00', $product->fresh()->current_stock);
-        $this->assertSame('25.00', $product->fresh()->opening_stock);
+        $this->assertSame('10.00', $product->fresh()->current_stock);
+        $this->assertSame('10.00', $product->fresh()->opening_stock);
+        $ledgerEntry = DB::table('stock_transactions')->where('product_id', $product->id)->first();
+        $this->assertNotNull($ledgerEntry);
+        $this->assertStringStartsWith('OPEN-', $ledgerEntry->reference_number);
+        $this->assertSame('55000.00', $ledgerEntry->unit_price);
+        $this->assertSame((string) $user->id, (string) $ledgerEntry->created_by);
+        $this->assertEquals(550000, (float) $ledgerEntry->quantity_in * (float) $ledgerEntry->unit_price);
+        $this->get(route('opening-stock.index'))
+            ->assertOk()
+            ->assertSee('Opening Stock')
+            ->assertSee($ledgerEntry->reference_number)
+            ->assertSee('550,000.00')
+            ->assertSee($user->name)
+            ->assertSee('CREATED AT');
         $this->assertDatabaseHas('stock_transactions', [
             'product_id' => $product->id,
             'store_id' => $storeId,
             'transaction_type' => 'opening',
             'reference_type' => 'opening_stock',
-            'quantity_in' => 25,
+            'quantity_in' => 10,
             'quantity_out' => 0,
         ]);
 
         $this->from(route('opening-stock.create'))
             ->post(route('opening-stock.store'), [
+                'category_id' => $category->id,
                 'product_id' => $product->id,
                 'store_id' => $storeId,
                 'quantity' => 10,
+                'unit_purchase_rate' => 55000,
                 'transaction_date' => now()->toDateString(),
                 'remarks' => 'Second attempt',
             ])
             ->assertSessionHasErrors('product_id');
 
-        $this->assertSame('25.00', $product->fresh()->current_stock);
+        $this->assertSame('10.00', $product->fresh()->current_stock);
         $this->assertSame(1, DB::table('stock_transactions')->where('product_id', $product->id)->count());
     }
 

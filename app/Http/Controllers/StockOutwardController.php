@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Category;
 use App\Customer;
 use App\StockOutward;
 use App\Product;
@@ -27,7 +28,7 @@ class StockOutwardController extends Controller
 
     public function create()
     {
-        $products = Product::with(['hall', 'rack', 'shelf'])
+        $products = Product::with(['category', 'hall', 'rack', 'shelf'])
             ->where('is_active', 1)
             ->where('current_stock', '>', 0)
             ->orderBy('name')
@@ -35,10 +36,13 @@ class StockOutwardController extends Controller
         $customers = Customer::where('is_active', true)
             ->orderBy('name')
             ->get();
+        $categories = Category::where('is_active', true)
+            ->orderBy('name')
+            ->get();
 
         return view(
             'stock_outwards.create',
-            compact('products', 'customers')
+            compact('products', 'customers', 'categories')
         );
     }
 
