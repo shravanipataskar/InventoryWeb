@@ -101,7 +101,17 @@ class WorkspaceController extends Controller
 
     public function currentStock(Request $request)
     {
-        $query = Product::with([
+        $query = Product::select('products.*')
+            ->selectSub(
+                StockInward::select('purchase_price')
+                    ->whereColumn('stock_inwards.product_id', 'products.id')
+                    ->where('is_active', true)
+                    ->orderByDesc('inward_date')
+                    ->orderByDesc('id')
+                    ->limit(1),
+                'latest_inward_purchase_price'
+            )
+            ->with([
             'category',
             'company',
             'unit',
@@ -136,7 +146,14 @@ class WorkspaceController extends Controller
         $summary = [
             'products' => (clone $summaryQuery)->count(),
             'quantity' => (clone $summaryQuery)->sum('current_stock'),
-            'value' => (clone $summaryQuery)->sum(DB::raw('current_stock * purchase_price')),
+            'value' => (clone $summaryQuery)->sum(DB::raw(
+                'current_stock * COALESCE((SELECT stock_inwards.purchase_price'
+                . ' FROM stock_inwards'
+                . ' WHERE stock_inwards.product_id = products.id'
+                . ' AND stock_inwards.is_active = 1'
+                . ' ORDER BY stock_inwards.inward_date DESC, stock_inwards.id DESC'
+                . ' LIMIT 1), products.purchase_price)'
+            )),
             'low_stock' => (clone $summaryQuery)
                 ->whereRaw('current_stock > 0 AND current_stock <= COALESCE(NULLIF(reorder_level, 0), minimum_stock)')
                 ->count(),

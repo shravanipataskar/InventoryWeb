@@ -5,7 +5,7 @@
 
 @section('content')
     <div class="page-heading workspace-page-heading">
-        <div><span class="section-kicker">INVENTORY</span><h1>Current Stock</h1><p>Live on-hand quantities and purchase value for active products.</p></div>
+        <div><span class="section-kicker">INVENTORY</span><h1>Current Stock</h1><p>Live on-hand quantities and estimated value at the latest recorded purchase price.</p></div>
         @if (auth()->user()->role === 'admin')
             <a class="button button-primary" href="{{ route('stock-inwards.create') }}"><span class="button-plus">+</span> Record Stock Inward</a>
         @else
@@ -35,7 +35,7 @@
                     <tbody>
                     @foreach ($products as $product)
                         @php($stockLabel = $product->current_stock <= 0 ? 'Out of stock' : ($product->current_stock <= $product->minimum_stock ? 'Low stock' : 'Available'))
-                        <tr><td><div class="product-cell"><span class="product-avatar">{{ strtoupper(substr($product->name, 0, 1)) }}</span><span><strong>{{ $product->name }}</strong><small>{{ $product->product_code }}</small></span></div></td><td>{{ optional($product->company)->name ?: '—' }}</td><td>{{ optional($product->category)->name ?: '—' }}</td><td>{{ optional($product->hallLocation)->name ?: '—' }} / {{ optional($product->rackLocation)->name ?: '—' }} / {{ optional($product->shelfLocation)->name ?: '—' }}</td><td class="number-cell">{{ number_format($product->current_stock, 2) }} <span>{{ optional($product->unit)->short_name }}</span></td><td class="number-cell">{{ number_format($product->minimum_stock, 2) }}</td><td class="currency-cell">₹{{ number_format($product->current_stock * $product->purchase_price, 2) }}</td><td>@include('components.status-badge', ['status' => $stockLabel])</td></tr>
+                        <tr><td><div class="product-cell"><span class="product-avatar">{{ strtoupper(substr($product->name, 0, 1)) }}</span><span><strong>{{ $product->name }}</strong><small>{{ $product->product_code }}</small></span></div></td><td>{{ optional($product->company)->name ?: '—' }}</td><td>{{ optional($product->category)->name ?: '—' }}</td><td>{{ optional($product->hallLocation)->name ?: '—' }} / {{ optional($product->rackLocation)->name ?: '—' }} / {{ optional($product->shelfLocation)->name ?: '—' }}</td><td class="number-cell">{{ number_format($product->current_stock, 2) }} <span>{{ optional($product->unit)->short_name }}</span></td><td class="number-cell">{{ number_format($product->minimum_stock, 2) }}</td><td class="currency-cell">₹{{ number_format($product->current_stock * ($product->latest_inward_purchase_price ?? $product->purchase_price), 2) }}</td><td>@include('components.status-badge', ['status' => $stockLabel])</td></tr>
                     @endforeach
                     </tbody>
                 </table>

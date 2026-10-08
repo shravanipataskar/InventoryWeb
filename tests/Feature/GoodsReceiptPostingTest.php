@@ -87,7 +87,8 @@ class GoodsReceiptPostingTest extends TestCase
         $this->get(route('current-stock.index'))
             ->assertOk()
             ->assertSee($product->name)
-            ->assertSee('14.00');
+            ->assertSee('14.00')
+            ->assertSee('₹770,000.00');
     }
 
     public function test_replaying_a_receipt_post_with_the_same_token_does_not_post_stock_twice()
