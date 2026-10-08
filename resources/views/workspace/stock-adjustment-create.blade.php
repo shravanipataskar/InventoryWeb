@@ -20,7 +20,7 @@
         </div>
     @endif
 
-    <section class="form-card">
+    <section class="form-card stock-adjustment-form-card">
         <form action="{{ route('stock-adjustments.store') }}" method="POST">
             @csrf
             <div class="form-section">
@@ -29,7 +29,7 @@
                     <div><h2>Adjustment details</h2><p>Saving this adjustment updates the product's on-hand quantity immediately.</p></div>
                 </div>
 
-                <div class="form-grid">
+                <div class="form-grid stock-adjustment-grid">
                     <div class="field field-wide">
                         <label for="product_id">Product <span class="required-mark">*</span></label>
                         <select class="field-control" id="product_id" name="product_id" required>

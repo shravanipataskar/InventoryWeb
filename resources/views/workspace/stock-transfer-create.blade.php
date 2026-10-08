@@ -37,11 +37,12 @@
         .stock-transfer-page .transfer-card-heading .form-section-icon{width:28px;height:28px;flex-basis:28px;border-radius:7px;color:var(--transfer-blue);background:#dbeafe}
         .stock-transfer-page .transfer-card-heading h2{margin:0;color:var(--transfer-blue);font-size:14px;font-weight:700}
         .stock-transfer-page .transfer-card-heading p{margin:2px 0 0;color:var(--transfer-secondary);font-size:10px}
-        .stock-transfer-page .transfer-information-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px 14px}
-        .stock-transfer-page .transfer-information-grid .field-wide{grid-column:span 2}
-        .stock-transfer-page .field label{margin-bottom:5px;color:#334155;font-size:10px;font-weight:600}
+        .stock-transfer-page .transfer-information-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px 18px}
+        .stock-transfer-page .transfer-information-grid .field{min-width:0}
+        .stock-transfer-page .transfer-information-grid .field-wide{grid-column:1 / -1}
+        .stock-transfer-page .field label{margin-bottom:7px;color:#334155;font-size:12px;font-weight:600}
         .stock-transfer-page .required-mark{color:var(--transfer-red)}
-        .stock-transfer-page .field-control{min-height:37px;padding:8px 10px;border:1px solid #cbd5e1;border-radius:7px;color:var(--transfer-text);background:#fff;font-size:11px}
+        .stock-transfer-page .field-control{width:100%;min-width:0;min-height:42px;padding:9px 11px;border:1px solid #cbd5e1;border-radius:7px;color:var(--transfer-text);background:#fff;font-size:12px}
         .stock-transfer-page .field-control:focus{border-color:var(--transfer-blue);outline:0;box-shadow:0 0 0 3px rgba(37,99,235,.12)}
         .stock-transfer-page .field-control::placeholder{color:var(--transfer-muted)}
         .stock-transfer-page textarea.field-control{min-height:54px;resize:vertical}
@@ -53,12 +54,12 @@
         .stock-transfer-page .transfer-items-heading .button{margin-left:auto}
         .stock-transfer-page .transfer-items-heading .button-secondary{border:1px solid var(--transfer-teal);color:#fff;background:var(--transfer-teal)}
         .stock-transfer-page .transfer-items-heading .button-secondary:hover{border-color:#0b8581;background:#0b8581}
-        .stock-transfer-page .transfer-items-wrap{overflow-x:auto}
-        .stock-transfer-page .transfer-items-table{width:100%;min-width:1040px;border-collapse:collapse;text-align:left}
-        .stock-transfer-page .transfer-items-table th{height:33px;padding:5px 6px;border-bottom:1px solid var(--transfer-border);color:#475569;background:#f8fafc;font-size:10px;font-weight:600;white-space:nowrap}
-        .stock-transfer-page .transfer-items-table td{padding:5px 5px;border-bottom:1px solid #edf1f5;vertical-align:middle;color:#334155;font-size:10px}
+        .stock-transfer-page .transfer-items-wrap{overflow-x:auto;padding-bottom:2px}
+        .stock-transfer-page .transfer-items-table{width:100%;min-width:1500px;border-collapse:collapse;text-align:left}
+        .stock-transfer-page .transfer-items-table th{height:37px;padding:7px 8px;border-bottom:1px solid var(--transfer-border);color:#475569;background:#f8fafc;font-size:11px;font-weight:600;white-space:nowrap}
+        .stock-transfer-page .transfer-items-table td{padding:8px 7px;border-bottom:1px solid #edf1f5;vertical-align:middle;color:#334155;font-size:11px}
         .stock-transfer-page .transfer-items-table tr:last-child td{border-bottom:0}
-        .stock-transfer-page .transfer-items-table .field-control{min-width:66px;min-height:33px;padding:6px 7px;border-radius:6px;font-size:10px}
+        .stock-transfer-page .transfer-items-table .field-control{min-width:66px;min-height:38px;padding:7px 8px;border-radius:6px;font-size:11px}
         .stock-transfer-page .transfer-items-table td:nth-child(2) .field-control{min-width:88px}
         .stock-transfer-page .transfer-items-table td:nth-child(3) .field-control{min-width:142px}
         .stock-transfer-page .transfer-items-table td:nth-child(10) .field-control{min-width:100px}
@@ -105,9 +106,9 @@
         .stock-transfer-page .transfer-actions .button-complete{min-width:142px;background:var(--transfer-teal)}
         .stock-transfer-page .transfer-actions .button-complete:hover{background:#0b8581}
         .stock-transfer-page .form-alert{border-color:#fecaca;color:#b91c1c;background:var(--transfer-red-light);font-size:11px}
-        @media(max-width:1100px){.stock-transfer-page .transfer-items-wrap{overflow-x:auto}.stock-transfer-page .transfer-items-table{min-width:1040px}}
+        @media(max-width:1100px){.stock-transfer-page .transfer-items-wrap{overflow-x:auto}.stock-transfer-page .transfer-items-table{min-width:1500px}}
         @media(max-width:760px){.stock-transfer-page .page-heading{align-items:flex-start;flex-direction:column;gap:10px}.stock-transfer-page .transfer-information-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.stock-transfer-page .transfer-information-grid .field-wide{grid-column:span 2}.stock-transfer-page .transfer-bottom-grid{grid-template-columns:1fr}}
-        @media(max-width:520px){.stock-transfer-page .transfer-information-grid{grid-template-columns:1fr}.stock-transfer-page .transfer-information-grid .field-wide{grid-column:auto}.stock-transfer-page .form-section{padding:11px}.stock-transfer-page .transfer-card-heading{gap:7px;padding:6px}.stock-transfer-page .transfer-card-heading p{font-size:9px}.stock-transfer-page .transfer-actions{justify-content:stretch}.stock-transfer-page .transfer-actions .button{flex:1;padding:0 8px;font-size:10px}}
+        @media(max-width:520px){        .stock-transfer-page .transfer-information-grid{grid-template-columns:1fr}.stock-transfer-page .transfer-information-grid .field-wide{grid-column:auto}.stock-transfer-page .form-section{padding:14px}.stock-transfer-page .transfer-card-heading{gap:7px;padding:6px}.stock-transfer-page .transfer-card-heading p{font-size:10px}.stock-transfer-page .transfer-actions{justify-content:stretch}.stock-transfer-page .transfer-actions .button{flex:1;padding:0 8px;font-size:11px}}
     </style>
 
     <div class="stock-transfer-page">
@@ -198,7 +199,7 @@
                     <div><h2>Transfer Items</h2><p>Add one or more products. Stock is checked for the selected source location.</p></div>
                     <button class="button button-secondary" type="button" id="add-transfer-item">＋ Add Product</button>
                 </div>
-                <div class="transfer-items-wrap">
+                <div class="transfer-items-wrap" tabindex="0" role="region" aria-label="Stock transfer products. Scroll horizontally to view all columns.">
                     <table class="transfer-items-table">
                         <thead>
                             <tr><th>#</th><th>Category <span class="required-mark">*</span></th><th>Product <span class="required-mark">*</span></th><th>Batch / Lot</th><th>Serial Numbers</th><th>Available (From)</th><th>Current (To)</th><th>Transfer Qty <span class="required-mark">*</span></th><th>Unit</th><th>Remarks</th><th>Action</th></tr>
@@ -238,6 +239,7 @@
                         </tbody>
                     </table>
                 </div>
+                <p class="table-scroll-hint">Scroll horizontally to review stock and details for each product.</p>
             </div>
 
             <div class="transfer-bottom-grid">

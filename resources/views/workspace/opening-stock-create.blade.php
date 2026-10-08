@@ -59,7 +59,7 @@
                 <div><span class="section-kicker">PHYSICAL COUNT</span><h2>Opening Stock Items</h2><p>Enter the quantity physically available at this location for each product.</p></div>
                 <button class="button button-primary opening-stock-add-button" type="button" id="add-opening-stock-item"><span class="button-plus">+</span> Add Product</button>
             </div>
-            <div class="opening-stock-table-wrap">
+            <div class="opening-stock-table-wrap" tabindex="0" role="region" aria-label="Opening stock items. Scroll horizontally to view all columns.">
                 <table class="opening-stock-table">
                     <thead><tr><th>#</th><th>Category <b>*</b></th><th>Product <b>*</b></th><th>SKU</th><th>Physical Opening Qty <b>*</b></th><th>Unit</th><th>Unit Purchase Cost <b>*</b></th><th>Opening Value</th><th>Batch / Lot</th><th>Serial Numbers</th><th>Remarks</th><th></th></tr></thead>
                     <tbody id="opening-stock-items">
@@ -82,7 +82,7 @@
                     </tbody>
                 </table>
             </div>
-            <p class="opening-stock-table-note">Products can appear once per document. Batch-tracked products may use separate rows for distinct batches.</p>
+            <p class="opening-stock-table-note">Scroll horizontally to view all item fields. Products can appear once per document; batch-tracked products may use separate rows for distinct batches.</p>
         </section>
 
         <div class="opening-stock-summary-grid">

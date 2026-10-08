@@ -27,7 +27,7 @@
                 <a class="status-tab {{ $listingStatus === 'inactive' ? 'is-selected' : '' }}" href="{{ route('stock-inwards.index', ['status' => 'inactive']) }}" {{ $listingStatus === 'inactive' ? 'aria-current=page' : '' }}>Inactive</a>
             </div>
         </div>
-        <div class="table-wrap">
+        <div class="table-wrap stock-inward-table-wrap" tabindex="0" role="region" aria-label="Stock inward records. Scroll horizontally to view all columns.">
             <table class="data-table listing-table">
                 <thead><tr><th>#</th><th>INWARD NO.</th><th>DATE</th><th>GRN</th><th>PO</th><th>PRODUCT</th><th>SUPPLIER</th><th>LOCATION</th><th>INVOICE</th><th>QUANTITY IN</th><th>PURCHASE PRICE</th><th>SUBTOTAL</th><th>SGST</th><th>CGST</th><th>TAX TOTAL</th><th>GRAND TOTAL</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
                 <tbody>
@@ -70,6 +70,7 @@
                 </tbody>
             </table>
         </div>
+        <p class="table-scroll-hint">Scroll horizontally to view all stock inward columns.</p>
         <div class="filter-empty" data-filter-empty hidden>No {{ $listingStatus }} inward records match your search or date range.</div>
         <div class="table-footer"><span class="table-summary" data-table-summary></span><div class="pagination" data-table-pagination></div></div>
     </section>
