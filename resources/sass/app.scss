@@ -195,6 +195,40 @@ button {
     color: $accent;
 }
 
+.nav-group {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.nav-submenu {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    margin-left: 23px;
+    padding-left: 9px;
+    border-left: 1px solid rgba(214, 226, 231, .2);
+}
+
+.nav-submenu .nav-link {
+    min-height: 36px;
+    gap: 9px;
+    padding: 0 9px;
+    font-size: 12px;
+}
+
+.nav-submenu .nav-link > svg {
+    width: 15px;
+    height: 15px;
+    flex-basis: 15px;
+}
+
+.nav-submenu .nav-link.is-active::before {
+    top: 8px;
+    bottom: 8px;
+    left: -11px;
+}
+
 .sidebar-footer {
     display: flex;
     align-items: center;
@@ -1044,6 +1078,46 @@ button {
     font-size: 8px;
 }
 
+.purchase-order-line {
+    display: grid;
+    grid-template-columns: minmax(130px, 1fr) minmax(0, 1.6fr) minmax(130px, 1fr) minmax(150px, 1fr) auto;
+    align-items: end;
+    gap: 17px;
+    padding: 16px 0;
+    border-bottom: 1px solid #edf1f3;
+}
+
+.purchase-order-line-remove {
+    min-height: 39px;
+    margin-bottom: 0;
+    font-size: 10px;
+}
+
+.purchase-order-add {
+    min-height: 36px;
+    margin-top: 14px;
+    padding: 0 14px;
+    border-color: #cfe7e3;
+    border-radius: 8px;
+    color: $teal;
+    background: #f2faf8;
+    font-size: 10px;
+    font-weight: 700;
+}
+
+.purchase-order-add span {
+    margin-right: 5px;
+    font-size: 16px;
+    line-height: 1;
+    vertical-align: -1px;
+}
+
+.purchase-order-add:hover {
+    border-color: $teal;
+    color: #fff;
+    background: $teal;
+}
+
 .listing-table {
     min-width: 720px;
 }
@@ -1566,6 +1640,15 @@ select.field-control {
         padding: 18px;
     }
 
+    .purchase-order-line {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 13px 16px;
+    }
+
+    .purchase-order-line-remove {
+        justify-self: start;
+    }
+
     .table-toolbar {
         padding: 13px;
     }
@@ -1592,6 +1675,11 @@ select.field-control {
     .form-grid {
         grid-template-columns: 1fr;
         gap: 14px;
+    }
+
+    .purchase-order-line {
+        grid-template-columns: 1fr;
+        gap: 12px;
     }
 
     .field-wide {

@@ -5,10 +5,14 @@
 
 @section('content')
     <div class="page-heading">
-        <div><span class="section-kicker">STOCK MOVEMENT</span><h1>Stock Inward</h1><p>Record goods received from suppliers.</p></div>
-        <a class="button button-primary" href="{{ route('stock-inwards.create') }}"><span class="button-plus">+</span> Add Stock Inward</a>
+        <div><span class="section-kicker">STOCK MOVEMENT</span><h1>Stock Inward</h1><p>Posted goods receipts appear here automatically as the stock ledger record.</p></div>
+        <div class="page-heading-actions">
+            <a class="button button-light" href="{{ route('goods-receipts.index') }}">Goods Received</a>
+            <a class="button button-primary" href="{{ route('purchase-orders.index') }}">Purchase Orders</a>
+        </div>
     </div>
 
+    @if (session('success'))<div class="inventory-notice notice-in" role="status"><span class="notice-symbol">✓</span><span>{{ session('success') }}</span></div>@endif
     @if ($errors->has('status'))
         <div class="form-alert" role="alert">{{ $errors->first('status') }}</div>
     @endif
@@ -25,14 +29,18 @@
         </div>
         <div class="table-wrap">
             <table class="data-table listing-table">
-                <thead><tr><th>#</th><th>DATE</th><th>PRODUCT</th><th>SUPPLIER</th><th>INVOICE</th><th>QUANTITY</th><th>PURCHASE PRICE</th><th>SUBTOTAL</th><th>SGST</th><th>CGST</th><th>TAX TOTAL</th><th>GRAND TOTAL</th><th>ACTIONS</th></tr></thead>
+                <thead><tr><th>#</th><th>INWARD NO.</th><th>DATE</th><th>GRN</th><th>PO</th><th>PRODUCT</th><th>SUPPLIER</th><th>LOCATION</th><th>INVOICE</th><th>QUANTITY IN</th><th>PURCHASE PRICE</th><th>SUBTOTAL</th><th>SGST</th><th>CGST</th><th>TAX TOTAL</th><th>GRAND TOTAL</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
                 <tbody>
                 @forelse ($stockInwards as $stock)
                     <tr data-table-row data-date="{{ \Carbon\Carbon::parse($stock->inward_date)->format('Y-m-d') }}">
                         <td class="muted-cell">{{ $loop->iteration }}</td>
+                        <td><span class="unit-code">{{ $stock->inward_number ?: '—' }}</span></td>
                         <td>{{ \Carbon\Carbon::parse($stock->inward_date)->format('d M Y') }}</td>
+                        <td>{{ optional(optional($stock->goodsReceiptItem)->goodsReceipt)->grn_number ?: '—' }}</td>
+                        <td>{{ optional(optional(optional($stock->goodsReceiptItem)->goodsReceipt)->purchaseOrder)->po_number ?: '—' }}</td>
                         <td><strong class="table-primary-text">{{ optional($stock->product)->name ?: '—' }}</strong></td>
                         <td>{{ optional($stock->supplier)->name ?: '—' }}</td>
+                        <td>{{ optional($stock->store)->name ?: '—' }}</td>
                         <td><span class="unit-code">{{ $stock->invoice_number ?: '—' }}</span></td>
                         <td class="number-cell quantity-in">+{{ number_format($stock->quantity, 2) }}</td>
                         <td class="currency-cell">₹{{ number_format($stock->purchase_price, 2) }}</td>
@@ -41,18 +49,23 @@
                         <td class="currency-cell">{{ number_format($stock->cgst_rate, 2) }}% / ₹{{ number_format($stock->cgst_amount, 2) }}</td>
                         <td class="currency-cell">₹{{ number_format($stock->tax_total, 2) }}</td>
                         <td><strong class="total-cell">₹{{ number_format($stock->grand_total, 2) }}</strong></td>
+                        <td>{{ $stock->isGoodsReceiptGenerated() ? 'Posted' : ($stock->is_active ? 'Active' : 'Inactive') }}</td>
                         <td class="action-cell">
-                            <form class="status-action-form" action="{{ route('stock-inwards.status', $stock->id) }}" method="POST">
-                                @csrf
-                                @method('PATCH')
-                                <input type="hidden" name="is_active" value="{{ $stock->is_active ? 0 : 1 }}">
-                                <input type="hidden" name="listing_status" value="{{ $listingStatus }}">
-                                <button class="button button-small {{ $stock->is_active ? 'button-deactivate' : 'button-activate' }}" type="submit">{{ $stock->is_active ? 'Inactive' : 'Active' }}</button>
-                            </form>
+                            <a class="button button-small button-light" href="{{ route('stock-inwards.show', $stock->id) }}">View</a>
+                            @if (!$stock->isGoodsReceiptGenerated() && auth()->user()->role === 'admin')
+                                <a class="button button-small button-light" href="{{ route('stock-inwards.edit', $stock->id) }}">Edit legacy</a>
+                                <form class="status-action-form" action="{{ route('stock-inwards.status', $stock->id) }}" method="POST">
+                                    @csrf
+                                    @method('PATCH')
+                                    <input type="hidden" name="is_active" value="{{ $stock->is_active ? 0 : 1 }}">
+                                    <input type="hidden" name="listing_status" value="{{ $listingStatus }}">
+                                    <button class="button button-small {{ $stock->is_active ? 'button-deactivate' : 'button-activate' }}" type="submit">{{ $stock->is_active ? 'Inactive' : 'Active' }}</button>
+                                </form>
+                            @endif
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="13">@include('components.empty-state', ['icon' => 'icon-tray-in', 'title' => 'No ' . $listingStatus . ' inward records', 'message' => $listingStatus === 'active' ? 'Stock received from suppliers will appear here.' : 'Deactivated stock receipts will appear here.'])</td></tr>
+                    <tr><td colspan="18">@include('components.empty-state', ['icon' => 'icon-tray-in', 'title' => 'No ' . $listingStatus . ' inward records', 'message' => $listingStatus === 'active' ? 'Stock inward records are generated automatically when Goods Received is posted.' : 'Deactivated legacy receipts will appear here.'])</td></tr>
                 @endforelse
                 </tbody>
             </table>

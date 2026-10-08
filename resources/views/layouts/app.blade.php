@@ -292,18 +292,26 @@
                     <span>Initial Stock</span>
                 </a>
 
-
-                {{-- Stock Inward --}}
-                <a
-                    class="nav-link {{ request()->routeIs('stock-inwards.*') ? 'is-active' : '' }}"
-                    href="{{ route('stock-inwards.index') }}">
-
-                    <svg>
-                        <use href="#icon-tray-in"></use>
-                    </svg>
-
-                    <span>Stock Inward</span>
-                </a>
+                <div class="nav-group">
+                    <a
+                        class="nav-link {{ request()->routeIs('stock-inwards.*') ? 'is-active' : '' }}"
+                        href="{{ route('stock-inwards.index') }}">
+                        <svg><use href="#icon-tray-in"></use></svg>
+                        <span>Stock Inward</span>
+                    </a>
+                    <div class="nav-submenu" aria-label="Stock inward options">
+                        <a class="nav-link {{ request()->routeIs('purchase-orders.*') ? 'is-active' : '' }}"
+                           href="{{ route('purchase-orders.index') }}">
+                            <svg><use href="#icon-tray-in"></use></svg>
+                            <span>Purchase Orders</span>
+                        </a>
+                        <a class="nav-link {{ request()->routeIs('goods-receipts.*') ? 'is-active' : '' }}"
+                           href="{{ route('goods-receipts.index') }}">
+                            <svg><use href="#icon-check"></use></svg>
+                            <span>Goods Received</span>
+                        </a>
+                    </div>
+                </div>
 
 
                 {{-- Stock Outward --}}

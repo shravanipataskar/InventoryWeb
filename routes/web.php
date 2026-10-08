@@ -299,6 +299,16 @@ Route::middleware('auth')->group(function () {
         'ProductController'
     );
 
+    Route::resource('purchase-orders', 'PurchaseOrderController')
+        ->only(['index', 'create', 'store', 'show']);
+    Route::get('purchase-orders/{purchaseOrder}/receive', 'GoodsReceiptController@create')
+        ->name('goods-receipts.create');
+    Route::post('purchase-orders/{purchaseOrder}/receive', 'GoodsReceiptController@store')
+        ->name('goods-receipts.store');
+    Route::get('goods-receipts', 'GoodsReceiptController@index')
+        ->name('goods-receipts.index');
+    Route::get('goods-receipts/{goodsReceipt}', 'GoodsReceiptController@show')
+        ->name('goods-receipts.show');
 
     /*
     |--------------------------------------------------------------------------
@@ -311,8 +321,11 @@ Route::middleware('auth')->group(function () {
         'StockInwardController'
     )->only([
         'index',
+        'show',
         'create',
         'store',
+        'edit',
+        'update',
     ]);
 
 

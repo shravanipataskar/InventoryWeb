@@ -45,8 +45,8 @@ class StockInwardTaxTest extends TestCase
             $supplier
         ))->assertSessionHasErrors('product_id');
 
-        $this->assertSame('0.00', $product->fresh()->current_stock);
-        $this->assertSame('0.00', $otherProduct->fresh()->current_stock);
+        $this->assertSame(0.0, (float) $product->fresh()->current_stock);
+        $this->assertSame(0.0, (float) $otherProduct->fresh()->current_stock);
         $this->assertDatabaseMissing('stock_inwards', [
             'product_id' => $otherProduct->id,
             'supplier_id' => $supplier->id,
@@ -77,15 +77,15 @@ class StockInwardTaxTest extends TestCase
             ->assertRedirect(route('stock-inwards.index'));
 
         $inward = StockInward::where('product_id', $product->id)->firstOrFail();
-        $this->assertSame('10000.00', $inward->subtotal);
-        $this->assertSame('900.00', $inward->sgst_amount);
-        $this->assertSame('900.00', $inward->cgst_amount);
-        $this->assertSame('9.00', $inward->sgst_rate);
-        $this->assertSame('9.00', $inward->cgst_rate);
-        $this->assertSame('1800.00', $inward->tax_total);
-        $this->assertSame('11800.00', $inward->grand_total);
-        $this->assertSame('10000.00', $inward->total_amount);
-        $this->assertSame('10.00', $product->fresh()->current_stock);
+        $this->assertSame(10000.0, (float) $inward->subtotal);
+        $this->assertSame(900.0, (float) $inward->sgst_amount);
+        $this->assertSame(900.0, (float) $inward->cgst_amount);
+        $this->assertSame(9.0, (float) $inward->sgst_rate);
+        $this->assertSame(9.0, (float) $inward->cgst_rate);
+        $this->assertSame(1800.0, (float) $inward->tax_total);
+        $this->assertSame(11800.0, (float) $inward->grand_total);
+        $this->assertSame(10000.0, (float) $inward->total_amount);
+        $this->assertSame(10.0, (float) $product->fresh()->current_stock);
 
         $this->get(route('stock-inwards.index'))
             ->assertOk()
@@ -120,13 +120,58 @@ class StockInwardTaxTest extends TestCase
             ]);
     }
 
+    public function test_stock_inward_can_be_edited_and_stock_is_reconciled()
+    {
+        $this->actingAs($this->makeUser());
+        list($category, $otherCategory, $product, $supplier) = $this->makeInventory();
+
+        $this->post(route('stock-inwards.store'), $this->inwardPayload(
+            $category,
+            $product,
+            $supplier,
+            [
+                'quantity' => 10,
+                'purchase_price' => 1000,
+                'sgst_rate' => 9,
+                'cgst_rate' => 9,
+            ]
+        ))->assertRedirect(route('stock-inwards.index'));
+
+        $inward = StockInward::where('product_id', $product->id)->firstOrFail();
+        $this->put(route('stock-inwards.update', $inward->id), [
+            'category_id' => $category->id,
+            'product_id' => $product->id,
+            'supplier_id' => $supplier->id,
+            'inward_date' => now()->toDateString(),
+            'quantity' => 5,
+            'purchase_price' => 1500,
+            'sgst_rate' => 10,
+            'cgst_rate' => 10,
+            'invoice_number' => 'EDIT-100',
+            'remarks' => 'Updated inward',
+        ])->assertRedirect(route('stock-inwards.index'));
+
+        $updated = $inward->fresh();
+        $this->assertSame(5.0, (float) $updated->quantity);
+        $this->assertSame(7500.0, (float) $updated->subtotal);
+        $this->assertSame(750.0, (float) $updated->sgst_amount);
+        $this->assertSame(750.0, (float) $updated->cgst_amount);
+        $this->assertSame(1500.0, (float) $updated->tax_total);
+        $this->assertSame(9000.0, (float) $updated->grand_total);
+        $this->assertSame(5.0, (float) $product->fresh()->current_stock);
+    }
+
     private function makeUser()
     {
-        return User::create([
+        $user = User::create([
             'name' => 'Stock Inward Tax Test User',
             'email' => Str::uuid() . '@example.test',
             'password' => Hash::make('test-password'),
         ]);
+        $user->role = 'admin';
+        $user->save();
+
+        return $user;
     }
 
     private function makeInventory()

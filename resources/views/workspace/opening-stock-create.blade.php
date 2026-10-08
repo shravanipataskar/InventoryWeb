@@ -76,27 +76,19 @@
                 </div>
             </div>
 
-            @if (!$products->count() || !$locations->count())
+            @if (!$products->count())
                 <div class="inventory-notice notice-out">
                     <span class="notice-symbol" aria-hidden="true">!</span>
                     <div>
                         <strong>Setup required</strong>
-                        <small>
-                            @if (!$products->count() && !$locations->count())
-                                Add an active product and an active location before recording initial stock.
-                            @elseif (!$products->count())
-                                Add an active product before recording initial stock.
-                            @else
-                                Add an active location before recording initial stock.
-                            @endif
-                        </small>
+                        <small>Add an active product before recording initial stock.</small>
                     </div>
                 </div>
             @endif
 
             <div class="form-actions">
                 <a class="button button-light" href="{{ route('opening-stock.index') }}">Cancel</a>
-                <button class="button button-primary" type="submit" {{ !$products->count() || !$locations->count() ? 'disabled' : '' }}>Save Initial Stock</button>
+                <button class="button button-primary" type="submit" {{ !$products->count() ? 'disabled' : '' }}>Save Initial Stock</button>
             </div>
         </form>
     </section>

@@ -8,6 +8,7 @@ use App\Supplier;
 use App\Category;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
 
 class StockInwardController extends Controller
@@ -15,7 +16,13 @@ class StockInwardController extends Controller
     public function index(Request $request)
     {
         $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
-        $stockInwards = StockInward::with(['product', 'supplier'])
+        $stockInwards = StockInward::with([
+                'product.category',
+                'product.unit',
+                'supplier',
+                'store',
+                'goodsReceiptItem.goodsReceipt.purchaseOrder',
+            ])
             ->where('is_active', $listingStatus === 'active')
             ->orderBy('id', 'desc')
             ->get();
@@ -23,8 +30,24 @@ class StockInwardController extends Controller
         return view('stock_inwards.index', compact('stockInwards', 'listingStatus'));
     }
 
+    public function show($id)
+    {
+        $stockInward = StockInward::with([
+            'product.category',
+            'product.unit',
+            'supplier',
+            'store',
+            'creator',
+            'goodsReceiptItem.goodsReceipt.purchaseOrder',
+        ])->findOrFail($id);
+
+        return view('stock_inwards.show', compact('stockInward'));
+    }
+
     public function create()
     {
+        abort_unless(Auth::user()->role === 'admin', 403);
+
         $categories = Category::orderBy('name')
             ->get();
 
@@ -51,8 +74,40 @@ class StockInwardController extends Controller
         ));
     }
 
+    public function edit($id)
+    {
+        $stockInward = StockInward::with(['product.category', 'supplier'])->findOrFail($id);
+        abort_if($stockInward->isGoodsReceiptGenerated(), 403, 'Posted Goods Received inward entries cannot be edited.');
+        abort_unless(Auth::user()->role === 'admin', 403);
+
+        $categories = Category::orderBy('name')->get();
+        $products = Product::where('is_active', 1)
+            ->orderBy('name')
+            ->get();
+        $productOptions = $products->map(function ($product) {
+            return [
+                'id' => (string) $product->id,
+                'category_id' => (string) $product->category_id,
+                'label' => $product->name . ' (' . $product->product_code . ')',
+            ];
+        })->values();
+        $suppliers = Supplier::where('is_active', 1)
+            ->orderBy('name')
+            ->get();
+
+        return view('stock_inwards.edit', compact(
+            'stockInward',
+            'categories',
+            'products',
+            'productOptions',
+            'suppliers'
+        ));
+    }
+
     public function store(Request $request)
     {
+        abort_unless(Auth::user()->role === 'admin', 403);
+
         $validated = $request->validate([
             'category_id' => 'required|exists:categories,id',
             'product_id' => [
@@ -123,8 +178,87 @@ class StockInwardController extends Controller
             ->with('success', 'Stock inward recorded successfully.');
     }
 
+    public function update(Request $request, $id)
+    {
+        $stockInward = StockInward::findOrFail($id);
+        abort_if($stockInward->isGoodsReceiptGenerated(), 403, 'Posted Goods Received inward entries cannot be edited.');
+        abort_unless(Auth::user()->role === 'admin', 403);
+
+        $validated = $request->validate([
+            'category_id' => 'required|exists:categories,id',
+            'product_id' => [
+                'required',
+                Rule::exists('products', 'id')->where('category_id', $request->input('category_id')),
+            ],
+            'supplier_id' => 'required|exists:suppliers,id',
+            'invoice_number' => 'nullable|string|max:100',
+            'inward_date' => 'required|date',
+            'quantity' => 'required|numeric|min:0.01',
+            'purchase_price' => 'required|numeric|min:0',
+            'sgst_rate' => 'required|numeric|min:0|max:100',
+            'cgst_rate' => 'required|numeric|min:0|max:100',
+            'remarks' => 'nullable|string',
+        ]);
+
+        $originalQuantity = (float) $stockInward->quantity;
+        $newQuantity = (float) $validated['quantity'];
+        $newPurchasePrice = round((float) $validated['purchase_price'], 2);
+        $newSgstRate = round((float) $validated['sgst_rate'], 2);
+        $newCgstRate = round((float) $validated['cgst_rate'], 2);
+        $newSubtotal = round($newQuantity * $newPurchasePrice, 2);
+        $newSgstAmount = round($newSubtotal * $newSgstRate / 100, 2);
+        $newCgstAmount = round($newSubtotal * $newCgstRate / 100, 2);
+        $newTaxTotal = round($newSgstAmount + $newCgstAmount, 2);
+        $newGrandTotal = round($newSubtotal + $newTaxTotal, 2);
+
+        DB::transaction(function () use ($stockInward, $validated, $originalQuantity, $newQuantity, $newPurchasePrice, $newSgstRate, $newCgstRate, $newSubtotal, $newSgstAmount, $newCgstAmount, $newTaxTotal, $newGrandTotal) {
+            $oldProductId = $stockInward->product_id;
+            $newProductId = (int) $validated['product_id'];
+
+            $product = Product::lockForUpdate()->findOrFail($oldProductId);
+            if ($stockInward->is_active) {
+                $product->decrement('current_stock', $originalQuantity);
+            }
+
+            if ($oldProductId !== $newProductId) {
+                $replacementProduct = Product::lockForUpdate()->findOrFail($newProductId);
+                if ($stockInward->is_active) {
+                    $replacementProduct->increment('current_stock', $newQuantity);
+                }
+                $stockInward->product_id = $newProductId;
+            } elseif ($stockInward->is_active) {
+                $product->increment('current_stock', $newQuantity);
+            }
+
+            $stockInward->fill([
+                'product_id' => $newProductId,
+                'supplier_id' => $validated['supplier_id'],
+                'invoice_number' => $validated['invoice_number'] ?? null,
+                'inward_date' => $validated['inward_date'],
+                'quantity' => $newQuantity,
+                'purchase_price' => $newPurchasePrice,
+                'total_amount' => $newSubtotal,
+                'sgst_rate' => $newSgstRate,
+                'cgst_rate' => $newCgstRate,
+                'sgst_amount' => $newSgstAmount,
+                'cgst_amount' => $newCgstAmount,
+                'tax_total' => $newTaxTotal,
+                'subtotal' => $newSubtotal,
+                'grand_total' => $newGrandTotal,
+                'remarks' => $validated['remarks'] ?? null,
+            ]);
+            $stockInward->save();
+        });
+
+        return redirect()
+            ->route('stock-inwards.index')
+            ->with('success', 'Stock inward updated successfully.');
+    }
+
     public function status(Request $request, $id)
     {
+        abort_unless(Auth::user()->role === 'admin', 403);
+
         $validated = $request->validate([
             'is_active' => 'required|boolean',
             'listing_status' => 'required|in:active,inactive',
@@ -132,6 +266,11 @@ class StockInwardController extends Controller
 
         DB::transaction(function () use ($id, $validated) {
             $stockInward = StockInward::lockForUpdate()->findOrFail($id);
+            if ($stockInward->isGoodsReceiptGenerated()) {
+                throw \Illuminate\Validation\ValidationException::withMessages([
+                    'status' => 'Goods Received inward entries cannot be deactivated; correct the source receipt through a stock adjustment.',
+                ]);
+            }
 
             if ((bool) $stockInward->is_active === (bool) $validated['is_active']) {
                 return;
