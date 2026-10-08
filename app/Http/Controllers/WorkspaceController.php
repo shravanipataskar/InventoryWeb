@@ -410,7 +410,16 @@ class WorkspaceController extends Controller
         $products = Product::where('is_active', true)
             ->with('unit', 'category')
             ->orderBy('name')
-            ->get(['id', 'name', 'product_code', 'category_id', 'purchase_price', 'current_stock', 'unit_id']);
+            ->get([
+                'id',
+                'name',
+                'product_code',
+                'category_id',
+                'purchase_price',
+                'current_stock',
+                'unit_id'
+            ]);
+            
 
         $locations = DB::table('stores')
             ->where('is_active', true)
