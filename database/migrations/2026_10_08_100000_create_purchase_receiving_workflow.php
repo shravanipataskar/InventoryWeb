@@ -147,7 +147,7 @@ class CreatePurchaseReceivingWorkflow extends Migration
                 $table->foreign('store_id')->references('id')->on('stores')->onDelete('restrict');
                 $table->foreign('product_id')->references('id')->on('products')->onDelete('restrict');
                 $table->foreign('created_by')->references('id')->on('users')->onDelete('set null');
-                $table->unique(['reference_type', 'reference_id', 'product_id'], 'stock_transactions_source_product_unique');
+                $table->unique(['reference_type', 'reference_id', 'product_id', 'transaction_type'], 'stock_transactions_source_product_type_unique');
                 $table->index(['store_id', 'product_id', 'transaction_date'], 'stock_transactions_balance_index');
             });
         }

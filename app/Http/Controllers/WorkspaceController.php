@@ -16,7 +16,6 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
 class WorkspaceController extends Controller
@@ -410,10 +409,8 @@ class WorkspaceController extends Controller
             ->get(['id', 'name']);
         $products = Product::where('is_active', true)
             ->with('unit', 'category')
-            ->with('unit', 'category')
             ->orderBy('name')
             ->get(['id', 'name', 'product_code', 'category_id', 'purchase_price', 'current_stock', 'unit_id']);
-            ->get(['id', 'name', 'product_code', 'current_stock', 'unit_id', 'category_id']);
 
         $locations = DB::table('stores')
             ->where('is_active', true)
@@ -1146,13 +1143,11 @@ class WorkspaceController extends Controller
                     ->where('inward_transactions.reference_type', '=', 'stock_inward');
             })
             ->where('stock_inwards.is_active', true)
-            ->selectRaw("'Stock Inward' as movement_type, stock_inwards.invoice_number as reference, products.name as product_name, stock_inwards.quantity as quantity, stock_inwards.total_amount as amount, stock_inwards.inward_date as movement_date, NULL as location_name")
             ->selectRaw("'Stock Inward' as movement_type, COALESCE(stock_inwards.inward_number, stock_inwards.invoice_number) as reference, products.name as product_name, stores.name as location_name, stock_inwards.quantity as quantity, inward_transactions.balance_quantity as balance_quantity, stock_inwards.total_amount as amount, stock_inwards.inward_date as movement_date")
             ->unionAll(
                 DB::table('stock_outwards')
                     ->join('products', 'products.id', '=', 'stock_outwards.product_id')
                     ->where('stock_outwards.is_active', true)
-                    ->selectRaw("'Stock Outward' as movement_type, stock_outwards.reference_number as reference, products.name as product_name, stock_outwards.quantity as quantity, stock_outwards.total_amount as amount, stock_outwards.outward_date as movement_date, NULL as location_name")
                     ->selectRaw("'Stock Outward' as movement_type, stock_outwards.reference_number as reference, products.name as product_name, NULL as location_name, stock_outwards.quantity as quantity, NULL as balance_quantity, stock_outwards.total_amount as amount, stock_outwards.outward_date as movement_date")
             )
             ->unionAll($this->transferMovementQuery())
@@ -1505,7 +1500,7 @@ class WorkspaceController extends Controller
                 ->join('products', 'products.id', '=', 'stock_transactions.product_id')
                 ->leftJoin('stores', 'stores.id', '=', 'stock_transactions.store_id')
                 ->where('stock_transactions.reference_type', 'stock_transfer')
-                ->selectRaw("CASE WHEN stock_transactions.transaction_type = 'transfer_out' THEN 'Transfer Out' ELSE 'Transfer In' END as movement_type, stock_transfers.transfer_number as reference, products.name as product_name, (stock_transactions.quantity_in - stock_transactions.quantity_out) as quantity, 0 as amount, stock_transactions.transaction_date as movement_date, stores.name as location_name");
+                ->selectRaw("CASE WHEN stock_transactions.transaction_type = 'transfer_out' THEN 'Transfer Out' ELSE 'Transfer In' END as movement_type, stock_transfers.transfer_number as reference, products.name as product_name, stores.name as location_name, (stock_transactions.quantity_in - stock_transactions.quantity_out) as quantity, stock_transactions.balance_quantity as balance_quantity, 0 as amount, stock_transactions.transaction_date as movement_date");
 
             if (Schema::hasTable('stock_transfer_items')
                 && Schema::hasColumn('stock_transfers', 'from_store_id')
@@ -1521,7 +1516,7 @@ class WorkspaceController extends Controller
                             ->whereColumn('stock_transactions.reference_id', 'stock_transfers.id')
                             ->where('stock_transactions.reference_type', 'stock_transfer');
                     })
-                    ->selectRaw("'Stock Transfer (legacy)' as movement_type, stock_transfers.transfer_number as reference, products.name as product_name, stock_transfer_items.quantity as quantity, 0 as amount, stock_transfers.transfer_date as movement_date, from_store.name as location_name");
+                    ->selectRaw("'Stock Transfer (legacy)' as movement_type, stock_transfers.transfer_number as reference, products.name as product_name, from_store.name as location_name, stock_transfer_items.quantity as quantity, NULL as balance_quantity, 0 as amount, stock_transfers.transfer_date as movement_date");
 
                 return $ledgerMovements->unionAll($legacyMovements);
             }
@@ -1535,7 +1530,6 @@ class WorkspaceController extends Controller
             return DB::table('stock_transfers')
                 ->join('products', 'products.id', '=', 'stock_transfers.product_id')
                 ->where('stock_transfers.is_active', true)
-                ->selectRaw("'Stock Transfer' as movement_type, stock_transfers.transfer_number as reference, products.name as product_name, stock_transfers.quantity as quantity, 0 as amount, stock_transfers.transfer_date as movement_date, NULL as location_name");
                 ->selectRaw("'Stock Transfer' as movement_type, stock_transfers.transfer_number as reference, products.name as product_name, NULL as location_name, stock_transfers.quantity as quantity, NULL as balance_quantity, 0 as amount, stock_transfers.transfer_date as movement_date");
         }
 
@@ -1543,7 +1537,6 @@ class WorkspaceController extends Controller
             ->join('stock_transfer_items', 'stock_transfer_items.stock_transfer_id', '=', 'stock_transfers.id')
             ->join('products', 'products.id', '=', 'stock_transfer_items.product_id')
             ->where('stock_transfers.status', '<>', 'cancelled')
-            ->selectRaw("'Stock Transfer' as movement_type, stock_transfers.transfer_number as reference, products.name as product_name, stock_transfer_items.quantity as quantity, 0 as amount, stock_transfers.transfer_date as movement_date, NULL as location_name");
             ->selectRaw("'Stock Transfer' as movement_type, stock_transfers.transfer_number as reference, products.name as product_name, NULL as location_name, stock_transfer_items.quantity as quantity, NULL as balance_quantity, 0 as amount, stock_transfers.transfer_date as movement_date");
     }
 
@@ -1552,14 +1545,12 @@ class WorkspaceController extends Controller
         if (Schema::hasColumn('stock_adjustments', 'adjustment_number')) {
             return DB::table('stock_adjustments')
                 ->join('products', 'products.id', '=', 'stock_adjustments.product_id')
-                ->selectRaw("'Stock Adjustment' as movement_type, stock_adjustments.adjustment_number as reference, products.name as product_name, CASE WHEN LOWER(stock_adjustments.type) LIKE '%decreas%' OR LOWER(stock_adjustments.type) LIKE '%out%' THEN -stock_adjustments.quantity ELSE stock_adjustments.quantity END as quantity, 0 as amount, stock_adjustments.adjustment_date as movement_date, NULL as location_name");
                 ->selectRaw("'Stock Adjustment' as movement_type, stock_adjustments.adjustment_number as reference, products.name as product_name, NULL as location_name, CASE WHEN LOWER(stock_adjustments.type) LIKE '%decreas%' OR LOWER(stock_adjustments.type) LIKE '%out%' THEN -stock_adjustments.quantity ELSE stock_adjustments.quantity END as quantity, NULL as balance_quantity, 0 as amount, stock_adjustments.adjustment_date as movement_date");
         }
 
         return DB::table('stock_adjustments')
             ->join('products', 'products.id', '=', 'stock_adjustments.product_id')
             ->where('stock_adjustments.is_active', true)
-            ->selectRaw("'Stock Adjustment' as movement_type, stock_adjustments.reference_number as reference, products.name as product_name, stock_adjustments.adjustment_quantity as quantity, 0 as amount, stock_adjustments.adjustment_date as movement_date, NULL as location_name");
             ->selectRaw("'Stock Adjustment' as movement_type, stock_adjustments.reference_number as reference, products.name as product_name, NULL as location_name, stock_adjustments.adjustment_quantity as quantity, NULL as balance_quantity, 0 as amount, stock_adjustments.adjustment_date as movement_date");
     }
 
