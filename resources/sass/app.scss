@@ -1225,6 +1225,31 @@ button {
     font-size: 10px;
 }
 
+.purchase-order-receipt-items {
+    display: grid;
+    gap: 6px;
+    min-width: 180px;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.purchase-order-receipt-items li {
+    display: grid;
+    gap: 3px;
+    white-space: normal;
+}
+
+.purchase-order-receipt-items strong {
+    color: #354a55;
+    font-size: 10px;
+}
+
+.purchase-order-receipt-items small {
+    color: #6d7c83;
+    font-size: 9px;
+}
+
 .purchase-order-add {
     min-height: 36px;
     margin-top: 14px;
@@ -2611,10 +2636,6 @@ select.field-control {
     .outward-information-grid .field-hint {
         display: block;
         margin-top: 4px;
-    }
-
-    .outward-customer-search {
-        margin-bottom: 6px;
     }
 
     .outward-information-grid textarea.field-control {

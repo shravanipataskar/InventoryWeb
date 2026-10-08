@@ -44,8 +44,8 @@
                         <td><span class="unit-code">{{ optional($product->shelf)->name ?: '—' }}</span></td>
                         <td>{{ optional($product->category)->name ?: '—' }}</td>
                         <td>{{ optional($product->unit)->short_name ?: '—' }}</td>
-                        <td class="currency-cell">₹{{ number_format($product->purchase_price, 2) }}</td>
-                        <td class="currency-cell">₹{{ number_format($product->selling_price, 2) }}</td>
+                        <td class="currency-cell">₹{{ number_format($product->latest_inward_purchase_price ?? $product->purchase_price, 2) }}</td>
+                        <td class="currency-cell">₹{{ number_format($product->latest_outward_selling_price ?? $product->selling_price, 2) }}</td>
                         <td class="number-cell">{{ number_format($product->current_stock, 2) }}</td>
                         <td class="number-cell">{{ number_format($product->minimum_stock, 2) }}</td>
                         <td>@include('components.status-badge', ['status' => $stockLabel])</td>

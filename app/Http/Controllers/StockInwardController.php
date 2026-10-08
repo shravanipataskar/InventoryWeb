@@ -6,6 +6,9 @@ use App\StockInward;
 use App\Product;
 use App\Supplier;
 use App\Category;
+use App\PurchaseOrder;
+use App\GoodsReceipt;
+use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Auth;
@@ -65,12 +68,17 @@ class StockInwardController extends Controller
         $suppliers = Supplier::where('is_active', 1)
             ->orderBy('name')
             ->get();
+        $stores = DB::table('stores')
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get();
 
         return view('stock_inwards.create', compact(
             'categories',
             'products',
             'productOptions',
-            'suppliers'
+            'suppliers',
+            'stores'
         ));
     }
 
@@ -115,6 +123,7 @@ class StockInwardController extends Controller
                 Rule::exists('products', 'id')->where('category_id', $request->input('category_id')),
             ],
             'supplier_id' => 'required|exists:suppliers,id',
+            'store_id' => 'required|integer|exists:stores,id,is_active,1',
             'invoice_number' => 'nullable|string|max:100',
             'inward_date' => 'required|date',
             'quantity' => 'required|numeric|min:0.01',
@@ -146,13 +155,69 @@ class StockInwardController extends Controller
             $taxTotal,
             $grandTotal
         ) {
+            $product = Product::lockForUpdate()->findOrFail($validated['product_id']);
+            $order = PurchaseOrder::create([
+                'po_number' => 'TEMP-' . Str::uuid(),
+                'supplier_id' => $validated['supplier_id'],
+                'store_id' => $validated['store_id'],
+                'po_date' => $validated['inward_date'],
+                'status' => 'received',
+                'subtotal' => $subtotal,
+                'discount_amount' => 0,
+                'tax_amount' => $taxTotal,
+                'grand_total' => $grandTotal,
+                'notes' => $validated['remarks'] ?? null,
+                'created_by' => Auth::id(),
+            ]);
+            $order->po_number = 'PO-' . date('Ymd', strtotime($validated['inward_date']))
+                . '-' . str_pad($order->id, 3, '0', STR_PAD_LEFT);
+            $order->save();
 
-            StockInward::create([
+            $orderItem = $order->items()->create([
+                'product_id' => $product->id,
+                'unit_id' => $product->unit_id,
+                'quantity' => $quantity,
+                'received_quantity' => $quantity,
+                'purchase_rate' => $purchasePrice,
+                'discount_percent' => 0,
+                'tax_percent' => round($sgstRate + $cgstRate, 2),
+                'total_amount' => $subtotal,
+            ]);
+
+            $receipt = GoodsReceipt::create([
+                'purchase_order_id' => $order->id,
+                'submission_token' => (string) Str::uuid(),
+                'supplier_id' => $validated['supplier_id'],
+                'store_id' => $validated['store_id'],
+                'received_date' => $validated['inward_date'],
+                'invoice_number' => $validated['invoice_number'] ?? null,
+                'remarks' => $validated['remarks'] ?? null,
+                'status' => 'posted',
+                'received_by' => Auth::id(),
+                'created_by' => Auth::id(),
+            ]);
+            $receipt->grn_number = 'GRN-' . date('Ymd', strtotime($validated['inward_date']))
+                . '-' . str_pad($receipt->id, 3, '0', STR_PAD_LEFT);
+            $receipt->save();
+
+            $receiptItem = $receipt->items()->create([
+                'purchase_order_item_id' => $orderItem->id,
+                'product_id' => $product->id,
+                'ordered_quantity' => $quantity,
+                'received_quantity' => $quantity,
+                'rejected_quantity' => 0,
+                'accepted_quantity' => $quantity,
+                'purchase_rate' => $purchasePrice,
+            ]);
+
+            $inward = StockInward::create([
                 'product_id' => $validated['product_id'],
                 'supplier_id' => $validated['supplier_id'],
                 'invoice_number' => $validated['invoice_number'] ?? null,
                 'inward_date' => $validated['inward_date'],
                 'quantity' => $quantity,
+                'received_quantity' => $quantity,
+                'rejected_quantity' => 0,
                 'purchase_price' => $purchasePrice,
                 'total_amount' => $subtotal,
                 'sgst_rate' => $sgstRate,
@@ -163,19 +228,43 @@ class StockInwardController extends Controller
                 'subtotal' => $subtotal,
                 'grand_total' => $grandTotal,
                 'remarks' => $validated['remarks'] ?? null,
+                'goods_receipt_item_id' => $receiptItem->id,
+                'store_id' => $validated['store_id'],
+                'status' => 'posted',
+                'created_by' => Auth::id(),
+                'is_active' => true,
             ]);
+            $inward->inward_number = 'INW-' . date('Ymd', strtotime($validated['inward_date']))
+                . '-' . str_pad($inward->id, 4, '0', STR_PAD_LEFT);
+            $inward->save();
 
-            $product = Product::findOrFail($validated['product_id']);
+            $product->increment('current_stock', $quantity);
 
-            $product->increment(
-                'current_stock',
-                $quantity
-            );
+            $storeBalance = (float) DB::table('stock_transactions')
+                ->where('store_id', $validated['store_id'])
+                ->where('product_id', $product->id)
+                ->sum(DB::raw('quantity_in - quantity_out'));
+            DB::table('stock_transactions')->insert([
+                'store_id' => $validated['store_id'],
+                'product_id' => $product->id,
+                'transaction_type' => 'purchase',
+                'reference_type' => 'stock_inward',
+                'reference_id' => $inward->id,
+                'quantity_in' => $quantity,
+                'quantity_out' => 0,
+                'balance_quantity' => round($storeBalance + $quantity, 2),
+                'unit_price' => $purchasePrice,
+                'transaction_date' => $validated['inward_date'],
+                'remarks' => $receipt->grn_number,
+                'created_by' => Auth::id(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
         });
 
         return redirect()
             ->route('stock-inwards.index')
-            ->with('success', 'Stock inward recorded successfully.');
+            ->with('success', 'Stock inward recorded and the related Purchase Order and Goods Received entry were created.');
     }
 
     public function update(Request $request, $id)

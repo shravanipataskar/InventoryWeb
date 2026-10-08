@@ -9,6 +9,7 @@ use App\Supplier;
 use App\Unit;
 use App\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -30,19 +31,21 @@ class StockInwardTaxTest extends TestCase
             ->assertSee($product->name)
             ->assertSee($otherProduct->name)
             ->assertSee('function filterProducts')
-            ->assertSee('category_id');
+            ->assertSee('category_id')
+            ->assertSee('name="store_id"', false);
     }
 
     public function test_stock_inward_rejects_a_product_from_another_category()
     {
         $this->actingAs($this->makeUser());
-        list($category, $otherCategory, $product, $supplier) = $this->makeInventory();
+        list($category, $otherCategory, $product, $supplier, $store) = $this->makeInventory();
         $otherProduct = $this->makeProduct($otherCategory, 'OTHER-' . strtoupper(Str::random(8)));
 
         $this->post(route('stock-inwards.store'), $this->inwardPayload(
             $category,
             $otherProduct,
-            $supplier
+            $supplier,
+            $store
         ))->assertSessionHasErrors('product_id');
 
         $this->assertSame(0.0, (float) $product->fresh()->current_stock);
@@ -56,12 +59,13 @@ class StockInwardTaxTest extends TestCase
     public function test_stock_inward_recalculates_tax_totals_and_increases_stock()
     {
         $this->actingAs($this->makeUser());
-        list($category, $otherCategory, $product, $supplier) = $this->makeInventory();
+        list($category, $otherCategory, $product, $supplier, $store) = $this->makeInventory();
 
         $this->post(route('stock-inwards.store'), $this->inwardPayload(
             $category,
             $product,
             $supplier,
+            $store,
             [
                 'quantity' => 10,
                 'purchase_price' => 1000,
@@ -91,14 +95,24 @@ class StockInwardTaxTest extends TestCase
             ->assertOk()
             ->assertSee('SUBTOTAL')
             ->assertSee('GRAND TOTAL')
-            ->assertSee('11,800.00');
+            ->assertSee('11,800.00')
+            ->assertSee($inward->inward_number)
+            ->assertSee($inward->goodsReceiptItem->goodsReceipt->purchaseOrder->po_number)
+            ->assertSee($inward->goodsReceiptItem->goodsReceipt->grn_number);
+        $this->get(route('purchase-orders.index'))
+            ->assertOk()
+            ->assertSee($inward->goodsReceiptItem->goodsReceipt->purchaseOrder->po_number);
+        $this->get(route('purchase-orders.show', $inward->goodsReceiptItem->goodsReceipt->purchase_order_id))
+            ->assertOk()
+            ->assertSee($product->name)
+            ->assertSee('10.00');
     }
 
     public function test_stock_inward_requires_valid_positive_quantity_and_tax_rates()
     {
         $this->actingAs($this->makeUser());
-        list($category, $otherCategory, $product, $supplier) = $this->makeInventory();
-        $payload = $this->inwardPayload($category, $product, $supplier, [
+        list($category, $otherCategory, $product, $supplier, $store) = $this->makeInventory();
+        $payload = $this->inwardPayload($category, $product, $supplier, $store, [
             'quantity' => -1,
             'sgst_rate' => -1,
             'cgst_rate' => 101,
@@ -113,6 +127,7 @@ class StockInwardTaxTest extends TestCase
                 'category_id',
                 'product_id',
                 'supplier_id',
+                'store_id',
                 'quantity',
                 'purchase_price',
                 'sgst_rate',
@@ -120,15 +135,16 @@ class StockInwardTaxTest extends TestCase
             ]);
     }
 
-    public function test_stock_inward_can_be_edited_and_stock_is_reconciled()
+    public function test_stock_inward_creates_purchase_and_receipt_records_that_cannot_be_edited_as_legacy_inward()
     {
         $this->actingAs($this->makeUser());
-        list($category, $otherCategory, $product, $supplier) = $this->makeInventory();
+        list($category, $otherCategory, $product, $supplier, $store) = $this->makeInventory();
 
         $this->post(route('stock-inwards.store'), $this->inwardPayload(
             $category,
             $product,
             $supplier,
+            $store,
             [
                 'quantity' => 10,
                 'purchase_price' => 1000,
@@ -142,6 +158,7 @@ class StockInwardTaxTest extends TestCase
             'category_id' => $category->id,
             'product_id' => $product->id,
             'supplier_id' => $supplier->id,
+            'store_id' => $inward->store_id,
             'inward_date' => now()->toDateString(),
             'quantity' => 5,
             'purchase_price' => 1500,
@@ -149,16 +166,10 @@ class StockInwardTaxTest extends TestCase
             'cgst_rate' => 10,
             'invoice_number' => 'EDIT-100',
             'remarks' => 'Updated inward',
-        ])->assertRedirect(route('stock-inwards.index'));
+        ])->assertForbidden();
 
-        $updated = $inward->fresh();
-        $this->assertSame(5.0, (float) $updated->quantity);
-        $this->assertSame(7500.0, (float) $updated->subtotal);
-        $this->assertSame(750.0, (float) $updated->sgst_amount);
-        $this->assertSame(750.0, (float) $updated->cgst_amount);
-        $this->assertSame(1500.0, (float) $updated->tax_total);
-        $this->assertSame(9000.0, (float) $updated->grand_total);
-        $this->assertSame(5.0, (float) $product->fresh()->current_stock);
+        $this->assertSame(10.0, (float) $inward->fresh()->quantity);
+        $this->assertSame(10.0, (float) $product->fresh()->current_stock);
     }
 
     private function makeUser()
@@ -197,7 +208,21 @@ class StockInwardTaxTest extends TestCase
             'is_active' => true,
         ]);
 
-        return [$category, $otherCategory, $product, $supplier];
+        $storeCode = 'INW-' . $suffix;
+        $storeValues = [
+            'name' => 'Inward Store ' . $suffix,
+            'code' => $storeCode,
+            'location' => 'Test',
+            'is_active' => true,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ];
+        if (DB::getSchemaBuilder()->hasColumn('stores', 'store_code')) {
+            $storeValues['store_code'] = $storeCode;
+        }
+        $store = DB::table('stores')->insertGetId($storeValues);
+
+        return [$category, $otherCategory, $product, $supplier, $store];
     }
 
     private function makeProduct(Category $category, $code, Unit $unit = null)
@@ -226,12 +251,13 @@ class StockInwardTaxTest extends TestCase
         return $product;
     }
 
-    private function inwardPayload(Category $category, Product $product, Supplier $supplier, array $overrides = [])
+    private function inwardPayload(Category $category, Product $product, Supplier $supplier, $storeId, array $overrides = [])
     {
         return array_merge([
             'category_id' => $category->id,
             'product_id' => $product->id,
             'supplier_id' => $supplier->id,
+            'store_id' => $storeId,
             'inward_date' => now()->toDateString(),
             'quantity' => 5,
             'purchase_price' => 2000,

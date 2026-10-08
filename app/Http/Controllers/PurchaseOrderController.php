@@ -122,7 +122,7 @@ class PurchaseOrderController extends Controller
             'items.product.category',
             'items.product.unit',
             'goodsReceipts.store',
-            'goodsReceipts.items',
+            'goodsReceipts.items.product.unit',
         ])->findOrFail($id);
 
         return view('purchase_orders.show', compact('purchaseOrder'));

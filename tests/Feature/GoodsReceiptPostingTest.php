@@ -28,6 +28,7 @@ class GoodsReceiptPostingTest extends TestCase
         $this->get(route('purchase-orders.create'))->assertOk();
         $this->get(route('purchase-orders.show', $purchaseOrder->id))->assertOk();
         $this->get(route('goods-receipts.create', $purchaseOrder->id))->assertOk();
+        $this->assertSame(10.0, (float) $product->fresh()->current_stock);
         $token = (string) Str::uuid();
         $payload = $this->receiptPayload($store, $purchaseOrder, $token);
 
@@ -55,11 +56,38 @@ class GoodsReceiptPostingTest extends TestCase
         $this->assertSame(4.0, (float) $transaction->quantity_in);
         $this->assertSame(14.0, (float) $transaction->balance_quantity);
         $this->assertSame('received', $purchaseOrder->fresh()->status);
-        $this->get(route('goods-receipts.index'))->assertOk();
+        $this->get(route('goods-receipts.index'))
+            ->assertOk()
+            ->assertSee($receipt->grn_number)
+            ->assertSee($purchaseOrder->po_number)
+            ->assertSee($supplier->name);
         $this->get(route('goods-receipts.show', $receipt->id))->assertOk();
-        $this->get(route('stock-inwards.index'))->assertOk();
+        $this->get(route('purchase-orders.show', $purchaseOrder->id))
+            ->assertOk()
+            ->assertSee($receipt->grn_number)
+            ->assertSee('Goods received')
+            ->assertSee('RECEIVED ITEMS')
+            ->assertSee($product->name)
+            ->assertSee('Accepted: 4.00')
+            ->assertSee('Rejected: 1.00');
+        $this->get(route('stock-inwards.index'))
+            ->assertOk()
+            ->assertSee($inward->inward_number)
+            ->assertSee($receipt->grn_number)
+            ->assertSee($purchaseOrder->po_number)
+            ->assertSee($product->name)
+            ->assertSee($supplier->name)
+            ->assertSee('₹55,000.00');
         $this->get(route('stock-inwards.show', $inward->id))->assertOk();
         $this->get(route('stock-movement.index'))->assertOk();
+        $this->get(route('products.index'))
+            ->assertOk()
+            ->assertSee($product->name)
+            ->assertSee('14.00');
+        $this->get(route('current-stock.index'))
+            ->assertOk()
+            ->assertSee($product->name)
+            ->assertSee('14.00');
     }
 
     public function test_replaying_a_receipt_post_with_the_same_token_does_not_post_stock_twice()
@@ -197,14 +225,18 @@ class GoodsReceiptPostingTest extends TestCase
         ]);
         $product->current_stock = 10;
         $product->save();
-        $store = DB::table('stores')->insertGetId([
+        $storeValues = [
             'name' => 'GRN Location ' . strtoupper(Str::random(6)),
             'code' => 'LOC-' . strtoupper(Str::random(8)),
             'location' => 'Test',
             'is_active' => true,
             'created_at' => now(),
             'updated_at' => now(),
-        ]);
+        ];
+        if (DB::getSchemaBuilder()->hasColumn('stores', 'store_code')) {
+            $storeValues['store_code'] = 'GRN-' . strtoupper(Str::random(8));
+        }
+        $store = DB::table('stores')->insertGetId($storeValues);
         DB::table('stock_transactions')->insert([
             'store_id' => $store,
             'product_id' => $product->id,

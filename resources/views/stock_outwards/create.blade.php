@@ -23,11 +23,10 @@
                     <div class="field"><label for="outward_type">Outward Type <span class="required-mark">*</span></label><select class="field-control" id="outward_type" name="outward_type"><option value="Customer Sale" selected>Customer Sale</option></select></div>
                     <div class="field">
                         <label for="customer_id">Customer / Recipient <span class="required-mark">*</span></label>
-                        <input class="field-control outward-customer-search" id="customer_search" type="search" placeholder="Search customers..." aria-label="Search customers" data-customer-search>
                         <select class="field-control" id="customer_id" name="customer_id" required data-customer-select>
                             <option value="">Select customer</option>
                             @foreach ($customers as $customer)
-                                <option value="{{ $customer->id }}" data-search="{{ strtolower($customer->name . ' ' . $customer->contact_person . ' ' . $customer->phone . ' ' . $customer->email) }}" data-contact="{{ $customer->contact_person }}" data-phone="{{ $customer->phone }}" data-email="{{ $customer->email }}" {{ old('customer_id') == $customer->id ? 'selected' : '' }}>{{ $customer->name }}</option>
+                                <option value="{{ $customer->id }}" data-contact="{{ $customer->contact_person }}" data-phone="{{ $customer->phone }}" data-email="{{ $customer->email }}" {{ old('customer_id') == $customer->id ? 'selected' : '' }}>{{ $customer->name }}</option>
                             @endforeach
                         </select>
                         <small class="field-hint" data-customer-details aria-live="polite"></small>
@@ -103,9 +102,8 @@
         })->values();
     @endphp
     <script>
-        (function () {
-            var customerSearch = document.querySelector('[data-customer-search]');
-            var customerSelect = document.querySelector('[data-customer-select]');
+    (function () {
+        var customerSelect = document.querySelector('[data-customer-select]');
             var customerDetails = document.querySelector('[data-customer-details]');
             var stockTableBody = document.getElementById('stock-outward-rows');
             var addProductButton = document.getElementById('add-product-row');
@@ -124,16 +122,6 @@
 
             function formatCurrency(value) {
                 return currencyFormatter.format(Number(value || 0));
-            }
-
-            function filterCustomers() {
-                if (!customerSearch || !customerSelect) {
-                    return;
-                }
-                var search = customerSearch.value.trim().toLowerCase();
-                Array.prototype.forEach.call(customerSelect.options, function (option) {
-                    option.hidden = option.value !== '' && option.dataset.search.indexOf(search) === -1;
-                });
             }
 
             function showCustomerDetails() {
@@ -396,8 +384,7 @@
                 refreshSummary();
             }
 
-            if (customerSearch && customerSelect) {
-                customerSearch.addEventListener('input', filterCustomers);
+            if (customerSelect) {
                 customerSelect.addEventListener('change', showCustomerDetails);
                 showCustomerDetails();
             }

@@ -6,6 +6,8 @@ use App\Product;
 use App\Category;
 use App\Company;
 use App\Hall;
+use App\StockInward;
+use App\StockOutward;
 use App\Unit;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -18,7 +20,8 @@ class ProductController extends Controller
     public function index(Request $request)
     {
         $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
-        $query = Product::with(['category', 'unit', 'hall', 'rack', 'shelf'])
+        $query = Product::select('products.*')
+            ->with(['category', 'unit', 'hall', 'rack', 'shelf'])
             ->where('is_active', $listingStatus === 'active');
 
         if ($request->filled('category_id')) {
@@ -35,7 +38,27 @@ class ProductController extends Controller
             $query->where('company_id', $request->input('company_id'));
         }
 
-        $products = $query->with('company')->orderBy('id', 'desc')->get();
+        $products = $query->with('company')
+            ->selectSub(
+                StockInward::select('purchase_price')
+                    ->whereColumn('stock_inwards.product_id', 'products.id')
+                    ->where('is_active', true)
+                    ->orderByDesc('inward_date')
+                    ->orderByDesc('id')
+                    ->limit(1),
+                'latest_inward_purchase_price'
+            )
+            ->selectSub(
+                StockOutward::select('selling_price')
+                    ->whereColumn('stock_outwards.product_id', 'products.id')
+                    ->where('is_active', true)
+                    ->orderByDesc('outward_date')
+                    ->orderByDesc('id')
+                    ->limit(1),
+                'latest_outward_selling_price'
+            )
+            ->orderBy('id', 'desc')
+            ->get();
         $units = Unit::where('is_active', 1)
             ->orderBy('name')
             ->get();

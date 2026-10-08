@@ -14,6 +14,7 @@
         </div>
     </div>
     @if (session('success'))<div class="inventory-notice notice-in" role="status"><span class="notice-symbol">✓</span><span>{{ session('success') }}</span></div>@endif
+    <div class="inventory-notice notice-in"><span class="notice-symbol">i</span><span><strong>Purchase orders do not increase current stock.</strong><small>Accepted quantities are added to Products and Current Stock after you post the Goods Received entry.</small></span></div>
     <section class="panel listing-panel">
         <div class="table-wrap"><table class="data-table listing-table">
             <thead><tr><th>CATEGORY</th><th>PRODUCT</th><th>SKU</th><th>UNIT</th><th>ORDERED</th><th>RECEIVED</th><th>REMAINING</th><th>UNIT RATE</th></tr></thead>
@@ -36,10 +37,31 @@
     <section class="panel listing-panel">
         <div class="panel-heading"><h2>Goods received</h2></div>
         <div class="table-wrap"><table class="data-table listing-table">
-            <thead><tr><th>GRN</th><th>DATE</th><th>LOCATION</th><th>SUPPLIER INVOICE</th><th>ITEMS</th><th>ACTION</th></tr></thead>
+            <thead><tr><th>GRN</th><th>DATE</th><th>LOCATION</th><th>SUPPLIER INVOICE</th><th>RECEIVED ITEMS</th><th>ACTION</th></tr></thead>
             <tbody>
             @forelse ($purchaseOrder->goodsReceipts as $receipt)
-                <tr><td><span class="unit-code">{{ $receipt->grn_number }}</span></td><td>{{ \Carbon\Carbon::parse($receipt->received_date)->format('d M Y') }}</td><td>{{ optional($receipt->store)->name ?: '—' }}</td><td>{{ $receipt->invoice_number ?: '—' }}</td><td>{{ $receipt->items->count() }}</td><td><a class="button button-small button-light" href="{{ route('goods-receipts.show', $receipt->id) }}">View</a></td></tr>
+                <tr>
+                    <td><span class="unit-code">{{ $receipt->grn_number }}</span></td>
+                    <td>{{ \Carbon\Carbon::parse($receipt->received_date)->format('d M Y') }}</td>
+                    <td>{{ optional($receipt->store)->name ?: '—' }}</td>
+                    <td>{{ $receipt->invoice_number ?: '—' }}</td>
+                    <td>
+                        <ul class="purchase-order-receipt-items">
+                            @foreach ($receipt->items as $receiptItem)
+                                <li>
+                                    <strong>{{ optional($receiptItem->product)->name ?: 'Product unavailable' }}</strong>
+                                    <small>
+                                        Accepted: {{ number_format($receiptItem->accepted_quantity, 2) }}{{ optional(optional($receiptItem->product)->unit)->short_name ? ' ' . $receiptItem->product->unit->short_name : '' }}
+                                        @if ((float) $receiptItem->rejected_quantity > 0)
+                                            · Rejected: {{ number_format($receiptItem->rejected_quantity, 2) }}
+                                        @endif
+                                    </small>
+                                </li>
+                            @endforeach
+                        </ul>
+                    </td>
+                    <td><a class="button button-small button-light" href="{{ route('goods-receipts.show', $receipt->id) }}">View</a></td>
+                </tr>
             @empty
                 <tr><td colspan="6">No goods receipts have been posted for this order.</td></tr>
             @endforelse

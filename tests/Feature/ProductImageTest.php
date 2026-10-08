@@ -5,6 +5,9 @@ namespace Tests\Feature;
 use App\Category;
 use App\Hall;
 use App\Product;
+use App\StockInward;
+use App\StockOutward;
+use App\Supplier;
 use App\Unit;
 use App\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
@@ -159,6 +162,89 @@ class ProductImageTest extends TestCase
         } finally {
             unlink($largeImagePath);
         }
+    }
+
+    public function test_product_list_shows_latest_active_inward_and_outward_prices()
+    {
+        $this->actingAs($this->makeUser());
+        list($hall, $category, $unit) = $this->makeProductReferences();
+        $product = Product::create([
+            'product_code' => 'PRICE-' . strtoupper(Str::random(8)),
+            'name' => 'Movement Price Product',
+            'hall_id' => $hall->id,
+            'category_id' => $category->id,
+            'unit_id' => $unit->id,
+            'purchase_price' => 10,
+            'selling_price' => 15,
+            'minimum_stock' => 1,
+            'is_active' => true,
+        ]);
+        $supplier = Supplier::create([
+            'supplier_code' => 'PRICE-' . strtoupper(Str::random(8)),
+            'name' => 'Movement Price Supplier',
+            'is_active' => true,
+        ]);
+
+        foreach ([
+            ['date' => '2026-10-01', 'price' => 123456.78, 'active' => true],
+            ['date' => '2026-10-03', 'price' => 234567.89, 'active' => true],
+            ['date' => '2026-10-04', 'price' => 987654.32, 'active' => false],
+        ] as $inward) {
+            StockInward::create([
+                'product_id' => $product->id,
+                'supplier_id' => $supplier->id,
+                'inward_date' => $inward['date'],
+                'quantity' => 1,
+                'purchase_price' => $inward['price'],
+                'total_amount' => $inward['price'],
+                'is_active' => $inward['active'],
+            ]);
+        }
+
+        foreach ([
+            ['date' => '2026-10-01', 'price' => 345678.91, 'active' => true],
+            ['date' => '2026-10-03', 'price' => 456789.12, 'active' => true],
+            ['date' => '2026-10-04', 'price' => 876543.21, 'active' => false],
+        ] as $outward) {
+            StockOutward::create([
+                'product_id' => $product->id,
+                'outward_date' => $outward['date'],
+                'quantity' => 1,
+                'selling_price' => $outward['price'],
+                'total_amount' => $outward['price'],
+                'is_active' => $outward['active'],
+            ]);
+        }
+
+        $this->get(route('products.index'))
+            ->assertOk()
+            ->assertSee('₹234,567.89')
+            ->assertSee('₹456,789.12')
+            ->assertDontSee('₹987,654.32')
+            ->assertDontSee('₹876,543.21');
+    }
+
+    public function test_product_list_falls_back_to_saved_prices_without_active_movements()
+    {
+        $this->actingAs($this->makeUser());
+        list($hall, $category, $unit) = $this->makeProductReferences();
+        $product = Product::create([
+            'product_code' => 'FALLBACK-' . strtoupper(Str::random(8)),
+            'name' => 'Saved Price Product',
+            'hall_id' => $hall->id,
+            'category_id' => $category->id,
+            'unit_id' => $unit->id,
+            'purchase_price' => 123.45,
+            'selling_price' => 234.56,
+            'minimum_stock' => 1,
+            'is_active' => true,
+        ]);
+
+        $this->get(route('products.index'))
+            ->assertOk()
+            ->assertSee($product->name)
+            ->assertSee('₹123.45')
+            ->assertSee('₹234.56');
     }
 
     private function makeUser()

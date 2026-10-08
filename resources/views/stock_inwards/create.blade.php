@@ -11,7 +11,7 @@
         <div><span class="section-kicker">STOCK MOVEMENT / INWARD</span><h1>Add Stock Inward</h1><p>Record goods received from a supplier.</p></div>
         <a class="button button-light" href="{{ route('stock-inwards.index') }}">Back to stock inward</a>
     </div>
-    <div class="inventory-notice notice-in"><span class="notice-symbol">+</span><span><strong>Receiving stock increases available inventory.</strong><small>Saving this receipt adds the entered quantity to the product's current stock.</small></span></div>
+    <div class="inventory-notice notice-in"><span class="notice-symbol">+</span><span><strong>Receiving stock increases available inventory.</strong><small>Saving creates the stock inward, a received Purchase Order, and a Goods Received entry for the selected location.</small></span></div>
     @if ($errors->any())
         <div class="form-alert" role="alert"><strong>Please check the form:</strong><ul>@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
     @endif
@@ -31,6 +31,7 @@
                     <div class="field"><label for="category_id">Category <span class="required-mark">*</span></label><select class="field-control" id="category_id" name="category_id" required><option value="">Select category</option>@foreach ($categories as $category)<option value="{{ $category->id }}" {{ old('category_id') == $category->id ? 'selected' : '' }}>{{ $category->name }}</option>@endforeach</select>@error('category_id')<small class="field-error">{{ $message }}</small>@enderror</div>
                     <div class="field"><label for="product_id">Product <span class="required-mark">*</span></label><select class="field-control" id="product_id" name="product_id" required disabled><option value="">Select a category first</option></select>@error('product_id')<small class="field-error">{{ $message }}</small>@enderror</div>
                     <div class="field"><label for="supplier_id">Supplier <span class="required-mark">*</span></label><select class="field-control" id="supplier_id" name="supplier_id" required><option value="">Select supplier</option>@foreach ($suppliers as $supplier)<option value="{{ $supplier->id }}" {{ old('supplier_id') == $supplier->id ? 'selected' : '' }}>{{ $supplier->name }}</option>@endforeach</select>@error('supplier_id')<small class="field-error">{{ $message }}</small>@enderror</div>
+                    <div class="field"><label for="store_id">Location <span class="required-mark">*</span></label><select class="field-control" id="store_id" name="store_id" required><option value="">Select location</option>@foreach ($stores as $store)<option value="{{ $store->id }}" {{ (string) old('store_id') === (string) $store->id ? 'selected' : '' }}>{{ $store->name }}@if (!empty($store->code)) ({{ $store->code }}) @endif</option>@endforeach</select>@error('store_id')<small class="field-error">{{ $message }}</small>@enderror @if (!$stores->count())<small class="field-hint">Create an active location before recording stock inward.</small>@endif</div>
                 </div>
             </div>
             <div class="form-section">
@@ -49,7 +50,7 @@
                     <div class="field field-wide"><label for="remarks">Remarks</label><textarea class="field-control" id="remarks" name="remarks" rows="3" placeholder="Optional notes about this receipt">{{ old('remarks') }}</textarea>@error('remarks')<small class="field-error">{{ $message }}</small>@enderror</div>
                 </div>
             </div>
-            <div class="form-actions"><a class="button button-light" href="{{ route('stock-inwards.index') }}">Cancel</a><button class="button button-primary" type="submit">Save Stock Inward</button></div>
+            <div class="form-actions"><a class="button button-light" href="{{ route('stock-inwards.index') }}">Cancel</a><button class="button button-primary" type="submit" {{ !$stores->count() ? 'disabled' : '' }}>Save Stock Inward</button></div>
         </form>
     </section>
     <script>

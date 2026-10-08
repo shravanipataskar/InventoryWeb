@@ -89,7 +89,9 @@ class CustomerMasterTest extends TestCase
         $this->get(route('stock-outwards.create'))
             ->assertOk()
             ->assertSee($customer->name)
-            ->assertSee('Customer / Recipient');
+            ->assertSee('Customer / Recipient')
+            ->assertSee('name="customer_id"', false)
+            ->assertDontSee('Search customers...');
 
         $this->post(route('stock-outwards.store'), [
             'customer_id' => $customer->id,
