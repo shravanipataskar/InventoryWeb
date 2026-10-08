@@ -24,6 +24,8 @@ class Product extends Model
         'reorder_quantity',
         'description',
         'image',
+        'track_batch',
+        'track_serial',
         'is_active'
     ];
 

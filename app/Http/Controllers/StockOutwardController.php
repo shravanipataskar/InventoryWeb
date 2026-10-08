@@ -48,12 +48,52 @@ class StockOutwardController extends Controller
 
     public function store(Request $request)
     {
+        $productIds = $request->input('product_id');
+        if (is_array($productIds)) {
+            $categories = $request->input('category_id', []);
+            $quantities = $request->input('quantity', []);
+            $rates = $request->input('rate', []);
+            $discounts = $request->input('discount', []);
+            $gstRates = $request->input('gst', []);
+            $items = [];
+
+            foreach ($productIds as $index => $productId) {
+                $items[] = [
+                    'category_id' => $categories[$index] ?? null,
+                    'product_id' => $productId,
+                    'quantity' => $quantities[$index] ?? null,
+                    'rate' => $rates[$index] ?? null,
+                    'discount' => $discounts[$index] ?? 0,
+                    'gst' => $gstRates[$index] ?? 0,
+                ];
+            }
+        } else {
+            $product = $productIds ? Product::find($productIds) : null;
+            $items = [[
+                'category_id' => $product ? $product->category_id : null,
+                'product_id' => $productIds,
+                'quantity' => $request->input('quantity'),
+                'rate' => $request->input('selling_price'),
+                'discount' => 0,
+                'gst' => 0,
+            ]];
+        }
+
+        $request->merge(['items' => $items]);
         $validated = $request->validate([
-            'product_id' => 'required|exists:products,id',
+            'items' => 'required|array|min:1',
+            'items.*.category_id' => 'required|integer|exists:categories,id',
+            'items.*.product_id' => [
+                'required',
+                'integer',
+                Rule::exists('products', 'id')->where('is_active', true),
+            ],
+            'items.*.quantity' => 'required|numeric|min:0.01',
+            'items.*.rate' => 'required|numeric|min:0',
+            'items.*.discount' => 'nullable|numeric|between:0,100',
+            'items.*.gst' => 'nullable|numeric|between:0,100',
             'reference_number' => 'nullable|string|max:100',
             'outward_date' => 'required|date',
-            'quantity' => 'required|numeric|min:0.01',
-            'selling_price' => 'required|numeric|min:0',
             'customer_id' => [
                 'nullable',
                 'required_without:issued_to',
@@ -64,16 +104,34 @@ class StockOutwardController extends Controller
             'remarks' => 'nullable|string',
         ]);
 
-        DB::transaction(function () use ($request, $validated) {
+        DB::transaction(function () use ($validated) {
+            $quantitiesByProduct = collect($validated['items'])
+                ->groupBy('product_id')
+                ->map(function ($items) {
+                    return (float) $items->sum('quantity');
+                });
+            $products = Product::whereIn('id', $quantitiesByProduct->keys())
+                ->orderBy('id')
+                ->lockForUpdate()
+                ->get()
+                ->keyBy('id');
 
-            $product = Product::lockForUpdate()->findOrFail($validated['product_id']);
+            foreach ($validated['items'] as $index => $item) {
+                $product = $products->get($item['product_id']);
+                if (!$product || (int) $product->category_id !== (int) $item['category_id']) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'items.' . $index . '.product_id' => 'Selected product does not belong to the selected category.',
+                    ]);
+                }
+            }
 
-            if ($validated['quantity'] > $product->current_stock) {
-                abort(
-                    422,
-                    'Insufficient stock. Available stock: '
-                    . $product->current_stock
-                );
+            foreach ($quantitiesByProduct as $productId => $quantity) {
+                $product = $products->get($productId);
+                if ($quantity > (float) $product->current_stock) {
+                    throw \Illuminate\Validation\ValidationException::withMessages([
+                        'items' => 'Insufficient stock for ' . $product->name . '. Available stock: ' . $product->current_stock,
+                    ]);
+                }
             }
 
             $customer = null;
@@ -83,24 +141,28 @@ class StockOutwardController extends Controller
                     ->findOrFail($validated['customer_id']);
             }
 
-            $totalAmount = $validated['quantity'] * $validated['selling_price'];
+            foreach ($validated['items'] as $item) {
+                $subtotal = (float) $item['quantity'] * (float) $item['rate'];
+                $discount = $subtotal * ((float) ($item['discount'] ?? 0) / 100);
+                $taxable = $subtotal - $discount;
+                $totalAmount = $taxable * (1 + ((float) ($item['gst'] ?? 0) / 100));
 
-            StockOutward::create([
-                'product_id' => $validated['product_id'],
-                'customer_id' => $customer ? $customer->id : null,
-                'reference_number' => $validated['reference_number'] ?? null,
-                'outward_date' => $validated['outward_date'],
-                'quantity' => $validated['quantity'],
-                'selling_price' => $validated['selling_price'],
-                'total_amount' => $totalAmount,
-                'issued_to' => $customer ? $customer->name : ($validated['issued_to'] ?? null),
-                'remarks' => $validated['remarks'] ?? null,
-            ]);
+                StockOutward::create([
+                    'product_id' => $item['product_id'],
+                    'customer_id' => $customer ? $customer->id : null,
+                    'reference_number' => $validated['reference_number'] ?? null,
+                    'outward_date' => $validated['outward_date'],
+                    'quantity' => $item['quantity'],
+                    'selling_price' => $item['rate'],
+                    'total_amount' => round($totalAmount, 2),
+                    'issued_to' => $customer ? $customer->name : ($validated['issued_to'] ?? null),
+                    'remarks' => $validated['remarks'] ?? null,
+                ]);
+            }
 
-            $product->decrement(
-                'current_stock',
-                $validated['quantity']
-            );
+            foreach ($quantitiesByProduct as $productId => $quantity) {
+                $products->get($productId)->decrement('current_stock', $quantity);
+            }
         });
 
         return redirect()

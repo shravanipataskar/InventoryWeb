@@ -8,23 +8,22 @@
         <div><span class="section-kicker">INVENTORY &nbsp; &gt; &nbsp; STOCK OUTWARD</span><h1>Add Stock Outward</h1><p>Record inventory issued to a customer, department or team member.</p></div>
         <a class="button button-light" href="{{ route('stock-outwards.index') }}"><span aria-hidden="true">←</span> Back to Stock Outward</a>
     </div>
-    <div class="inventory-notice notice-out"><span class="notice-symbol">−</span><span><strong>Issuing stock decreases available inventory.</strong><small>Available stock is checked here and validated again by the server when you save.</small></span></div>
     @if ($errors->any())
         <div class="form-alert" role="alert"><strong>Please check the form:</strong><ul>@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
     @endif
-    <section class="form-card">
+    <section class="form-card outward-form-card">
         <form action="{{ route('stock-outwards.store') }}" method="POST">
             @csrf
             <div class="form-section">
                 <div class="form-card-heading"><span class="form-section-icon"><svg><use href="#icon-calendar"></use></svg></span><div><h2>Outward Information</h2><p>Enter the basic details for this stock outward.</p></div></div>
-                <div class="form-grid">
+                <div class="form-grid outward-information-grid">
                     <div class="field"><label for="outward_number">Outward No.</label><input class="field-control" id="outward_number" type="text" value="" readonly placeholder="Auto-generated"><small class="field-hint">Auto-generated</small></div>
-                    <div class="field"><label for="outward_date">Outward Date <span class="required-mark">*</span></label><input class="field-control" id="outward_date" type="date" name="outward_date" value="{{ old('outward_date') }}" required></div>
+                    <div class="field"><label for="outward_date">Outward Date <span class="required-mark">*</span></label><input class="field-control" id="outward_date" type="date" name="outward_date" value="{{ old('outward_date', date('Y-m-d')) }}" required></div>
                     <div class="field"><label for="reference_number">Reference Number</label><input class="field-control" id="reference_number" type="text" name="reference_number" value="{{ old('reference_number') }}" placeholder="e.g. REF-001" maxlength="100"></div>
                     <div class="field"><label for="outward_type">Outward Type <span class="required-mark">*</span></label><select class="field-control" id="outward_type" name="outward_type"><option value="Customer Sale" selected>Customer Sale</option></select></div>
-                    <div class="field field-wide">
+                    <div class="field">
                         <label for="customer_id">Customer / Recipient <span class="required-mark">*</span></label>
-                        <input class="field-control" id="customer_search" type="search" placeholder="Search customers..." aria-label="Search customers" data-customer-search>
+                        <input class="field-control outward-customer-search" id="customer_search" type="search" placeholder="Search customers..." aria-label="Search customers" data-customer-search>
                         <select class="field-control" id="customer_id" name="customer_id" required data-customer-select>
                             <option value="">Select customer</option>
                             @foreach ($customers as $customer)
@@ -40,12 +39,12 @@
                     <div class="field"><label for="location_id">Location / Store <span class="required-mark">*</span></label><select class="field-control" id="location_id" name="location_id"><option value="">Main Store</option></select></div>
                     <div class="field"><label for="sales_order">Sales Order</label><input class="field-control" id="sales_order" type="text" name="sales_order" value="{{ old('sales_order') }}" placeholder="SO-20261006-001"></div>
                     <div class="field"><label for="invoice_no">Invoice (Optional)</label><select class="field-control" id="invoice_no" name="invoice_no"><option value="">Select invoice</option></select></div>
-                    <div class="field field-wide"><label for="remarks">Remarks</label><textarea class="field-control" id="remarks" name="remarks" rows="3" placeholder="Enter remarks (optional)...">{{ old('remarks') }}</textarea>@error('remarks')<small class="field-error">{{ $message }}</small>@enderror</div>
+                    <div class="field"><label for="remarks">Remarks</label><textarea class="field-control" id="remarks" name="remarks" rows="2" placeholder="Enter remarks (optional)...">{{ old('remarks') }}</textarea>@error('remarks')<small class="field-error">{{ $message }}</small>@enderror</div>
                 </div>
             </div>
             <div class="form-section">
-                <div class="form-card-heading"><span class="form-section-icon form-icon-violet"><svg><use href="#icon-box"></use></svg></span><div><h2>Products / Items</h2><p>Select category and product, with stock checked automatically.</p></div><button class="button button-secondary" type="button" id="add-product-row">+ Add Product</button></div>
-                <div class="table-wrap">
+                <div class="form-card-heading outward-items-heading"><span class="form-section-icon form-icon-violet"><svg><use href="#icon-box"></use></svg></span><div><h2>Products / Items</h2><p>Select category and product, with stock checked automatically.</p></div><button class="button button-secondary outward-add-button" type="button" id="add-product-row"><span aria-hidden="true">+</span> Add Product</button></div>
+                <div class="table-wrap outward-items-wrap">
                     <table class="inventory-table">
                         <thead>
                             <tr>
@@ -64,30 +63,45 @@
                         </thead>
                         <tbody id="stock-outward-rows">
                             <tr class="stock-row" data-row-index="1">
-                                <td class="row-number">1</td>
-                                <td><select class="field-control" name="category_id[]" data-row-field="category"><option value="">Select category</option>@foreach ($categories as $category)<option value="{{ $category->id }}" {{ old('category_id') == $category->id ? 'selected' : '' }}>{{ $category->name }}</option>@endforeach</select></td>
-                                <td><select class="field-control" name="product_id[]" data-row-field="product"><option value="">Select product</option>@foreach ($products as $product)<option value="{{ $product->id }}" data-stock="{{ $product->current_stock }}" data-price="{{ $product->selling_price }}" data-location="{{ collect([optional($product->hall)->name, optional($product->rack)->name, optional($product->shelf)->name])->filter()->implode(' / ') }}" {{ old('product_id') == $product->id ? 'selected' : '' }}>{{ $product->name }} ({{ $product->product_code }})</option>@endforeach</select></td>
-                                <td><select class="field-control" name="location_id[]" data-row-field="location"><option value="">Select location</option></select></td>
-                                <td><div class="stock-badge" data-row-field="available-stock">—</div></td>
-                                <td><input class="field-control" type="number" name="quantity[]" data-row-field="quantity" min="0.01" step="0.01" value="" placeholder="0.00"></td>
-                                <td><input class="field-control" type="number" name="rate[]" data-row-field="rate" step="0.01" value="" placeholder="0.00"></td>
-                                <td><input class="field-control" type="number" name="discount[]" data-row-field="discount" step="0.01" value="" placeholder="0.00"></td>
-                                <td><input class="field-control" type="number" name="gst[]" data-row-field="gst" step="0.01" value="" placeholder="0.00"></td>
-                                <td><input class="field-control" type="number" name="total[]" data-row-field="total" step="0.01" value="" readonly placeholder="0.00"></td>
-                                <td><button class="button button-danger button-small" type="button" aria-label="Delete product row" data-delete-row>Delete</button></td>
+                                <td class="row-number" aria-label="Item number">1</td>
+                                <td data-label="Category"><div class="outward-row-field"><label>Category <span class="required-mark">*</span></label><select class="field-control" name="category_id[]" data-row-field="category" required><option value="">Select category</option>@foreach ($categories as $category)<option value="{{ $category->id }}" {{ old('category_id') == $category->id ? 'selected' : '' }}>{{ $category->name }}</option>@endforeach</select></div></td>
+                                <td data-label="Product"><div class="outward-row-field"><label>Product <span class="required-mark">*</span></label><select class="field-control" name="product_id[]" data-row-field="product" required><option value="">Select product</option>@foreach ($products as $product)<option value="{{ $product->id }}" data-category="{{ $product->category_id }}" data-stock="{{ $product->current_stock }}" data-price="{{ $product->selling_price }}" data-location="{{ collect([optional($product->hall)->name, optional($product->rack)->name, optional($product->shelf)->name])->filter()->implode(' / ') }}" {{ old('product_id') == $product->id ? 'selected' : '' }}>{{ $product->name }} ({{ $product->product_code }})</option>@endforeach</select></div></td>
+                                <td data-label="Location"><div class="outward-row-field"><label>Location</label><div class="outward-location" data-row-field="location">Select product</div></div></td>
+                                <td data-label="Available Stock"><div class="outward-row-field"><label>Available Stock</label><div class="stock-badge" data-row-field="available-stock">—</div></div></td>
+                                <td data-label="Quantity"><div class="outward-row-field"><label>Quantity <span class="required-mark">*</span></label><input class="field-control" type="number" name="quantity[]" data-row-field="quantity" min="0.01" step="0.01" value="" placeholder="0.00" required></div></td>
+                                <td data-label="Rate (₹)"><div class="outward-row-field"><label>Rate (₹) <span class="required-mark">*</span></label><input class="field-control" type="number" name="rate[]" data-row-field="rate" min="0" step="0.01" value="" placeholder="0.00" required></div></td>
+                                <td data-label="Discount (%)"><div class="outward-row-field"><label>Discount (%)</label><input class="field-control" type="number" name="discount[]" data-row-field="discount" min="0" max="100" step="0.01" value="" placeholder="0.00"></div></td>
+                                <td data-label="GST (%)"><div class="outward-row-field"><label>GST (%)</label><input class="field-control" type="number" name="gst[]" data-row-field="gst" min="0" max="100" step="0.01" value="18" placeholder="0.00"></div></td>
+                                <td data-label="Total (₹)"><div class="outward-row-field"><label>Total (₹)</label><input class="field-control outward-calculated" type="number" name="total[]" data-row-field="total" step="0.01" value="" readonly placeholder="0.00"></div></td>
+                                <td data-label="Action"><div class="outward-row-field"><label>Action</label><button class="button button-danger button-small outward-delete-button" type="button" aria-label="Delete product row" data-delete-row>Delete</button></div></td>
                             </tr>
                         </tbody>
                     </table>
                 </div>
                 <div class="validation-banner success" id="stock-validation-banner"><span class="checkmark">✓</span> <span id="stock-validation-message">Add products to begin stock validation.</span></div>
             </div>
-            <div class="summary-row">
-                <div class="summary-card"><h3>Stock Summary</h3><dl><div><dt>Subtotal</dt><dd id="summary-subtotal">₹0.00</dd></div><div><dt>Discount (-)</dt><dd id="summary-discount">₹0.00</dd></div><div><dt>Taxable Amount</dt><dd id="summary-taxable">₹0.00</dd></div><div><dt>CGST (9%)</dt><dd id="summary-cgst">₹0.00</dd></div><div><dt>SGST (9%)</dt><dd id="summary-sgst">₹0.00</dd></div><div class="grand-total"><dt>Total Amount</dt><dd id="summary-total">₹0.00</dd></div></dl></div>
-                <div class="validation-card"><h3>Stock Validation</h3><ul class="stock-checks" id="stock-validation-list"><li class="empty-state"><span class="status neutral">Waiting</span><div><strong>No product selected</strong><small>Add a product row to check stock availability.</small></div></li></ul></div>
+            <div class="outward-summary-grid">
+                <div class="summary-card"><h3><span class="form-section-icon"><svg><use href="#icon-calendar"></use></svg></span>Stock Summary</h3><dl><div><dt>Subtotal</dt><dd id="summary-subtotal">₹0.00</dd></div><div><dt>Discount (-)</dt><dd id="summary-discount">₹0.00</dd></div><div><dt>Taxable Amount</dt><dd id="summary-taxable">₹0.00</dd></div><div><dt>CGST (9%)</dt><dd id="summary-cgst">₹0.00</dd></div><div><dt>SGST (9%)</dt><dd id="summary-sgst">₹0.00</dd></div><div class="grand-total"><dt>Total Amount</dt><dd id="summary-total">₹0.00</dd></div></dl></div>
+                <div class="validation-card"><h3><span class="outward-validation-icon"><svg><use href="#icon-check"></use></svg></span>Stock Validation</h3><ul class="stock-checks" id="stock-validation-list"><li class="empty-state"><span class="status neutral">Waiting</span><div><strong>No product selected</strong><small>Add a product row to check stock availability.</small></div></li></ul></div>
             </div>
             <div class="form-actions"><a class="button button-light" href="{{ route('stock-outwards.index') }}">Cancel</a><button class="button button-primary" id="saveButton" type="submit" disabled>Save Stock Outward</button></div>
         </form>
     </section>
+    @php
+        $outwardCategoryOptions = $categories->map(function ($category) {
+            return ['id' => (string) $category->id, 'name' => $category->name];
+        })->values();
+        $outwardProductOptions = $products->map(function ($product) {
+            return [
+                'id' => (string) $product->id,
+                'category' => (string) $product->category_id,
+                'stock' => (float) $product->current_stock,
+                'price' => (float) $product->selling_price,
+                'location' => collect([optional($product->hall)->name, optional($product->rack)->name, optional($product->shelf)->name])->filter()->implode(' / '),
+                'label' => $product->name . ' (' . $product->product_code . ')',
+            ];
+        })->values();
+    @endphp
     <script>
         (function () {
             var customerSearch = document.querySelector('[data-customer-search]');
@@ -105,6 +119,8 @@
                 minimumFractionDigits: 2,
                 maximumFractionDigits: 2
             });
+            var categoryOptions = @json($outwardCategoryOptions);
+            var productOptions = @json($outwardProductOptions);
 
             function formatCurrency(value) {
                 return currencyFormatter.format(Number(value || 0));
@@ -136,6 +152,47 @@
                 ].filter(Boolean).join(' · ');
             }
 
+            function filterProducts(row, preserveProduct) {
+                var categorySelect = row.querySelector('[data-row-field="category"]');
+                var productSelect = row.querySelector('[data-row-field="product"]');
+                var selectedProductId = preserveProduct ? productSelect.value : '';
+                var categoryId = categorySelect.value;
+
+                Array.prototype.forEach.call(productSelect.options, function (option) {
+                    option.hidden = option.value !== ''
+                        && categoryId !== ''
+                        && option.dataset.category !== categoryId;
+                });
+
+                if (selectedProductId && productSelect.options[productSelect.selectedIndex].hidden) {
+                    productSelect.value = '';
+                }
+
+                updateProductDetails(row);
+            }
+
+            function updateProductDetails(row) {
+                var productSelect = row.querySelector('[data-row-field="product"]');
+                var selectedProduct = productSelect.options[productSelect.selectedIndex];
+                var location = row.querySelector('[data-row-field="location"]');
+                var rateInput = row.querySelector('[data-row-field="rate"]');
+
+                if (!selectedProduct || !selectedProduct.value) {
+                    location.textContent = 'Select product';
+                    location.title = '';
+                    row.querySelector('[data-row-field="available-stock"]').textContent = '—';
+                    return;
+                }
+
+                var locationText = selectedProduct.dataset.location || 'No storage location assigned';
+                location.textContent = locationText;
+                location.title = locationText;
+                if (!rateInput.value || rateInput.dataset.autoRate === 'true') {
+                    rateInput.value = selectedProduct.dataset.price || '';
+                    rateInput.dataset.autoRate = 'true';
+                }
+            }
+
             function getRowData(row) {
                 var productSelect = row.querySelector('[data-row-field="product"]');
                 var categorySelect = row.querySelector('[data-row-field="category"]');
@@ -160,9 +217,10 @@
                     totalInput.value = total.toFixed(2);
                 }
 
-                var invalid = Boolean(productSelect && productSelect.value && quantity > availableStock);
+                var invalid = Boolean(productSelect && productSelect.value
+                    && (quantity <= 0 || quantity > availableStock));
                 if (stockDisplay) {
-                    stockDisplay.textContent = selectedProduct && selectedProduct.value ? String(availableStock) : '—';
+                    stockDisplay.textContent = selectedProduct && selectedProduct.value ? availableStock.toLocaleString('en-IN') : '—';
                     stockDisplay.classList.toggle('is-danger', invalid);
                     stockDisplay.classList.toggle('is-valid', Boolean(selectedProduct && selectedProduct.value && !invalid));
                 }
@@ -266,7 +324,21 @@
             function setRowListeners(row) {
                 row.querySelectorAll('input, select').forEach(function (input) {
                     input.addEventListener('input', refreshSummary);
-                    input.addEventListener('change', refreshSummary);
+                    input.addEventListener('change', function () {
+                        if (input.matches('[data-row-field="category"]')) {
+                            filterProducts(row, true);
+                        } else if (input.matches('[data-row-field="product"]')) {
+                            var selectedProduct = input.options[input.selectedIndex];
+                            var category = row.querySelector('[data-row-field="category"]');
+                            if (selectedProduct && selectedProduct.dataset.category) {
+                                category.value = selectedProduct.dataset.category;
+                                filterProducts(row, true);
+                            }
+                        } else if (input.matches('[data-row-field="rate"]')) {
+                            input.dataset.autoRate = 'false';
+                        }
+                        refreshSummary();
+                    });
                 });
             }
 
@@ -275,33 +347,52 @@
                 template.className = 'stock-row';
                 var rowIndex = document.querySelectorAll('.stock-row').length + 1;
                 template.setAttribute('data-row-index', rowIndex);
-                template.innerHTML = '<td class="row-number">' + rowIndex + '</td>' +
-                    '<td><select class="field-control" name="category_id[]" data-row-field="category"><option value="">Select category</option>@foreach ($categories as $category)<option value="{{ $category->id }}">{{ $category->name }}</option>@endforeach</select></td>' +
-                    '<td><select class="field-control" name="product_id[]" data-row-field="product"><option value="">Select product</option>@foreach ($products as $product)<option value="{{ $product->id }}" data-stock="{{ $product->current_stock }}" data-price="{{ $product->selling_price }}" data-location="{{ collect([optional($product->hall)->name, optional($product->rack)->name, optional($product->shelf)->name])->filter()->implode(' / ') }}">{{ $product->name }} ({{ $product->product_code }})</option>@endforeach</select></td>' +
-                    '<td><select class="field-control" name="location_id[]" data-row-field="location"><option value="">Select location</option></select></td>' +
-                    '<td><div class="stock-badge" data-row-field="available-stock">—</div></td>' +
-                    '<td><input class="field-control" type="number" name="quantity[]" data-row-field="quantity" min="0.01" step="0.01" value="" placeholder="0.00"></td>' +
-                    '<td><input class="field-control" type="number" name="rate[]" data-row-field="rate" step="0.01" value="" placeholder="0.00"></td>' +
-                    '<td><input class="field-control" type="number" name="discount[]" data-row-field="discount" step="0.01" value="" placeholder="0.00"></td>' +
-                    '<td><input class="field-control" type="number" name="gst[]" data-row-field="gst" step="0.01" value="" placeholder="0.00"></td>' +
-                    '<td><input class="field-control" type="number" name="total[]" data-row-field="total" step="0.01" value="" readonly placeholder="0.00"></td>' +
-                    '<td><button class="button button-danger button-small" type="button" aria-label="Delete product row" data-delete-row>Delete</button></td>';
+                template.innerHTML = '<td class="row-number" aria-label="Item number">' + rowIndex + '</td>' +
+                    '<td data-label="Category"><div class="outward-row-field"><label>Category <span class="required-mark">*</span></label><select class="field-control" name="category_id[]" data-row-field="category" required><option value="">Select category</option></select></div></td>' +
+                    '<td data-label="Product"><div class="outward-row-field"><label>Product <span class="required-mark">*</span></label><select class="field-control" name="product_id[]" data-row-field="product" required><option value="">Select product</option></select></div></td>' +
+                    '<td data-label="Location"><div class="outward-row-field"><label>Location</label><div class="outward-location" data-row-field="location">Select product</div></div></td>' +
+                    '<td data-label="Available Stock"><div class="outward-row-field"><label>Available Stock</label><div class="stock-badge" data-row-field="available-stock">—</div></div></td>' +
+                    '<td data-label="Quantity"><div class="outward-row-field"><label>Quantity <span class="required-mark">*</span></label><input class="field-control" type="number" name="quantity[]" data-row-field="quantity" min="0.01" step="0.01" placeholder="0.00" required></div></td>' +
+                    '<td data-label="Rate (₹)"><div class="outward-row-field"><label>Rate (₹) <span class="required-mark">*</span></label><input class="field-control" type="number" name="rate[]" data-row-field="rate" min="0" step="0.01" placeholder="0.00" required></div></td>' +
+                    '<td data-label="Discount (%)"><div class="outward-row-field"><label>Discount (%)</label><input class="field-control" type="number" name="discount[]" data-row-field="discount" min="0" max="100" step="0.01" placeholder="0.00"></div></td>' +
+                    '<td data-label="GST (%)"><div class="outward-row-field"><label>GST (%)</label><input class="field-control" type="number" name="gst[]" data-row-field="gst" min="0" max="100" step="0.01" value="18" placeholder="0.00"></div></td>' +
+                    '<td data-label="Total (₹)"><div class="outward-row-field"><label>Total (₹)</label><input class="field-control outward-calculated" type="number" name="total[]" data-row-field="total" step="0.01" readonly placeholder="0.00"></div></td>' +
+                    '<td data-label="Action"><div class="outward-row-field"><label>Action</label><button class="button button-danger button-small outward-delete-button" type="button" aria-label="Delete product row" data-delete-row>Delete</button></div></td>';
+                var categorySelect = template.querySelector('[data-row-field="category"]');
+                categoryOptions.forEach(function (item) {
+                    categorySelect.add(new Option(item.name, item.id));
+                });
+                var productSelect = template.querySelector('[data-row-field="product"]');
+                productOptions.forEach(function (item) {
+                    var option = new Option(item.label, item.id);
+                    option.dataset.category = item.category;
+                    option.dataset.stock = item.stock;
+                    option.dataset.price = item.price;
+                    option.dataset.location = item.location;
+                    productSelect.add(option);
+                });
                 stockTableBody.appendChild(template);
                 setRowListeners(template);
+                updateDeleteButtons();
                 refreshSummary();
+            }
+
+            function updateDeleteButtons() {
+                var rows = Array.prototype.slice.call(document.querySelectorAll('.stock-row'));
+                rows.forEach(function (row, index) {
+                    row.querySelector('.row-number').textContent = index + 1;
+                    row.dataset.rowIndex = index + 1;
+                    row.querySelector('[data-delete-row]').disabled = rows.length === 1;
+                });
             }
 
             function removeRow(button) {
                 var row = button.closest('.stock-row');
-                if (!row) {
+                if (!row || document.querySelectorAll('.stock-row').length === 1) {
                     return;
                 }
                 row.remove();
-                var rows = document.querySelectorAll('.stock-row');
-                rows.forEach(function (item, index) {
-                    item.querySelector('.row-number').textContent = index + 1;
-                    item.setAttribute('data-row-index', index + 1);
-                });
+                updateDeleteButtons();
                 refreshSummary();
             }
 
@@ -324,8 +415,10 @@
 
             document.querySelectorAll('.stock-row').forEach(function (row) {
                 setRowListeners(row);
+                filterProducts(row, true);
             });
 
+            updateDeleteButtons();
             refreshSummary();
         }());
     </script>

@@ -59,6 +59,14 @@
             </div>
 
             <div class="form-section">
+                <div class="form-card-heading"><span class="form-section-icon form-icon-violet"><svg><use href="#icon-box"></use></svg></span><div><h2>Inventory tracking</h2><p>Enable only the tracking this product requires.</p></div></div>
+                <div class="form-grid">
+                    <div class="field"><label><input type="checkbox" name="track_batch" value="1" {{ old('track_batch') ? 'checked' : '' }}> Track batches / lots</label><small class="field-hint">Opening Stock will require a batch or lot for this product.</small>@error('track_batch')<small class="field-error">{{ $message }}</small>@enderror</div>
+                    <div class="field"><label><input type="checkbox" name="track_serial" value="1" {{ old('track_serial') ? 'checked' : '' }}> Track serial numbers</label><small class="field-hint">Opening Stock will require one unique serial number per unit.</small>@error('track_serial')<small class="field-error">{{ $message }}</small>@enderror</div>
+                </div>
+            </div>
+
+            <div class="form-section">
                 <div class="form-card-heading"><span class="form-section-icon form-icon-violet"><svg><use href="#icon-box"></use></svg></span><div><h2>Product image</h2><p>Upload a JPG, JPEG, PNG or WEBP image (up to 5 MB).</p></div></div>
                 <div class="form-grid">
                     <div class="field field-wide">

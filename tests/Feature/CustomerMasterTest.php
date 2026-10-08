@@ -99,7 +99,8 @@ class CustomerMasterTest extends TestCase
             'quantity' => 5,
             'selling_price' => 70000,
             'remarks' => 'Computer Lab Requirement',
-        ])->assertRedirect(route('stock-outwards.index'));
+        ])->assertSessionHasNoErrors()
+            ->assertRedirect(route('stock-outwards.index'));
 
         $this->assertSame('25.00', $product->fresh()->current_stock);
         $this->assertDatabaseHas('stock_outwards', [
@@ -133,6 +134,72 @@ class CustomerMasterTest extends TestCase
         ]);
         $this->assertSame('24.00', $product->fresh()->current_stock);
         $this->assertDatabaseMissing('customers', ['name' => 'Legacy Recipient ' . $suffix]);
+    }
+
+    public function test_multiple_stock_outward_products_are_saved_and_deducted_together()
+    {
+        $this->actingAs($this->makeUser());
+        $suffix = strtoupper(Str::random(8));
+        $category = Category::create([
+            'name' => 'Multi Outward Category ' . $suffix,
+            'is_active' => true,
+        ]);
+        $unit = Unit::create([
+            'name' => 'Multi Outward Unit ' . $suffix,
+            'short_name' => 'MOU',
+            'is_active' => true,
+        ]);
+        $customer = Customer::create([
+            'customer_code' => 'MO-' . $suffix,
+            'name' => 'Multi Outward Customer ' . $suffix,
+            'customer_type' => 'Other',
+            'is_active' => true,
+        ]);
+        $products = [];
+        foreach ([['First outward product', 10, 70000], ['Second outward product', 8, 1000]] as $index => $details) {
+            $product = Product::create([
+                'product_code' => 'MO-' . $index . '-' . $suffix,
+                'name' => $details[0],
+                'category_id' => $category->id,
+                'unit_id' => $unit->id,
+                'purchase_price' => 500,
+                'selling_price' => $details[2],
+                'minimum_stock' => 1,
+                'current_stock' => $details[1],
+                'is_active' => true,
+            ]);
+            $product->current_stock = $details[1];
+            $product->save();
+            $products[] = $product;
+        }
+
+        $this->post(route('stock-outwards.store'), [
+            'customer_id' => $customer->id,
+            'reference_number' => 'OUT-MULTI-' . $suffix,
+            'outward_date' => '2026-10-07',
+            'category_id' => [$category->id, $category->id],
+            'product_id' => [$products[0]->id, $products[1]->id],
+            'quantity' => [2, 3],
+            'rate' => [70000, 1000],
+            'discount' => [5, 0],
+            'gst' => [18, 18],
+        ])->assertSessionHasNoErrors()
+            ->assertRedirect(route('stock-outwards.index'));
+
+        $this->assertSame(8.0, (float) $products[0]->fresh()->current_stock);
+        $this->assertSame(5.0, (float) $products[1]->fresh()->current_stock);
+        $this->assertDatabaseHas('stock_outwards', [
+            'reference_number' => 'OUT-MULTI-' . $suffix,
+            'product_id' => $products[0]->id,
+            'quantity' => 2,
+            'total_amount' => 156940,
+        ]);
+        $this->assertDatabaseHas('stock_outwards', [
+            'reference_number' => 'OUT-MULTI-' . $suffix,
+            'product_id' => $products[1]->id,
+            'quantity' => 3,
+            'total_amount' => 3540,
+        ]);
     }
 
     public function test_inactive_customers_are_not_available_for_new_stock_outwards()

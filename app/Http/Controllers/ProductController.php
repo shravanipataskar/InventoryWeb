@@ -73,6 +73,8 @@ class ProductController extends Controller
             'minimum_stock' => 'required|numeric|min:0',
             'reorder_level' => 'required|numeric|min:0',
             'reorder_quantity' => 'required|numeric|min:0',
+            'track_batch' => 'nullable|boolean',
+            'track_serial' => 'nullable|boolean',
             'description' => 'nullable|string',
             'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
         ]);
@@ -101,6 +103,8 @@ class ProductController extends Controller
             'minimum_stock' => $request->minimum_stock,
             'reorder_level' => $request->reorder_level,
             'reorder_quantity' => $request->reorder_quantity,
+            'track_batch' => $request->boolean('track_batch'),
+            'track_serial' => $request->boolean('track_serial'),
             'description' => $request->description,
             'is_active' => 1,
         ]);
@@ -155,6 +159,8 @@ class ProductController extends Controller
             'minimum_stock' => 'required|numeric|min:0',
             'reorder_level' => 'required|numeric|min:0',
             'reorder_quantity' => 'required|numeric|min:0',
+            'track_batch' => 'nullable|boolean',
+            'track_serial' => 'nullable|boolean',
             'description' => 'nullable|string',
             'image' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
             'remove_image' => 'nullable|boolean',
@@ -180,6 +186,8 @@ class ProductController extends Controller
             'minimum_stock' => $request->minimum_stock,
             'reorder_level' => $request->reorder_level,
             'reorder_quantity' => $request->reorder_quantity,
+            'track_batch' => $request->boolean('track_batch'),
+            'track_serial' => $request->boolean('track_serial'),
             'description' => $request->description,
         ]);
 

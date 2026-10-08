@@ -186,10 +186,28 @@ Route::middleware('auth')->group(function () {
         ->name('stock-movement.index');
     Route::get('/purchase-reports', [WorkspaceController::class, 'purchaseReports'])
         ->name('purchase-reports.index');
+    Route::get('/purchase-reports/export/{format}', [WorkspaceController::class, 'exportPurchaseReports'])
+        ->where('format', 'excel|csv|print')
+        ->name('purchase-reports.export');
+    Route::get('/purchase-reports/{kind}/{id}', [WorkspaceController::class, 'showPurchaseReportRecord'])
+        ->where(['kind' => 'receipt|order|inward', 'id' => '[0-9]+'])
+        ->name('purchase-reports.show');
     Route::get('/issue-reports', [WorkspaceController::class, 'issueReports'])
         ->name('issue-reports.index');
+    Route::get('/issue-reports/export/{format}', [WorkspaceController::class, 'exportIssueReports'])
+        ->where('format', 'excel|csv|print')
+        ->name('issue-reports.export');
+    Route::get('/issue-reports/{id}', [WorkspaceController::class, 'showIssueReport'])
+        ->where('id', '[0-9]+')
+        ->name('issue-reports.show');
     Route::get('/stock-valuation', [WorkspaceController::class, 'stockValuation'])
         ->name('stock-valuation.index');
+    Route::get('/stock-valuation/export/{format}', [WorkspaceController::class, 'exportStockValuation'])
+        ->where('format', 'excel|csv|print')
+        ->name('stock-valuation.export');
+    Route::get('/stock-valuation/product/{id}', [WorkspaceController::class, 'showStockValuation'])
+        ->where('id', '[0-9]+')
+        ->name('stock-valuation.show');
     Route::get('/users', [WorkspaceController::class, 'users'])
         ->name('users.index');
     Route::get('/activity-log', [WorkspaceController::class, 'activityLog'])
