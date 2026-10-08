@@ -29,13 +29,29 @@
                     <div><h2>Adjustment details</h2><p>Saving this adjustment updates the product's on-hand quantity immediately.</p></div>
                 </div>
 
+                <div class="form-grid">
+                    @php
+                        $selectedProduct = $products->firstWhere('id', old('product_id'));
+                        $selectedCategoryId = old('category_id', $selectedProduct ? $selectedProduct->category_id : '');
+                    @endphp
+                    <div class="field">
+                        <label for="category_id">Category <span class="required-mark">*</span></label>
+                        <select class="field-control" id="category_id" name="category_id" required data-category-filter>
+                            <option value="">Select a category</option>
+                            @foreach ($categories as $category)
+                                <option value="{{ $category->id }}" {{ (string) $selectedCategoryId === (string) $category->id ? 'selected' : '' }}>{{ $category->name }}</option>
+                            @endforeach
+                        </select>
+                        @error('category_id')<small class="field-error">{{ $message }}</small>@enderror
+                    </div>
+
                 <div class="form-grid stock-adjustment-grid">
                     <div class="field field-wide">
                         <label for="product_id">Product <span class="required-mark">*</span></label>
-                        <select class="field-control" id="product_id" name="product_id" required>
-                            <option value="">Select a product</option>
+                        <select class="field-control" id="product_id" name="product_id" required data-category-product>
+                            <option value="">{{ $selectedCategoryId ? 'Select a product' : 'Select a category first' }}</option>
                             @foreach ($products as $product)
-                                <option value="{{ $product->id }}" {{ old('product_id') == $product->id ? 'selected' : '' }}>
+                                <option value="{{ $product->id }}" data-category="{{ $product->category_id }}" {{ old('product_id') == $product->id ? 'selected' : '' }}>
                                     {{ $product->name }} ({{ $product->product_code }}) — On hand: {{ number_format($product->current_stock, 2) }} {{ optional($product->unit)->short_name }}
                                 </option>
                             @endforeach
@@ -101,4 +117,45 @@
             </div>
         </form>
     </section>
+    <script>
+        (function () {
+            var category = document.querySelector('[data-category-filter]');
+            var product = document.querySelector('[data-category-product]');
+            if (!category || !product) {
+                return;
+            }
+
+            var options = Array.prototype.slice.call(product.options).slice(1).map(function (option) {
+                return option.cloneNode(true);
+            });
+            var initialProductId = product.value;
+
+            function filterProducts(keepSelection) {
+                var selectedProductId = keepSelection ? product.value : '';
+                product.innerHTML = '';
+                product.add(new Option(category.value ? 'Select a product' : 'Select a category first', ''));
+                product.disabled = !category.value;
+
+                options.forEach(function (option) {
+                    if (option.getAttribute('data-category') === category.value) {
+                        product.add(option.cloneNode(true));
+                    }
+                });
+
+                if (keepSelection && Array.prototype.some.call(product.options, function (option) {
+                    return option.value === selectedProductId;
+                })) {
+                    product.value = selectedProductId;
+                }
+            }
+
+            category.addEventListener('change', function () {
+                filterProducts(false);
+            });
+            filterProducts(false);
+            if (initialProductId) {
+                product.value = initialProductId;
+            }
+        }());
+    </script>
 @endsection

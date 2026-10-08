@@ -49,6 +49,13 @@ class StockAdjustmentSchemaCompatibilityTest extends TestCase
         $product->current_stock = 20;
         $product->save();
 
+        $this->get(route('stock-adjustments.create'))
+            ->assertOk()
+            ->assertSee('Category')
+            ->assertSee('data-category-filter', false)
+            ->assertSee('data-category-product', false)
+            ->assertSee('data-category="' . $category->id . '"', false);
+
         $storeId = null;
         if (Schema::hasColumn('stock_adjustments', 'store_id')) {
             $storeId = $this->createStore('Adjustment Location ' . $suffix, $suffix);
@@ -71,6 +78,7 @@ class StockAdjustmentSchemaCompatibilityTest extends TestCase
         }
 
         $response = $this->post(route('stock-adjustments.store'), array_filter([
+            'category_id' => $category->id,
             'product_id' => $product->id,
             'store_id' => $storeId,
             'adjustment_type' => 'decrease',
@@ -84,6 +92,24 @@ class StockAdjustmentSchemaCompatibilityTest extends TestCase
         $response->assertSessionHasNoErrors()
             ->assertRedirect(route('stock-adjustments.index'));
         $this->assertSame('15.00', $product->fresh()->current_stock);
+
+        $differentCategory = Category::create([
+            'name' => 'Different Adjustment Category ' . $suffix,
+            'is_active' => true,
+        ]);
+        $this->post(route('stock-adjustments.store'), array_filter([
+            'category_id' => $differentCategory->id,
+            'product_id' => $product->id,
+            'store_id' => $storeId,
+            'adjustment_type' => 'increase',
+            'quantity' => 5,
+            'reason' => 'Mismatched category check',
+            'adjustment_date' => now()->toDateString(),
+        ], function ($value) {
+            return $value !== null;
+        }))->assertSessionHasErrors('category_id');
+        $this->assertSame('15.00', $product->fresh()->current_stock);
+
         $this->get(route('stock-adjustments.index'))
             ->assertOk()
             ->assertSee('Adjustment Test Product')

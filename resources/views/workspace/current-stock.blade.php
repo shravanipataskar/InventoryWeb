@@ -6,7 +6,11 @@
 @section('content')
     <div class="page-heading workspace-page-heading">
         <div><span class="section-kicker">INVENTORY</span><h1>Current Stock</h1><p>Live on-hand quantities and purchase value for active products.</p></div>
-        <a class="button button-primary" href="{{ route('stock-inwards.create') }}"><span class="button-plus">+</span> Record Stock Inward</a>
+        @if (auth()->user()->role === 'admin')
+            <a class="button button-primary" href="{{ route('stock-inwards.create') }}"><span class="button-plus">+</span> Record Stock Inward</a>
+        @else
+            <a class="button button-primary" href="{{ route('purchase-orders.index') }}"><span class="button-plus">+</span> Receive Goods</a>
+        @endif
     </div>
 
     <section class="workspace-summary-grid workspace-summary-five">

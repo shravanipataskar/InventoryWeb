@@ -160,6 +160,11 @@ class GoodsReceiptPostingTest extends TestCase
         $user = $this->makeUser('store_manager');
         $this->actingAs($user);
 
+        $this->get(route('current-stock.index'))
+            ->assertOk()
+            ->assertSee(route('purchase-orders.index'))
+            ->assertSee('Receive Goods')
+            ->assertDontSee(route('stock-inwards.create'));
         $this->get(route('stock-inwards.create'))->assertForbidden();
     }
 

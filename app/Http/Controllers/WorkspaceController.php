@@ -1212,22 +1212,24 @@ class WorkspaceController extends Controller
 
     public function createStockAdjustment()
     {
+        $categories = Category::orderBy('name')->get(['id', 'name']);
         $products = Product::where('is_active', true)
             ->with('unit')
             ->orderBy('name')
-            ->get(['id', 'name', 'product_code', 'current_stock', 'unit_id']);
+            ->get(['id', 'name', 'product_code', 'category_id', 'current_stock', 'unit_id']);
         $locations = DB::table('stores')
             ->where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'name']);
         $requiresStore = Schema::hasColumn('stock_adjustments', 'store_id');
 
-        return view('workspace.stock-adjustment-create', compact('products', 'locations', 'requiresStore'));
+        return view('workspace.stock-adjustment-create', compact('categories', 'products', 'locations', 'requiresStore'));
     }
 
     public function storeStockAdjustment(Request $request)
     {
         $rules = [
+            'category_id' => 'nullable|integer|exists:categories,id',
             'product_id' => 'required|integer|exists:products,id',
             'adjustment_type' => 'required|in:increase,decrease',
             'quantity' => 'required|numeric|min:0.01',
@@ -1245,6 +1247,11 @@ class WorkspaceController extends Controller
             if (!$product->is_active) {
                 throw ValidationException::withMessages([
                     'product_id' => 'Select an active product.',
+                ]);
+            }
+            if (isset($validated['category_id']) && (int) $product->category_id !== (int) $validated['category_id']) {
+                throw ValidationException::withMessages([
+                    'category_id' => 'Select a category that matches the chosen product.',
                 ]);
             }
 
