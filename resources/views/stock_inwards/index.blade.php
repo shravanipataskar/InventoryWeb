@@ -8,7 +8,7 @@
         <div><span class="section-kicker">STOCK MOVEMENT</span><h1>Stock Inward</h1><p>Posted goods receipts appear here automatically as the stock ledger record.</p></div>
         <div class="page-heading-actions">
             <a class="button button-light" href="{{ route('goods-receipts.index') }}">Goods Received</a>
-            <a class="button button-primary" href="{{ route('purchase-orders.index') }}">Purchase Orders</a>
+            <a class="button button-primary" href="{{ route('quotations.index') }}">Quotation</a>
         </div>
     </div>
 

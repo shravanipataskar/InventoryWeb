@@ -34,6 +34,8 @@ class UserController extends Controller
 
     public function create()
     {
+        abort_unless(auth()->user()->isAdmin(), 403);
+
         $roles = Role::orderBy('label')->get();
 
         return view('users.create', compact('roles'));
@@ -41,11 +43,27 @@ class UserController extends Controller
 
     public function store(Request $request)
     {
+        abort_unless($request->user() && $request->user()->isAdmin(), 403);
+
         $data = $request->validate([
             'name' => 'required|string|max:100',
             'email' => 'required|string|email|max:255|unique:users,email',
-            'password' => 'required|string|min:8|confirmed',
+            'phone' => [
+                'nullable',
+                'string',
+                'max:30',
+                'regex:/^\+?[0-9][0-9\s().-]*[0-9]$/',
+                function ($attribute, $value, $fail) {
+                    $digitCount = preg_match_all('/[0-9]/', $value);
+                    if ($digitCount < 7 || $digitCount > 15) {
+                        $fail('The phone number must contain between 7 and 15 digits.');
+                    }
+                },
+            ],
+            'password' => 'required|string|min:8',
+            'password_confirmation' => 'required|string|same:password',
             'role_id' => 'required|exists:roles,id',
+            'status' => 'sometimes|required|in:active,inactive',
         ]);
 
         $role = Role::findOrFail($data['role_id']);
@@ -54,7 +72,8 @@ class UserController extends Controller
             'email' => $data['email'],
             'password' => Hash::make($data['password']),
             'role' => $role->name,
-            'is_active' => true,
+            'phone' => $data['phone'] ?? null,
+            'is_active' => ($data['status'] ?? 'active') === 'active',
         ]);
         $user->roles()->sync([$role->id]);
 

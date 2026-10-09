@@ -228,9 +228,11 @@ Route::middleware('auth')->group(function () {
         ->name('users.index');
     Route::get('/users/create', 'UserController@create')
         ->middleware('permission:users.create')
+        ->middleware('can:manage-user-accounts')
         ->name('users.create');
     Route::post('/users', 'UserController@store')
         ->middleware('permission:users.create')
+        ->middleware('can:manage-user-accounts')
         ->name('users.store');
     Route::get('/users/{user}', 'UserController@show')
         ->middleware('permission:users.view')

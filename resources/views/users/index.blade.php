@@ -6,7 +6,7 @@
 @section('content')
 <div class="page-heading workspace-page-heading">
     <div><span class="section-kicker">ADMINISTRATION</span><h1>Users</h1><p>Manage accounts, roles, and access status.</p></div>
-    @if (auth()->user()->hasPermission('users', 'create'))
+    @if (auth()->user()->isAdmin())
         <a class="button button-primary" href="{{ route('users.create') }}"><span class="button-plus">+</span> Add User</a>
     @endif
 </div>

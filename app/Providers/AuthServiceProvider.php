@@ -26,7 +26,11 @@ class AuthServiceProvider extends ServiceProvider
         $this->registerPolicies();
 
         \Illuminate\Support\Facades\Gate::before(function ($user) {
-            return strtolower((string) $user->role) === 'admin' ? true : null;
+            return $user->isAdmin() ? true : null;
+        });
+
+        Gate::define('manage-user-accounts', function ($user) {
+            return $user->isAdmin();
         });
     }
 }
