@@ -125,20 +125,39 @@ class QuotationController extends Controller
                 'quotations.supplier',
                 'quotations.items',
             ])
-            ->whereIn('status', ['submitted', 'under_review'])
+                ->whereIn('status', ['submitted', 'under_review', 'approved'])
             ->orderByDesc('id')
             ->get();
         $quotations->each(function ($requestRecord) {
-            $requestRecord->setAttribute('quotations_count', $requestRecord->quotations->count());
-            $requestRecord->setAttribute('product_count', $requestRecord->quotations
-                ->flatMap(function ($quotation) {
-                    return $quotation->items->pluck('product_id');
-                })
+                $visibleQuotations = $requestRecord->status === 'approved'
+                    ? $requestRecord->quotations->where('status', 'approved')
+                    : $requestRecord->quotations->whereIn('status', ['submitted', 'under_review']);
+                $requestRecord->setAttribute('approval_quotations', $visibleQuotations);
+                $requestRecord->setAttribute('quotations_count', $visibleQuotations->count());
+                $requestRecord->setAttribute('product_count', $visibleQuotations
+                    ->flatMap(function ($quotation) {
+                        return $quotation->items->pluck('product_id');
+                    })
                 ->unique()
                 ->count());
         });
 
         return view('quotations.approval', compact('quotations'));
+    }
+
+    public function rejected($id)
+    {
+        $quotationRequest = QuotationRequest::with([
+                'creator',
+                'quotations.supplier',
+                'quotations.items.product.category',
+                'quotations.items.product.unit',
+            ])
+            ->findOrFail($id);
+
+        abort_unless($quotationRequest->status === 'approved', 404);
+
+        return view('quotations.rejected', compact('quotationRequest'));
     }
 
     public function submit(Request $request, $id)
@@ -153,45 +172,7 @@ class QuotationController extends Controller
         ]);
 
         DB::transaction(function () use ($quotation, $validated) {
-            $subtotal = $cgstTotal = $sgstTotal = 0;
-            foreach ($quotation->items as $item) {
-                if (!isset($validated['items'][$item->id])) {
-                    throw ValidationException::withMessages(['items' => 'Every quotation item must be completed.']);
-                }
-                $line = $validated['items'][$item->id];
-                $rate = round((float) $line['supplier_rate'], 2);
-                $quantity = round((float) $item->quantity, 2);
-                $basic = round($quantity * $rate, 2);
-                $gstRate = round((float) $line['gst_rate'], 2);
-                $cgstRate = round($gstRate / 2, 2);
-                $sgstRate = round($gstRate - $cgstRate, 2);
-                $cgst = round($basic * $cgstRate / 100, 2);
-                $sgst = round($basic * $sgstRate / 100, 2);
-                $item->update([
-                    'supplier_rate' => $rate,
-                    'basic_amount' => $basic,
-                    'gst_rate' => $gstRate,
-                    'cgst_rate' => $cgstRate,
-                    'cgst_amount' => $cgst,
-                    'sgst_rate' => $sgstRate,
-                    'sgst_amount' => $sgst,
-                    'tax_amount' => round($cgst + $sgst, 2),
-                    'total_amount' => round($basic + $cgst + $sgst, 2),
-                ]);
-                $subtotal += $basic;
-                $cgstTotal += $cgst;
-                $sgstTotal += $sgst;
-            }
-            $quotation->update([
-                'status' => 'submitted',
-                'subtotal' => round($subtotal, 2),
-                'cgst_total' => round($cgstTotal, 2),
-                'sgst_total' => round($sgstTotal, 2),
-                'tax_total' => round($cgstTotal + $sgstTotal, 2),
-                'grand_total' => round($subtotal + $cgstTotal + $sgstTotal, 2),
-                'submitted_at' => now(),
-                'submitted_by' => Auth::id(),
-            ]);
+            $this->submitQuotation($quotation, $validated['items']);
             $quotation->request()->update(['status' => 'submitted']);
         });
 
@@ -199,6 +180,38 @@ class QuotationController extends Controller
 
         return redirect()->route('quotations.show', $quotation->quotation_request_id)
             ->with('success', 'Supplier quotation submitted for authority review.');
+    }
+
+    public function submitRequest(Request $request, $id)
+    {
+        $requestRecord = QuotationRequest::with('quotations.items')->findOrFail($id);
+        $draftQuotations = $requestRecord->quotations->filter(function ($quotation) {
+            return $quotation->status === 'draft';
+        });
+
+        abort_if($draftQuotations->isEmpty(), 422, 'There are no draft quotations to submit.');
+
+        $validated = $request->validate([
+            'items' => 'required|array',
+            'items.*' => 'required|array',
+            'items.*.*.supplier_rate' => 'required|numeric|min:0',
+            'items.*.*.gst_rate' => 'required|numeric|min:0|max:100',
+        ]);
+
+        DB::transaction(function () use ($requestRecord, $draftQuotations, $validated) {
+            foreach ($draftQuotations as $quotation) {
+                if (!isset($validated['items'][$quotation->id])) {
+                    throw ValidationException::withMessages(['items' => 'Every supplier quotation must be completed.']);
+                }
+                $this->submitQuotation($quotation, $validated['items'][$quotation->id]);
+            }
+            $requestRecord->update(['status' => 'submitted']);
+        });
+
+        ActivityLogger::log('Quotations Submitted', 'Quotation', 'All supplier quotations for request ' . $requestRecord->quotation_request_code . ' were submitted.');
+
+        return redirect()->route('quotations.show', $requestRecord->id)
+            ->with('success', 'All supplier quotations were submitted for authority review.');
     }
 
     public function approve($id)
@@ -326,5 +339,48 @@ class QuotationController extends Controller
             'quotations.items.product.unit',
             'quotations.purchaseOrder',
         ])->findOrFail($id);
+    }
+
+    private function submitQuotation(Quotation $quotation, array $items)
+    {
+        $subtotal = $cgstTotal = $sgstTotal = 0;
+        foreach ($quotation->items as $item) {
+            if (!isset($items[$item->id])) {
+                throw ValidationException::withMessages(['items' => 'Every quotation item must be completed.']);
+            }
+            $line = $items[$item->id];
+            $rate = round((float) $line['supplier_rate'], 2);
+            $quantity = round((float) $item->quantity, 2);
+            $basic = round($quantity * $rate, 2);
+            $gstRate = round((float) $line['gst_rate'], 2);
+            $cgstRate = round($gstRate / 2, 2);
+            $sgstRate = round($gstRate - $cgstRate, 2);
+            $cgst = round($basic * $cgstRate / 100, 2);
+            $sgst = round($basic * $sgstRate / 100, 2);
+            $item->update([
+                'supplier_rate' => $rate,
+                'basic_amount' => $basic,
+                'gst_rate' => $gstRate,
+                'cgst_rate' => $cgstRate,
+                'cgst_amount' => $cgst,
+                'sgst_rate' => $sgstRate,
+                'sgst_amount' => $sgst,
+                'tax_amount' => round($cgst + $sgst, 2),
+                'total_amount' => round($basic + $cgst + $sgst, 2),
+            ]);
+            $subtotal += $basic;
+            $cgstTotal += $cgst;
+            $sgstTotal += $sgst;
+        }
+        $quotation->update([
+            'status' => 'submitted',
+            'subtotal' => round($subtotal, 2),
+            'cgst_total' => round($cgstTotal, 2),
+            'sgst_total' => round($sgstTotal, 2),
+            'tax_total' => round($cgstTotal + $sgstTotal, 2),
+            'grand_total' => round($subtotal + $cgstTotal + $sgstTotal, 2),
+            'submitted_at' => now(),
+            'submitted_by' => Auth::id(),
+        ]);
     }
 }

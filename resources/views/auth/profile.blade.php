@@ -34,6 +34,16 @@
 
             <p>{{ $user->email }}</p>
 
+            @php
+                $assignedRole = $user->roles->first();
+                $profileRole = optional($assignedRole)->label
+                    ?: optional($assignedRole)->name
+                    ?: $user->role;
+            @endphp
+            <span class="profile-role">
+                {{ $profileRole ? ucwords(strtolower(str_replace('_', ' ', $profileRole))) : 'No role assigned' }}
+            </span>
+
             <span class="status-badge">
                 <span></span>
                 Active

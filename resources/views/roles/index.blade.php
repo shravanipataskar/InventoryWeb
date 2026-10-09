@@ -34,64 +34,61 @@
                 @method('PUT')
                 <div class="table-wrap">
                     <table class="data-table listing-table">
-                        <thead><tr><th>MODULE</th><th>VIEW</th><th>CREATE</th><th>EDIT</th><th>DELETE</th><th>APPROVE</th><th>REJECT</th></tr></thead>
+                        <thead><tr><th>MODULE</th><th>VIEW</th><th>CREATE</th><th>EDIT</th><th>DELETE</th><th>SELECT ALL</th></tr></thead>
                         <tbody>
-                        @foreach ($permissions as $module => $modulePermissions)
-                            <tr><td><strong>{{ ucwords(str_replace('_', ' ', $module)) }}</strong></td>
-                                @foreach (['view', 'create', 'edit', 'delete', 'approve', 'reject'] as $action)
-                                    @php $permission = $modulePermissions->firstWhere('action', $action); @endphp
+                        @foreach ($moduleGroups as $module => $modules)
+                            <tr class="permission-row">
+                                <td><strong>{{ ucwords(str_replace('_', ' ', $module)) }}</strong></td>
+                                @foreach (['view', 'create', 'edit', 'delete'] as $action)
+                                    @php
+                                        $modulePermissions = $selectedRole->permissions
+                                            ->whereIn('module', $modules)
+                                            ->where('action', $module === 'quotation_approval' && $action === 'view' ? 'approve' : $action);
+                                        $hasPermission = $modulePermissions->count() === count($modules);
+                                    @endphp
                                     <td>
-                                        @if ($permission)
-                                            <input type="checkbox" name="permissions[]" value="{{ $permission->id }}" {{ $selectedRole->permissions->contains('id', $permission->id) ? 'checked' : '' }}>
-                                        @endif
+                                        <input type="checkbox"
+                                               class="permission-checkbox"
+                                               name="permissions[{{ $module }}][{{ $action }}]"
+                                               value="1"
+                                               {{ $hasPermission ? 'checked' : '' }}>
                                     </td>
                                 @endforeach
+                                <td>
+                                    <input type="checkbox" class="select-all-checkbox" aria-label="Select all {{ ucwords(str_replace('_', ' ', $module)) }} permissions">
+                                </td>
                             </tr>
                         @endforeach
                         </tbody>
                     </table>
                 </div>
+                <script>
+                    document.querySelectorAll('.permission-row').forEach(function (row) {
+                        var permissions = row.querySelectorAll('.permission-checkbox');
+                        var selectAll = row.querySelector('.select-all-checkbox');
+
+                        var updateSelectAll = function () {
+                            selectAll.checked = Array.from(permissions).every(function (permission) {
+                                return permission.checked;
+                            });
+                        };
+
+                        selectAll.addEventListener('change', function () {
+                            permissions.forEach(function (permission) {
+                                permission.checked = selectAll.checked;
+                            });
+                        });
+
+                        permissions.forEach(function (permission) {
+                            permission.addEventListener('change', updateSelectAll);
+                        });
+
+                        updateSelectAll();
+                    });
+                </script>
                 <div class="form-actions"><button class="button button-primary" type="submit">Save {{ $selectedRole->label }} permissions</button></div>
             </form>
         </section>
     @endif
 
-    <section class="panel listing-panel">
-        <div class="panel-heading"><h2>{{ optional($selectedRole)->label }} users</h2><p>These users share the selected role and its permissions.</p></div>
-        <div class="table-wrap"><table class="data-table listing-table">
-            <thead><tr><th>NAME</th><th>EMAIL</th><th>ROLE</th><th>ACTION</th></tr></thead>
-            <tbody>
-            @foreach ($users as $user)
-                <tr><td>{{ $user->name }}</td><td>{{ $user->email }}</td><td>{{ optional($user->roles->first())->label ?: $user->role }}</td><td>
-                    <form method="POST" action="{{ route('roles.users.update', $user->id) }}" class="inline-form">
-                        @csrf @method('PUT')
-                        <select class="field-control" name="role_id">@foreach ($roles as $roleOption)<option value="{{ $roleOption->id }}" {{ optional($user->roles->first())->id === $roleOption->id ? 'selected' : '' }}>{{ $roleOption->label }}</option>@endforeach</select>
-                        <button class="button button-small button-light" type="submit">Assign</button>
-                    </form>
-                </td></tr>
-            @endforeach
-            @if ($users->isEmpty())
-                <tr><td colspan="4">No users are assigned to this role yet.</td></tr>
-            @endif
-            </tbody>
-        </table></div>
-    </section>
-
-    <section class="panel listing-panel">
-        <div class="panel-heading"><h2>Assign users</h2><p>Choose a role for each account. Users immediately inherit that role's permissions.</p></div>
-        <div class="table-wrap"><table class="data-table listing-table">
-            <thead><tr><th>NAME</th><th>EMAIL</th><th>CURRENT ROLE</th><th>ASSIGN ROLE</th></tr></thead>
-            <tbody>
-            @foreach ($allUsers as $user)
-                <tr><td>{{ $user->name }}</td><td>{{ $user->email }}</td><td>{{ optional($user->roles->first())->label ?: $user->role }}</td><td>
-                    <form method="POST" action="{{ route('roles.users.update', $user->id) }}" class="inline-form">
-                        @csrf @method('PUT')
-                        <select class="field-control" name="role_id">@foreach ($roles as $roleOption)<option value="{{ $roleOption->id }}" {{ optional($user->roles->first())->id === $roleOption->id ? 'selected' : '' }}>{{ $roleOption->label }}</option>@endforeach</select>
-                        <button class="button button-small button-light" type="submit">Assign</button>
-                    </form>
-                </td></tr>
-            @endforeach
-            </tbody>
-        </table></div>
-    </section>
 @endsection

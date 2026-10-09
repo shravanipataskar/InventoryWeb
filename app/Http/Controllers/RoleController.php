@@ -10,27 +10,79 @@ use Illuminate\Support\Facades\DB;
 
 class RoleController extends Controller
 {
+    private $moduleGroups = [
+        'dashboard' => ['dashboard'],
+        'master_data' => ['categories', 'units', 'locations', 'companies', 'customers', 'products', 'suppliers'],
+        'purchase' => ['quotations', 'purchase', 'goods_receipts'],
+        'quotation_approval' => ['quotations'],
+        'inventory' => ['stock'],
+        'reports' => ['reports'],
+        'administration' => ['users', 'roles', 'activity_log', 'settings'],
+    ];
+
+    public function __construct()
+    {
+        $this->middleware(function ($request, $next) {
+            $user = $request->user();
+
+            abort_unless($user && $user->canManageRoles(), 403);
+
+            return $next($request);
+        });
+    }
+
     public function index(Request $request)
     {
         $roles = Role::with('permissions')->orderBy('label')->get();
-        $permissions = Permission::orderBy('module')->orderBy('action')->get()->groupBy('module');
         $selectedRole = $roles->firstWhere('id', (int) $request->query('role_id')) ?: $roles->first();
-        $users = User::with('roles')
-            ->whereHas('roles', function ($query) use ($selectedRole) {
-                $query->where('roles.id', optional($selectedRole)->id);
+        $availableModules = Permission::query()->pluck('module')->unique()->all();
+        $moduleGroups = collect($this->moduleGroups)
+            ->map(function ($modules) use ($availableModules) {
+                return array_values(array_intersect($modules, $availableModules));
             })
-            ->orderBy('name')
-            ->get();
-        $allUsers = User::with('roles')->orderBy('name')->get();
+            ->filter(function ($modules) {
+                return count($modules) > 0;
+            })
+            ->all();
 
-        return view('roles.index', compact('roles', 'permissions', 'selectedRole', 'users', 'allUsers'));
+        return view('roles.index', compact('roles', 'moduleGroups', 'selectedRole'));
     }
 
     public function update(Request $request, $id)
     {
         $role = Role::findOrFail($id);
-        $permissionIds = $request->input('permissions', []);
-        $role->permissions()->sync(array_map('intval', $permissionIds));
+        $selectedPermissions = $request->input('permissions', []);
+        $permissionIds = [];
+
+        foreach ($this->moduleGroups as $moduleKey => $modules) {
+            foreach (['view', 'create', 'edit', 'delete'] as $action) {
+                $permissionAction = $moduleKey === 'quotation_approval' && $action === 'view'
+                    ? 'approve'
+                    : $action;
+
+                if (!isset($selectedPermissions[$moduleKey][$action])) {
+                    continue;
+                }
+
+                $permissionIds = array_merge(
+                    $permissionIds,
+                    Permission::whereIn('module', $modules)
+                        ->where('action', $permissionAction)
+                        ->pluck('id')
+                        ->all()
+                );
+            }
+        }
+
+        $permissionIds = array_merge(
+            $permissionIds,
+            $role->permissions()
+                ->whereNotIn('action', ['view', 'create', 'edit', 'delete'])
+                ->pluck('permissions.id')
+                ->all()
+        );
+
+        $role->permissions()->sync($permissionIds);
 
         return redirect()
             ->route('roles.index', ['role_id' => $role->id])

@@ -291,7 +291,7 @@ class AuthController extends Controller
 
     public function showProfile()
     {
-        $user = Auth::user();
+        $user = Auth::user()->load('roles');
 
         return view(
             'profile.show',

@@ -249,18 +249,20 @@ Route::middleware('auth')->group(function () {
     Route::get('/activity-log', [WorkspaceController::class, 'activityLog'])
         ->middleware('permission:activity_log.view')
         ->name('activity-log.index');
-    Route::get('/roles', 'RoleController@index')->middleware('permission:roles.view')->name('roles.index');
-    Route::put('/roles/{role}', 'RoleController@update')->middleware('permission:roles.edit')->name('roles.update');
-    Route::put('/roles/users/{user}', 'RoleController@assignUser')->middleware('permission:roles.edit')->name('roles.users.update');
+    Route::get('/roles', 'RoleController@index')->name('roles.index');
+    Route::put('/roles/{role}', 'RoleController@update')->name('roles.update');
+    Route::put('/roles/users/{user}', 'RoleController@assignUser')->name('roles.users.update');
 
     Route::get('/quotations', 'QuotationController@index')->middleware('permission:quotations.view')->name('quotations.index');
     Route::get('/quotations/create', 'QuotationController@create')->middleware('permission:quotations.create')->name('quotations.create');
     Route::post('/quotations', 'QuotationController@store')->middleware('permission:quotations.create')->name('quotations.store');
     Route::get('/quotations/approval', 'QuotationController@approval')->middleware('permission:quotations.approve')->name('quotations.approval');
+    Route::post('/quotations/request/{quotationRequest}/submit', 'QuotationController@submitRequest')->middleware('permission:quotations.edit')->name('quotations.request.submit');
     Route::post('/quotations/{quotation}/submit', 'QuotationController@submit')->middleware('permission:quotations.edit')->name('quotations.submit');
     Route::post('/quotations/{quotation}/approve', 'QuotationController@approve')->middleware('permission:quotations.approve')->name('quotations.approve');
     Route::post('/quotations/{quotation}/reject', 'QuotationController@reject')->middleware('permission:quotations.reject')->name('quotations.reject');
     Route::post('/quotations/{quotation}/generate-purchase', 'QuotationController@generatePurchase')->middleware('permission:quotations.approve')->name('quotations.generate-purchase');
+    Route::get('/quotations/{quotationRequest}/rejected', 'QuotationController@rejected')->middleware('permission:quotations.approve')->name('quotations.rejected');
     Route::get('/quotations/{quotation}', 'QuotationController@show')->middleware('permission:quotations.view')->name('quotations.show');
 
     Route::patch('categories/{category}/status', 'CategoryController@status')

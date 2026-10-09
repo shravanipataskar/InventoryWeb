@@ -8,10 +8,17 @@
     @include('components.flash')
     @forelse ($quotations as $requestRecord)
         <section class="panel listing-panel"><div class="panel-heading"><h2>{{ $requestRecord->quotation_request_code }}</h2><p>{{ \Carbon\Carbon::parse($requestRecord->request_date)->format('d M Y') }} · {{ $requestRecord->quotations_count }} supplier quotations · {{ ucfirst(str_replace('_', ' ', $requestRecord->status)) }}</p></div>
-            <div class="table-wrap"><table class="data-table listing-table"><thead><tr><th>REQUEST NO.</th><th>DATE</th><th>REQUESTED BY</th><th>SUPPLIERS</th><th>PRODUCTS</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>
-                <tr><td>{{ $requestRecord->quotation_request_code }}</td><td>{{ \Carbon\Carbon::parse($requestRecord->request_date)->format('d M Y') }}</td><td>{{ optional($requestRecord->creator)->name ?: '—' }}</td><td>{{ $requestRecord->quotations_count }}</td><td>{{ $requestRecord->product_count }}</td><td>{{ ucfirst(str_replace('_', ' ', $requestRecord->status)) }}</td><td>
-                    <a class="button button-small button-light" href="{{ route('quotations.show', $requestRecord->id) }}">Review</a>
-                </td></tr>
+            <div class="table-wrap"><table class="data-table listing-table"><thead><tr><th>REQUEST NO.</th><th>SUPPLIER</th><th>TOTAL</th><th>STATUS</th><th>ACTION</th></tr></thead><tbody>
+                @foreach ($requestRecord->approval_quotations as $quotation)
+                    <tr><td>{{ $requestRecord->quotation_request_code }}</td><td>{{ optional($quotation->supplier)->company_name ?: optional($quotation->supplier)->name }}</td><td>₹{{ number_format($quotation->grand_total, 2) }}</td><td>{{ ucfirst(str_replace('_', ' ', $quotation->status)) }}</td><td>
+                        <a class="button button-small button-light" href="{{ route('quotations.show', $requestRecord->id) }}">Review</a>
+                        @if (in_array($quotation->status, ['submitted', 'under_review'], true))
+                            <form class="inline-form" method="POST" action="{{ route('quotations.approve', $quotation->id) }}">@csrf<button class="button button-small button-primary" type="submit">Approve</button></form>
+                        @elseif ($quotation->status === 'approved')
+                            <a class="button button-small button-light" href="{{ route('quotations.rejected', $requestRecord->id) }}">View Rejected Quotation</a>
+                        @endif
+                    </td></tr>
+                @endforeach
             </tbody></table></div>
         </section>
     @empty

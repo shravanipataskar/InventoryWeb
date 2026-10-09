@@ -151,6 +151,12 @@
             <path d="m6 9 6 6 6-6"/>
         </symbol>
 
+        <symbol id="icon-logout" viewBox="0 0 24 24">
+            <path d="M10 5H5v14h5"/>
+            <path d="M14 8l4 4-4 4"/>
+            <path d="M18 12H9"/>
+        </symbol>
+
     </svg>
 
 
@@ -225,20 +231,20 @@
                 @endphp
 
                 @if ($can('categories') || $can('units') || $can('locations') || $can('products') || $can('suppliers') || $can('customers') || $can('companies'))
-                <div class="nav-group {{ $masterDataIsActive ? 'is-open' : '' }}" data-nav-group>
+                <div class="nav-group" data-nav-group>
                     <button class="nav-link nav-group-toggle {{ $masterDataIsActive ? 'is-active' : '' }}"
                             type="button"
-                            aria-expanded="{{ $masterDataIsActive ? 'true' : 'false' }}"
+                            aria-expanded="false"
                             aria-controls="master-data-submenu"
                             data-nav-toggle>
                         <svg><use href="#icon-layers"></use></svg>
                         <span>Master Data</span>
                         <svg class="nav-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
                     </button>
-                    <div class="nav-submenu {{ $masterDataIsActive ? 'is-open' : '' }}"
+                    <div class="nav-submenu"
                          id="master-data-submenu"
                          aria-label="Master Data"
-                         aria-hidden="{{ $masterDataIsActive ? 'false' : 'true' }}"
+                         aria-hidden="true"
                          data-nav-panel>
                         @if ($can('categories'))<a class="nav-link {{ request()->routeIs('categories.*') ? 'is-active' : '' }}" href="{{ route('categories.index') }}">
                             <svg><use href="#icon-layers"></use></svg><span>Categories</span>
@@ -266,29 +272,24 @@
                 @endif
 
                 @if ($can('quotations') || $can('purchase') || $can('goods_receipts'))
-                <div class="nav-group {{ $purchaseIsActive ? 'is-open' : '' }}" data-nav-group>
+                <div class="nav-group" data-nav-group>
                     <button class="nav-link nav-group-toggle {{ $purchaseIsActive ? 'is-active' : '' }}"
                             type="button"
-                            aria-expanded="{{ $purchaseIsActive ? 'true' : 'false' }}"
+                            aria-expanded="false"
                             aria-controls="purchase-submenu"
                             data-nav-toggle>
                         <svg><use href="#icon-tray-in"></use></svg>
                         <span>Purchase</span>
                         <svg class="nav-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
                     </button>
-                    <div class="nav-submenu {{ $purchaseIsActive ? 'is-open' : '' }}"
+                    <div class="nav-submenu"
                          id="purchase-submenu"
                          aria-label="Purchase"
-                         aria-hidden="{{ $purchaseIsActive ? 'false' : 'true' }}"
+                         aria-hidden="true"
                          data-nav-panel>
                         @if (auth()->check() && auth()->user()->hasPermission('quotations', 'view'))
                             <a class="nav-link {{ request()->routeIs('quotations.index', 'quotations.show', 'quotations.create') ? 'is-active' : '' }}" href="{{ route('quotations.index') }}">
                                 <svg><use href="#icon-calendar"></use></svg><span>Quotations</span>
-                            </a>
-                        @endif
-                        @if (auth()->check() && auth()->user()->hasPermission('quotations', 'approve'))
-                            <a class="nav-link {{ request()->routeIs('quotations.approval') ? 'is-active' : '' }}" href="{{ route('quotations.approval') }}">
-                                <svg><use href="#icon-check"></use></svg><span>Quotation Approval</span>
                             </a>
                         @endif
                         @if ($can('purchase'))<a class="nav-link {{ request()->routeIs('purchase-orders.*') ? 'is-active' : '' }}" href="{{ route('purchase-orders.index') }}">
@@ -301,21 +302,29 @@
                 </div>
                 @endif
 
+                @if ($can('quotations', 'approve'))
+                <a class="nav-link {{ request()->routeIs('quotations.approval') ? 'is-active' : '' }}"
+                   href="{{ route('quotations.approval') }}">
+                    <svg><use href="#icon-check"></use></svg>
+                    <span>Quotation Approval</span>
+                </a>
+                @endif
+
                 @if ($can('stock'))
-                <div class="nav-group {{ $inventoryIsActive ? 'is-open' : '' }}" data-nav-group>
+                <div class="nav-group" data-nav-group>
                     <button class="nav-link nav-group-toggle {{ $inventoryIsActive ? 'is-active' : '' }}"
                             type="button"
-                            aria-expanded="{{ $inventoryIsActive ? 'true' : 'false' }}"
+                            aria-expanded="false"
                             aria-controls="inventory-submenu"
                             data-nav-toggle>
                         <svg><use href="#icon-box"></use></svg>
                         <span>Inventory</span>
                         <svg class="nav-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
                     </button>
-                    <div class="nav-submenu {{ $inventoryIsActive ? 'is-open' : '' }}"
+                    <div class="nav-submenu"
                          id="inventory-submenu"
                          aria-label="Inventory"
-                         aria-hidden="{{ $inventoryIsActive ? 'false' : 'true' }}"
+                         aria-hidden="true"
                          data-nav-panel>
                         <a class="nav-link {{ request()->routeIs('opening-stock.*') ? 'is-active' : '' }}" href="{{ route('opening-stock.index') }}">
                             <svg><use href="#icon-box"></use></svg><span>Opening Stock</span>
@@ -343,20 +352,20 @@
                 @endif
 
                 @if ($can('reports'))
-                <div class="nav-group {{ $reportsAreActive ? 'is-open' : '' }}" data-nav-group>
+                <div class="nav-group" data-nav-group>
                     <button class="nav-link nav-group-toggle {{ $reportsAreActive ? 'is-active' : '' }}"
                             type="button"
-                            aria-expanded="{{ $reportsAreActive ? 'true' : 'false' }}"
+                            aria-expanded="false"
                             aria-controls="reports-submenu"
                             data-nav-toggle>
                         <svg><use href="#icon-chart"></use></svg>
                         <span>Reports</span>
                         <svg class="nav-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
                     </button>
-                    <div class="nav-submenu {{ $reportsAreActive ? 'is-open' : '' }}"
+                    <div class="nav-submenu"
                          id="reports-submenu"
                          aria-label="Reports"
-                         aria-hidden="{{ $reportsAreActive ? 'false' : 'true' }}"
+                         aria-hidden="true"
                          data-nav-panel>
                         <a class="nav-link {{ request()->routeIs('reports.*') ? 'is-active' : '' }}" href="{{ route('reports.index') }}">
                             <svg><use href="#icon-chart"></use></svg><span>Inventory Reports</span>
@@ -374,26 +383,26 @@
                 </div>
                 @endif
 
-                @if ($can('users') || $can('roles') || $can('activity_log') || $can('settings'))
-                <div class="nav-group {{ $administrationIsActive ? 'is-open' : '' }}" data-nav-group>
+                @if ($can('users') || (auth()->check() && auth()->user()->canManageRoles()) || $can('activity_log') || $can('settings'))
+                <div class="nav-group" data-nav-group>
                     <button class="nav-link nav-group-toggle {{ $administrationIsActive ? 'is-active' : '' }}"
                             type="button"
-                            aria-expanded="{{ $administrationIsActive ? 'true' : 'false' }}"
+                            aria-expanded="false"
                             aria-controls="administration-submenu"
                             data-nav-toggle>
                         <svg><use href="#icon-settings"></use></svg>
                         <span>Administration</span>
                         <svg class="nav-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
                     </button>
-                    <div class="nav-submenu {{ $administrationIsActive ? 'is-open' : '' }}"
+                    <div class="nav-submenu"
                          id="administration-submenu"
                          aria-label="Administration"
-                         aria-hidden="{{ $administrationIsActive ? 'false' : 'true' }}"
+                         aria-hidden="true"
                          data-nav-panel>
                         @if ($can('users'))<a class="nav-link {{ request()->routeIs('users.*') ? 'is-active' : '' }}" href="{{ route('users.index') }}">
                             <svg><use href="#icon-users"></use></svg><span>Users</span>
                         </a>@endif
-                        @if (auth()->check() && auth()->user()->hasPermission('roles', 'view'))
+                        @if (auth()->check() && auth()->user()->canManageRoles())
                             <a class="nav-link {{ request()->routeIs('roles.*') ? 'is-active' : '' }}" href="{{ route('roles.index') }}">
                                 <svg><use href="#icon-settings"></use></svg><span>Roles &amp; Permissions</span>
                             </a>
@@ -409,6 +418,16 @@
                 </div>
 
             </nav>
+
+            <form method="POST" action="{{ route('logout') }}" class="sidebar-logout-form">
+                @csrf
+                <button type="submit" class="nav-link sidebar-logout" aria-label="Sign out">
+                    <svg aria-hidden="true">
+                        <use href="#icon-logout"></use>
+                    </svg>
+                    <span>Sign Out</span>
+                </button>
+            </form>
 
 
             {{-- Sidebar Footer --}}

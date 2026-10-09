@@ -4,70 +4,89 @@
 @section('topbar-title', 'Dashboard')
 
 @section('content')
+    @php
+        $can = function ($module, $action = 'view') {
+            return auth()->check() && auth()->user()->hasPermission($module, $action);
+        };
+    @endphp
+
     <div class="page-heading">
         <div>
             <span class="section-kicker">OVERVIEW</span>
             <h1>Good day, here's your inventory.</h1>
             <p>A live snapshot of what is happening across your stock.</p>
         </div>
-        <a class="button button-primary" href="{{ route('products.create') }}">
-            <span class="button-plus">+</span> Add product
-        </a>
+        @if ($can('products', 'create'))
+            <a class="button button-primary" href="{{ route('products.create') }}">
+                <span class="button-plus">+</span> Add product
+            </a>
+        @endif
     </div>
 
     <div class="stats-grid">
-        @include('components.stat-card', [
+        @if ($can('dashboard'))
+            @include('components.stat-card', [
             'label' => 'Total products',
             'value' => number_format($stats['products']),
             'note' => 'Products in your catalogue',
             'icon' => 'icon-box',
             'tone' => 'tone-teal',
-        ])
-        @include('components.stat-card', [
+            ])
+        @endif
+        @if ($can('dashboard'))
+            @include('components.stat-card', [
             'label' => 'Categories',
             'value' => number_format($stats['categories']),
             'note' => 'Product groups',
             'icon' => 'icon-layers',
             'tone' => 'tone-violet',
-        ])
-        @include('components.stat-card', [
+            ])
+        @endif
+        @if ($can('dashboard'))
+            @include('components.stat-card', [
             'label' => 'Suppliers',
             'value' => number_format($stats['suppliers']),
             'note' => 'Supplier records',
             'icon' => 'icon-users',
             'tone' => 'tone-blue',
-        ])
-        @include('components.stat-card', [
+            ])
+        @endif
+        @if ($can('dashboard'))
+            @include('components.stat-card', [
             'label' => 'Current stock value',
             'value' => '₹' . number_format($stats['stock_value'], 2),
             'note' => 'On-hand stock × purchase price',
             'icon' => 'icon-arrow-up',
             'tone' => 'tone-gold',
-        ])
-        @include('components.stat-card', [
+            ])
+            @include('components.stat-card', [
             'label' => 'Low stock',
             'value' => number_format($stats['low_stock']),
             'note' => 'Above zero, at or below minimum',
             'icon' => 'icon-alert',
             'tone' => 'tone-amber',
-        ])
-        @include('components.stat-card', [
+            ])
+            @include('components.stat-card', [
             'label' => 'Out of stock',
             'value' => number_format($stats['out_of_stock']),
             'note' => 'No available inventory',
             'icon' => 'icon-tray-out',
             'tone' => 'tone-red',
-        ])
+            ])
+        @endif
     </div>
 
     <div class="dashboard-grid dashboard-grid-primary">
+        @if ($can('dashboard'))
         <section class="panel">
             <div class="panel-heading">
                 <div>
                     <h2>Low stock products</h2>
                     <p>Items at or below their minimum stock level</p>
                 </div>
-                <a class="text-link" href="{{ route('products.index') }}">View products <span>→</span></a>
+                @if ($can('products'))
+                    <a class="text-link" href="{{ route('products.index') }}">View products <span>→</span></a>
+                @endif
             </div>
             @if ($lowStockProducts->isEmpty())
                 @include('components.empty-state', [
@@ -98,7 +117,9 @@
                 </div>
             @endif
         </section>
+        @endif
 
+        @if ($can('dashboard'))
         <section class="panel category-panel">
             <div class="panel-heading">
                 <div>
@@ -124,19 +145,25 @@
                         </div>
                     @endforeach
                 </div>
-                <a class="panel-bottom-link" href="{{ route('categories.index') }}">Manage categories <span>→</span></a>
+                @if ($can('categories'))
+                    <a class="panel-bottom-link" href="{{ route('categories.index') }}">Manage categories <span>→</span></a>
+                @endif
             @endif
         </section>
+        @endif
     </div>
 
     <div class="dashboard-grid dashboard-grid-activity">
+        @if ($can('dashboard'))
         <section class="panel">
             <div class="panel-heading">
                 <div>
                     <h2>Recent stock inward</h2>
                     <p>Latest inventory received from suppliers</p>
                 </div>
-                <a class="text-link" href="{{ route('stock-inwards.index') }}">See all <span>→</span></a>
+                @if ($can('stock'))
+                    <a class="text-link" href="{{ route('stock-inwards.index') }}">See all <span>→</span></a>
+                @endif
             </div>
             @if ($recentInwards->isEmpty())
                 @include('components.empty-state', [
@@ -156,14 +183,18 @@
                 </div>
             @endif
         </section>
+        @endif
 
+        @if ($can('dashboard'))
         <section class="panel">
             <div class="panel-heading">
                 <div>
                     <h2>Recent stock outward</h2>
                     <p>Latest inventory issued or sold</p>
                 </div>
-                <a class="text-link" href="{{ route('stock-outwards.index') }}">See all <span>→</span></a>
+                @if ($can('stock'))
+                    <a class="text-link" href="{{ route('stock-outwards.index') }}">See all <span>→</span></a>
+                @endif
             </div>
             @if ($recentOutwards->isEmpty())
                 @include('components.empty-state', [
@@ -183,6 +214,7 @@
                 </div>
             @endif
         </section>
+        @endif
     </div>
 
     <footer class="page-footer">Aayojan Ai Inventory System <span>·</span> Inventory overview from your current records</footer>

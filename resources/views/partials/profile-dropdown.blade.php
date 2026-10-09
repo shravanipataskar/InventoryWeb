@@ -19,6 +19,13 @@
             <div>
                 <strong>{{ $authUser->name }}</strong>
                 <small>{{ $authUser->email }}</small>
+                @php
+                    $assignedRole = $authUser->roles->first();
+                    $profileRole = optional($assignedRole)->label
+                        ?: optional($assignedRole)->name
+                        ?: $authUser->role;
+                @endphp
+                <small>{{ $profileRole ? ucwords(strtolower(str_replace('_', ' ', $profileRole))) : 'No role assigned' }}</small>
                 <span class="profile-online"><span></span> Online</span>
             </div>
         </div>
