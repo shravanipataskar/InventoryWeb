@@ -13,6 +13,7 @@ class Customer extends Model
         'contact_person',
         'phone',
         'email',
+        'store_warehouse_location',
         'address',
         'city',
         'state',

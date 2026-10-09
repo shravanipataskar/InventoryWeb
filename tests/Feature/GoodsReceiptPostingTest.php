@@ -106,6 +106,7 @@ class GoodsReceiptPostingTest extends TestCase
         $this->assertSame(1, StockInward::where('product_id', $product->id)->count());
         $this->assertSame(1, DB::table('stock_transactions')
             ->where('reference_type', 'stock_inward')
+            ->where('product_id', $product->id)
             ->count());
     }
 
@@ -181,6 +182,7 @@ class GoodsReceiptPostingTest extends TestCase
         $this->assertSame(0, StockInward::where('product_id', $product->id)->count());
         $this->assertSame(0, DB::table('stock_transactions')
             ->where('reference_type', 'stock_inward')
+            ->where('product_id', $product->id)
             ->count());
     }
 

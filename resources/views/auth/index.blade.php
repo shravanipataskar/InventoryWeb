@@ -19,7 +19,6 @@
             <h1>Inventory management,<br><span>made beautifully simple.</span></h1>
             <p>Keep products, stock movement, suppliers and inventory value organized in one intelligent workspace built for modern teams.</p>
             <div class="hero-actions">
-                <a href="{{ route('register') }}" class="btn btn-primary btn-large">Create free account <span>→</span></a>
                 <a href="{{ route('login') }}" class="text-action">I already have an account <span>→</span></a>
             </div>
             <div class="trust-row">

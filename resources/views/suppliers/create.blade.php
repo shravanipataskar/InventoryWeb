@@ -12,7 +12,7 @@
         <div class="form-alert" role="alert"><strong>Please check the form:</strong><ul>@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
     @endif
     <section class="form-card">
-        <form action="{{ route('suppliers.store') }}" method="POST">
+        <form action="{{ route('suppliers.store') }}" method="POST" enctype="multipart/form-data">
             @csrf
             @include('suppliers._fields')
             <div class="form-actions"><a class="button button-light" href="{{ route('suppliers.index') }}">Cancel</a><button class="button button-primary" type="submit">Save Supplier</button></div>

@@ -19,13 +19,14 @@
         </div>
         <div class="table-wrap">
             <table class="data-table listing-table">
-                <thead><tr><th>#</th><th>SUPPLIER</th><th>COMPANY</th><th>EMAIL</th><th>PHONE</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
+                <thead><tr><th>#</th><th>SUPPLIER</th><th>COMPANY</th><th>WAREHOUSE LOCATION</th><th>EMAIL</th><th>PHONE</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
                 <tbody>
                 @forelse ($suppliers as $supplier)
                     <tr data-table-row>
                         <td class="muted-cell">{{ $loop->iteration }}</td>
                         <td><div class="table-person"><span class="product-avatar">{{ strtoupper(substr($supplier->name, 0, 1)) }}</span><strong class="table-primary-text">{{ $supplier->name }}</strong></div></td>
                         <td>{{ $supplier->company_name ?: '—' }}</td>
+                        <td title="{{ $supplier->warehouse_location }}">{{ $supplier->warehouse_location ?: '—' }}</td>
                         <td>{{ $supplier->email ?: '—' }}</td>
                         <td>{{ $supplier->phone ?: '—' }}</td>
                         <td>@include('components.status-badge', ['status' => $supplier->is_active ? 'Active' : 'Inactive'])</td>
@@ -41,7 +42,7 @@
                         </td>
                     </tr>
                 @empty
-                    <tr><td colspan="7">@include('components.empty-state', ['icon' => 'icon-users', 'title' => 'No suppliers yet', 'message' => 'Add a supplier to record where your stock comes from.'])</td></tr>
+                    <tr><td colspan="8">@include('components.empty-state', ['icon' => 'icon-users', 'title' => 'No suppliers yet', 'message' => 'Add a supplier to record where your stock comes from.'])</td></tr>
                 @endforelse
                 </tbody>
             </table>

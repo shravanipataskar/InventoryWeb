@@ -30,7 +30,7 @@
                 <div class="form-options"><label class="check-label"><input type="checkbox" name="remember" value="1" {{ old('remember') ? 'checked' : '' }}><span>Remember me</span></label><a href="{{ route('password.request') }}">Forgot password?</a></div>
                 <button class="btn btn-primary btn-submit" type="submit">Sign in <span>→</span></button>
             </form>
-            <p class="form-footer">Don't have an account? <a href="{{ route('register') }}">Create one</a></p>
+            <p class="form-footer">Need access? Contact your system administrator.</p>
         </div>
     </section>
 </div>

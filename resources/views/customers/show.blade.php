@@ -23,6 +23,7 @@
                 <div class="field"><label>Contact Person</label><div class="product-identifier-display">{{ $customer->contact_person ?: '—' }}</div></div>
                 <div class="field"><label>Phone</label><div class="product-identifier-display">{{ $customer->phone ?: '—' }}</div></div>
                 <div class="field"><label>Email</label><div class="product-identifier-display">{{ $customer->email ?: '—' }}</div></div>
+                <div class="field"><label>Store / Warehouse Location</label><div class="product-identifier-display">{{ $customer->store_warehouse_location ?: '—' }}</div></div>
                 <div class="field"><label>City / State / Pincode</label><div class="product-identifier-display">{{ collect([$customer->city, $customer->state, $customer->pincode])->filter()->implode(', ') ?: '—' }}</div></div>
                 <div class="field field-wide"><label>Address</label><div class="product-identifier-display">{{ $customer->address ?: '—' }}</div></div>
                 <div class="field"><label>GSTIN</label><div class="product-identifier-display">{{ $customer->gstin ?: '—' }}</div></div>

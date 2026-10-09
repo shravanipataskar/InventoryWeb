@@ -25,6 +25,8 @@ class AuthServiceProvider extends ServiceProvider
     {
         $this->registerPolicies();
 
-        //
+        \Illuminate\Support\Facades\Gate::before(function ($user) {
+            return strtolower((string) $user->role) === 'admin' ? true : null;
+        });
     }
 }

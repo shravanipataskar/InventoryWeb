@@ -16,6 +16,10 @@ class PurchaseOrderItem extends Model
         'discount_percent',
         'tax_percent',
         'total_amount',
+        'cgst_rate',
+        'cgst_amount',
+        'sgst_rate',
+        'sgst_amount',
     ];
 
     public function getOrderedQuantityAttribute($value)

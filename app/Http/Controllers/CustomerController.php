@@ -146,6 +146,7 @@ class CustomerController extends Controller
             'contact_person' => 'nullable|string|max:255',
             'phone' => ['nullable', 'string', 'max:30', 'regex:/^\+?[0-9\s().-]{7,30}$/'],
             'email' => 'nullable|email|max:255',
+            'store_warehouse_location' => 'nullable|string|max:1000',
             'address' => 'nullable|string|max:2000',
             'city' => 'nullable|string|max:255',
             'state' => 'nullable|string|max:255',

@@ -208,169 +208,141 @@
                     <span>Dashboard</span>
                 </a>
 
-                {{-- Categories --}}
-                <a
-                    class="nav-link {{ request()->routeIs('categories.*') ? 'is-active' : '' }}"
-                    href="{{ route('categories.index') }}">
-
-                    <svg>
-                        <use href="#icon-layers"></use>
-                    </svg>
-
-                    <span>Categories</span>
-                </a>
-
-
-                {{-- Units --}}
-                <a
-                    class="nav-link {{ request()->routeIs('units.*') ? 'is-active' : '' }}"
-                    href="{{ route('units.index') }}">
-
-                    <svg>
-                        <use href="#icon-ruler"></use>
-                    </svg>
-
-                    <span>Units</span>
-                </a>
-
-                {{-- Locations --}}
-                <a
-                    class="nav-link {{ request()->routeIs('halls.*', 'racks.*', 'shelves.*') ? 'is-active' : '' }}"
-                    href="{{ route('halls.index') }}">
-
-                    <svg>
-                        <use href="#icon-layers"></use>
-                    </svg>
-
-                    <span>Locations</span>
-                </a>
-
-
-                {{-- Products --}}
-                <a
-                    class="nav-link {{ request()->routeIs('products.*') ? 'is-active' : '' }}"
-                    href="{{ route('products.index') }}">
-
-                    <svg>
-                        <use href="#icon-box"></use>
-                    </svg>
-
-                    <span>Products</span>
-                </a>
-
-                {{-- Companies --}}
-                <a
-                    class="nav-link {{ request()->routeIs('companies.*') ? 'is-active' : '' }}"
-                    href="{{ route('companies.index') }}">
-                    <svg><use href="#icon-building"></use></svg>
-                    <span>Companies</span>
-                </a>
-
-                {{-- Suppliers --}}
-                <a
-                    class="nav-link {{ request()->routeIs('suppliers.*') ? 'is-active' : '' }}"
-                    href="{{ route('suppliers.index') }}">
-
-                    <svg>
-                        <use href="#icon-users"></use>
-                    </svg>
-
-                    <span>Suppliers</span>
-                </a>
-
-                {{-- Customers --}}
-                <a
-                    class="nav-link {{ request()->routeIs('customers.*') ? 'is-active' : '' }}"
-                    href="{{ route('customers.index') }}">
-                    <svg><use href="#icon-users"></use></svg>
-                    <span>Customers</span>
-                </a>
-
                 @php
-                    $stockRoutes = ['opening-stock.*', 'stock-inwards.*', 'purchase-orders.*', 'goods-receipts.*', 'stock-outwards.*', 'stock-transfers.*', 'stock-adjustments.*', 'current-stock.*', 'stock-movement.*'];
+                    $masterDataRoutes = ['categories.*', 'units.*', 'halls.*', 'racks.*', 'shelves.*', 'locations.*', 'products.*', 'suppliers.*', 'customers.*', 'companies.*'];
+                    $purchaseRoutes = ['quotations.*', 'purchase-orders.*', 'goods-receipts.*'];
+                    $inventoryRoutes = ['opening-stock.*', 'stock-inwards.*', 'stock-outwards.*', 'stock-transfers.*', 'stock-adjustments.*', 'current-stock.*', 'stock-movement.*'];
                     $reportRoutes = ['reports.*', 'purchase-reports.*', 'issue-reports.*', 'stock-valuation.*'];
-                    $settingsRoutes = ['users.*', 'activity-log.*', 'settings.*', 'general-settings.*'];
-                    $stockIsActive = request()->routeIs(...$stockRoutes);
+                    $administrationRoutes = ['users.*', 'roles.*', 'activity-log.*', 'settings.*', 'general-settings.*'];
+                    $masterDataIsActive = request()->routeIs(...$masterDataRoutes);
+                    $purchaseIsActive = request()->routeIs(...$purchaseRoutes);
+                    $inventoryIsActive = request()->routeIs(...$inventoryRoutes);
                     $reportsAreActive = request()->routeIs(...$reportRoutes);
-                    $settingsAreActive = request()->routeIs(...$settingsRoutes);
-                    $inwardRelatedRoutes = ['purchase-orders.*', 'goods-receipts.*'];
-                    $inwardRelatedIsActive = request()->routeIs(...$inwardRelatedRoutes);
+                    $administrationIsActive = request()->routeIs(...$administrationRoutes);
+                    $can = function ($module, $action = 'view') {
+                        return auth()->check() && auth()->user()->hasPermission($module, $action);
+                    };
                 @endphp
 
-                <div class="nav-group {{ $stockIsActive ? 'is-open' : '' }}" data-nav-group>
-                    <button class="nav-link nav-group-toggle {{ $stockIsActive ? 'is-active' : '' }}"
+                @if ($can('categories') || $can('units') || $can('locations') || $can('products') || $can('suppliers') || $can('customers') || $can('companies'))
+                <div class="nav-group {{ $masterDataIsActive ? 'is-open' : '' }}" data-nav-group>
+                    <button class="nav-link nav-group-toggle {{ $masterDataIsActive ? 'is-active' : '' }}"
                             type="button"
-                            aria-expanded="{{ $stockIsActive ? 'true' : 'false' }}"
-                            aria-controls="stock-submenu"
+                            aria-expanded="{{ $masterDataIsActive ? 'true' : 'false' }}"
+                            aria-controls="master-data-submenu"
                             data-nav-toggle>
-                        <svg><use href="#icon-box"></use></svg>
-                        <span>Stock</span>
+                        <svg><use href="#icon-layers"></use></svg>
+                        <span>Master Data</span>
                         <svg class="nav-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
                     </button>
-                    <div class="nav-submenu {{ $stockIsActive ? 'is-open' : '' }}"
-                         id="stock-submenu"
-                         aria-label="Stock"
-                         aria-hidden="{{ $stockIsActive ? 'false' : 'true' }}"
+                    <div class="nav-submenu {{ $masterDataIsActive ? 'is-open' : '' }}"
+                         id="master-data-submenu"
+                         aria-label="Master Data"
+                         aria-hidden="{{ $masterDataIsActive ? 'false' : 'true' }}"
                          data-nav-panel>
-                        <a class="nav-link {{ request()->routeIs('opening-stock.*') ? 'is-active' : '' }}"
-                           href="{{ route('opening-stock.index') }}">
+                        @if ($can('categories'))<a class="nav-link {{ request()->routeIs('categories.*') ? 'is-active' : '' }}" href="{{ route('categories.index') }}">
+                            <svg><use href="#icon-layers"></use></svg><span>Categories</span>
+                        </a>@endif
+                        @if ($can('units'))<a class="nav-link {{ request()->routeIs('units.*') ? 'is-active' : '' }}" href="{{ route('units.index') }}">
+                            <svg><use href="#icon-ruler"></use></svg><span>Units</span>
+                        </a>@endif
+                        @if ($can('locations'))<a class="nav-link {{ request()->routeIs('halls.*', 'racks.*', 'shelves.*', 'locations.*') ? 'is-active' : '' }}" href="{{ route('halls.index') }}">
+                            <svg><use href="#icon-layers"></use></svg><span>Locations</span>
+                        </a>@endif
+                        @if ($can('products'))<a class="nav-link {{ request()->routeIs('products.*') ? 'is-active' : '' }}" href="{{ route('products.index') }}">
+                            <svg><use href="#icon-box"></use></svg><span>Products</span>
+                        </a>@endif
+                        @if ($can('suppliers'))<a class="nav-link {{ request()->routeIs('suppliers.*') ? 'is-active' : '' }}" href="{{ route('suppliers.index') }}">
+                            <svg><use href="#icon-users"></use></svg><span>Suppliers</span>
+                        </a>@endif
+                        @if ($can('customers'))<a class="nav-link {{ request()->routeIs('customers.*') ? 'is-active' : '' }}" href="{{ route('customers.index') }}">
+                            <svg><use href="#icon-users"></use></svg><span>Customers</span>
+                        </a>@endif
+                        @if ($can('companies'))<a class="nav-link {{ request()->routeIs('companies.*') ? 'is-active' : '' }}" href="{{ route('companies.index') }}">
+                            <svg><use href="#icon-building"></use></svg><span>Companies</span>
+                        </a>@endif
+                    </div>
+                </div>
+                @endif
+
+                @if ($can('quotations') || $can('purchase') || $can('goods_receipts'))
+                <div class="nav-group {{ $purchaseIsActive ? 'is-open' : '' }}" data-nav-group>
+                    <button class="nav-link nav-group-toggle {{ $purchaseIsActive ? 'is-active' : '' }}"
+                            type="button"
+                            aria-expanded="{{ $purchaseIsActive ? 'true' : 'false' }}"
+                            aria-controls="purchase-submenu"
+                            data-nav-toggle>
+                        <svg><use href="#icon-tray-in"></use></svg>
+                        <span>Purchase</span>
+                        <svg class="nav-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
+                    </button>
+                    <div class="nav-submenu {{ $purchaseIsActive ? 'is-open' : '' }}"
+                         id="purchase-submenu"
+                         aria-label="Purchase"
+                         aria-hidden="{{ $purchaseIsActive ? 'false' : 'true' }}"
+                         data-nav-panel>
+                        @if (auth()->check() && auth()->user()->hasPermission('quotations', 'view'))
+                            <a class="nav-link {{ request()->routeIs('quotations.index', 'quotations.show', 'quotations.create') ? 'is-active' : '' }}" href="{{ route('quotations.index') }}">
+                                <svg><use href="#icon-calendar"></use></svg><span>Quotations</span>
+                            </a>
+                        @endif
+                        @if (auth()->check() && auth()->user()->hasPermission('quotations', 'approve'))
+                            <a class="nav-link {{ request()->routeIs('quotations.approval') ? 'is-active' : '' }}" href="{{ route('quotations.approval') }}">
+                                <svg><use href="#icon-check"></use></svg><span>Quotation Approval</span>
+                            </a>
+                        @endif
+                        @if ($can('purchase'))<a class="nav-link {{ request()->routeIs('purchase-orders.*') ? 'is-active' : '' }}" href="{{ route('purchase-orders.index') }}">
+                            <svg><use href="#icon-tray-in"></use></svg><span>Purchase Orders</span>
+                        </a>@endif
+                        @if ($can('goods_receipts'))<a class="nav-link {{ request()->routeIs('goods-receipts.*') ? 'is-active' : '' }}" href="{{ route('goods-receipts.index') }}">
+                            <svg><use href="#icon-check"></use></svg><span>Goods Received</span>
+                        </a>@endif
+                    </div>
+                </div>
+                @endif
+
+                @if ($can('stock'))
+                <div class="nav-group {{ $inventoryIsActive ? 'is-open' : '' }}" data-nav-group>
+                    <button class="nav-link nav-group-toggle {{ $inventoryIsActive ? 'is-active' : '' }}"
+                            type="button"
+                            aria-expanded="{{ $inventoryIsActive ? 'true' : 'false' }}"
+                            aria-controls="inventory-submenu"
+                            data-nav-toggle>
+                        <svg><use href="#icon-box"></use></svg>
+                        <span>Inventory</span>
+                        <svg class="nav-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
+                    </button>
+                    <div class="nav-submenu {{ $inventoryIsActive ? 'is-open' : '' }}"
+                         id="inventory-submenu"
+                         aria-label="Inventory"
+                         aria-hidden="{{ $inventoryIsActive ? 'false' : 'true' }}"
+                         data-nav-panel>
+                        <a class="nav-link {{ request()->routeIs('opening-stock.*') ? 'is-active' : '' }}" href="{{ route('opening-stock.index') }}">
                             <svg><use href="#icon-box"></use></svg><span>Opening Stock</span>
                         </a>
-
-                        <div class="nav-nested-group {{ $inwardRelatedIsActive ? 'is-open' : '' }}" data-nav-group>
-                            <div class="nav-nested-row">
-                                <a class="nav-link {{ request()->routeIs('stock-inwards.*') ? 'is-active' : '' }}"
-                                   href="{{ route('stock-inwards.index') }}">
-                                    <svg><use href="#icon-tray-in"></use></svg><span>Stock Inward</span>
-                                </a>
-                                <button class="nav-nested-toggle"
-                                        type="button"
-                                        aria-label="Toggle purchase order and goods received links"
-                                        aria-expanded="{{ $inwardRelatedIsActive ? 'true' : 'false' }}"
-                                        aria-controls="inward-related-submenu"
-                                        data-nav-toggle>
-                                    <svg class="nav-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
-                                </button>
-                            </div>
-                            <div class="nav-submenu nav-submenu-nested {{ $inwardRelatedIsActive ? 'is-open' : '' }}"
-                                 id="inward-related-submenu"
-                                 aria-label="Purchase and receipt records"
-                                 aria-hidden="{{ $inwardRelatedIsActive ? 'false' : 'true' }}"
-                                 data-nav-panel>
-                                <a class="nav-link {{ request()->routeIs('purchase-orders.*') ? 'is-active' : '' }}"
-                                   href="{{ route('purchase-orders.index') }}">
-                                    <svg><use href="#icon-tray-in"></use></svg><span>Purchase Orders</span>
-                                </a>
-                                <a class="nav-link {{ request()->routeIs('goods-receipts.*') ? 'is-active' : '' }}"
-                                   href="{{ route('goods-receipts.index') }}">
-                                    <svg><use href="#icon-check"></use></svg><span>Goods Received</span>
-                                </a>
-                            </div>
-                        </div>
-
-                        <a class="nav-link {{ request()->routeIs('stock-outwards.*') ? 'is-active' : '' }}"
-                           href="{{ route('stock-outwards.index') }}">
+                        <a class="nav-link {{ request()->routeIs('stock-inwards.*') ? 'is-active' : '' }}" href="{{ route('stock-inwards.index') }}">
+                            <svg><use href="#icon-tray-in"></use></svg><span>Stock Inward</span>
+                        </a>
+                        <a class="nav-link {{ request()->routeIs('stock-outwards.*') ? 'is-active' : '' }}" href="{{ route('stock-outwards.index') }}">
                             <svg><use href="#icon-tray-out"></use></svg><span>Stock Outward</span>
                         </a>
-                        <a class="nav-link {{ request()->routeIs('stock-transfers.*') ? 'is-active' : '' }}"
-                           href="{{ route('stock-transfers.index') }}">
+                        <a class="nav-link {{ request()->routeIs('stock-transfers.*') ? 'is-active' : '' }}" href="{{ route('stock-transfers.index') }}">
                             <svg><use href="#icon-transfer"></use></svg><span>Stock Transfer</span>
                         </a>
-                        <a class="nav-link {{ request()->routeIs('stock-adjustments.*') ? 'is-active' : '' }}"
-                           href="{{ route('stock-adjustments.index') }}">
+                        <a class="nav-link {{ request()->routeIs('stock-adjustments.*') ? 'is-active' : '' }}" href="{{ route('stock-adjustments.index') }}">
                             <svg><use href="#icon-adjustment"></use></svg><span>Stock Adjustment</span>
                         </a>
-                        <a class="nav-link {{ request()->routeIs('current-stock.*') ? 'is-active' : '' }}"
-                           href="{{ route('current-stock.index') }}">
+                        <a class="nav-link {{ request()->routeIs('current-stock.*') ? 'is-active' : '' }}" href="{{ route('current-stock.index') }}">
                             <svg><use href="#icon-box"></use></svg><span>Current Stock</span>
                         </a>
-                        <a class="nav-link {{ request()->routeIs('stock-movement.*') ? 'is-active' : '' }}"
-                           href="{{ route('stock-movement.index') }}">
+                        <a class="nav-link {{ request()->routeIs('stock-movement.*') ? 'is-active' : '' }}" href="{{ route('stock-movement.index') }}">
                             <svg><use href="#icon-transfer"></use></svg><span>Stock Movement</span>
                         </a>
                     </div>
                 </div>
+                @endif
 
+                @if ($can('reports'))
                 <div class="nav-group {{ $reportsAreActive ? 'is-open' : '' }}" data-nav-group>
                     <button class="nav-link nav-group-toggle {{ $reportsAreActive ? 'is-active' : '' }}"
                             type="button"
@@ -386,53 +358,54 @@
                          aria-label="Reports"
                          aria-hidden="{{ $reportsAreActive ? 'false' : 'true' }}"
                          data-nav-panel>
-                        <a class="nav-link {{ request()->routeIs('reports.*') ? 'is-active' : '' }}"
-                           href="{{ route('reports.index') }}">
+                        <a class="nav-link {{ request()->routeIs('reports.*') ? 'is-active' : '' }}" href="{{ route('reports.index') }}">
                             <svg><use href="#icon-chart"></use></svg><span>Inventory Reports</span>
                         </a>
-                        <a class="nav-link {{ request()->routeIs('purchase-reports.*') ? 'is-active' : '' }}"
-                           href="{{ route('purchase-reports.index') }}">
+                        <a class="nav-link {{ request()->routeIs('purchase-reports.*') ? 'is-active' : '' }}" href="{{ route('purchase-reports.index') }}">
                             <svg><use href="#icon-tray-in"></use></svg><span>Purchase Reports</span>
                         </a>
-                        <a class="nav-link {{ request()->routeIs('issue-reports.*') ? 'is-active' : '' }}"
-                           href="{{ route('issue-reports.index') }}">
+                        <a class="nav-link {{ request()->routeIs('issue-reports.*') ? 'is-active' : '' }}" href="{{ route('issue-reports.index') }}">
                             <svg><use href="#icon-tray-out"></use></svg><span>Issue Reports</span>
                         </a>
-                        <a class="nav-link {{ request()->routeIs('stock-valuation.*') ? 'is-active' : '' }}"
-                           href="{{ route('stock-valuation.index') }}">
+                        <a class="nav-link {{ request()->routeIs('stock-valuation.*') ? 'is-active' : '' }}" href="{{ route('stock-valuation.index') }}">
                             <svg><use href="#icon-chart"></use></svg><span>Stock Valuation</span>
                         </a>
                     </div>
                 </div>
+                @endif
 
-                <div class="nav-group {{ $settingsAreActive ? 'is-open' : '' }}" data-nav-group>
-                    <button class="nav-link nav-group-toggle {{ $settingsAreActive ? 'is-active' : '' }}"
+                @if ($can('users') || $can('roles') || $can('activity_log') || $can('settings'))
+                <div class="nav-group {{ $administrationIsActive ? 'is-open' : '' }}" data-nav-group>
+                    <button class="nav-link nav-group-toggle {{ $administrationIsActive ? 'is-active' : '' }}"
                             type="button"
-                            aria-expanded="{{ $settingsAreActive ? 'true' : 'false' }}"
-                            aria-controls="settings-submenu"
+                            aria-expanded="{{ $administrationIsActive ? 'true' : 'false' }}"
+                            aria-controls="administration-submenu"
                             data-nav-toggle>
                         <svg><use href="#icon-settings"></use></svg>
-                        <span>Settings</span>
+                        <span>Administration</span>
                         <svg class="nav-chevron" aria-hidden="true"><use href="#icon-chevron"></use></svg>
                     </button>
-                    <div class="nav-submenu {{ $settingsAreActive ? 'is-open' : '' }}"
-                         id="settings-submenu"
-                         aria-label="Settings"
-                         aria-hidden="{{ $settingsAreActive ? 'false' : 'true' }}"
+                    <div class="nav-submenu {{ $administrationIsActive ? 'is-open' : '' }}"
+                         id="administration-submenu"
+                         aria-label="Administration"
+                         aria-hidden="{{ $administrationIsActive ? 'false' : 'true' }}"
                          data-nav-panel>
-                        <a class="nav-link {{ request()->routeIs('users.*') ? 'is-active' : '' }}"
-                           href="{{ route('users.index') }}">
+                        @if ($can('users'))<a class="nav-link {{ request()->routeIs('users.*') ? 'is-active' : '' }}" href="{{ route('users.index') }}">
                             <svg><use href="#icon-users"></use></svg><span>Users</span>
-                        </a>
-                        <a class="nav-link {{ request()->routeIs('activity-log.*') ? 'is-active' : '' }}"
-                           href="{{ route('activity-log.index') }}">
+                        </a>@endif
+                        @if (auth()->check() && auth()->user()->hasPermission('roles', 'view'))
+                            <a class="nav-link {{ request()->routeIs('roles.*') ? 'is-active' : '' }}" href="{{ route('roles.index') }}">
+                                <svg><use href="#icon-settings"></use></svg><span>Roles &amp; Permissions</span>
+                            </a>
+                        @endif
+                        @if ($can('activity_log'))<a class="nav-link {{ request()->routeIs('activity-log.*') ? 'is-active' : '' }}" href="{{ route('activity-log.index') }}">
                             <svg><use href="#icon-chart"></use></svg><span>Activity Log</span>
-                        </a>
-                        <a class="nav-link {{ request()->routeIs('settings.*', 'general-settings.*') ? 'is-active' : '' }}"
-                           href="{{ route('general-settings.index') }}">
+                        </a>@endif
+                        @if ($can('settings'))<a class="nav-link {{ request()->routeIs('settings.*', 'general-settings.*') ? 'is-active' : '' }}" href="{{ route('general-settings.index') }}">
                             <svg><use href="#icon-settings"></use></svg><span>General Settings</span>
-                        </a>
+                        </a>@endif
                     </div>
+                    @endif
                 </div>
 
             </nav>

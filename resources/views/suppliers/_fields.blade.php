@@ -21,6 +21,11 @@
             <input class="field-control" id="phone" type="tel" name="phone" value="{{ old('phone', isset($supplier) ? $supplier->phone : '') }}" placeholder="e.g. 9876543210" maxlength="20" required>
             @error('phone')<small class="field-error">{{ $message }}</small>@enderror
         </div>
+        <div class="field field-wide">
+            <label for="warehouse_location">Supplier Warehouse / Dispatch Location</label>
+            <input class="field-control" id="warehouse_location" type="text" name="warehouse_location" value="{{ old('warehouse_location', isset($supplier) ? $supplier->warehouse_location : '') }}" placeholder="e.g. Warehouse A, MIDC Bhosari, Pune" maxlength="1000">
+            @error('warehouse_location')<small class="field-error">{{ $message }}</small>@enderror
+        </div>
     </div>
 </div>
 
@@ -32,11 +37,28 @@
             <input class="field-control" id="gst_number" type="text" name="gst_number" value="{{ old('gst_number', isset($supplier) ? $supplier->gst_number : '') }}" placeholder="e.g. 27ABCDE1234F1Z5" maxlength="50">
             @error('gst_number')<small class="field-error">{{ $message }}</small>@enderror
         </div>
+
         <div class="field">
             <label for="pan_number">PAN</label>
             <input class="field-control" id="pan_number" type="text" name="pan_number" value="{{ old('pan_number', isset($supplier) ? $supplier->pan_number : '') }}" placeholder="e.g. ABCDE1234F" maxlength="20">
             @error('pan_number')<small class="field-error">{{ $message }}</small>@enderror
         </div>
+    </div>
+</div>
+
+<div class="form-section">
+    <div class="form-card-heading"><span class="form-section-icon form-icon-gold"><svg><use href="#icon-box"></use></svg></span><div><h2>Documents</h2><p>Upload Aadhaar and PAN documents securely (JPG, JPEG, PNG or PDF; maximum 5 MB each).</p></div></div>
+    <div class="form-grid">
+        @foreach (['aadhaar_card' => 'Aadhaar Card', 'pan_card' => 'PAN Card'] as $document => $label)
+            <div class="field">
+                <label for="{{ $document }}">{{ $label }}</label>
+                <input class="field-control" id="{{ $document }}" type="file" name="{{ $document }}" accept=".jpg,.jpeg,.png,.pdf">
+                @if (isset($supplier) && $supplier->{$document})
+                    <small>Existing document: <a href="{{ route('suppliers.documents.show', [$supplier->id, $document]) }}">View securely</a>. Upload a new file to replace it.</small>
+                @endif
+                @error($document)<small class="field-error">{{ $message }}</small>@enderror
+            </div>
+        @endforeach
     </div>
 </div>
 

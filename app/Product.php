@@ -83,4 +83,9 @@ class Product extends Model
     {
         return $this->hasMany(StockOutward::class);
     }
+
+    public function quotationItems()
+    {
+        return $this->hasMany(QuotationItem::class);
+    }
 }

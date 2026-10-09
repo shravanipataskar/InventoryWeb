@@ -10,6 +10,7 @@ class Supplier extends Model
         'supplier_code',
         'name',
         'company_name',
+        'warehouse_location',
         'email',
         'phone',
         'address',
@@ -18,6 +19,8 @@ class Supplier extends Model
         'pincode',
         'gst_number',
         'pan_number',
+        'aadhaar_card',
+        'pan_card',
         'payment_terms',
         'bank_name',
         'account_holder_name',
@@ -32,5 +35,10 @@ class Supplier extends Model
     public function stockInwards()
     {
         return $this->hasMany(StockInward::class);
+    }
+
+    public function quotations()
+    {
+        return $this->hasMany(Quotation::class);
     }
 }

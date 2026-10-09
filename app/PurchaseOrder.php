@@ -17,8 +17,12 @@ class PurchaseOrder extends Model
         'discount_amount',
         'tax_amount',
         'grand_total',
+        'cgst_total',
+        'sgst_total',
         'notes',
         'created_by',
+        'quotation_id',
+        'quotation_request_id',
     ];
 
     public function getOrderDateAttribute($value)
@@ -44,5 +48,10 @@ class PurchaseOrder extends Model
     public function goodsReceipts()
     {
         return $this->hasMany(GoodsReceipt::class);
+    }
+
+    public function quotation()
+    {
+        return $this->belongsTo(Quotation::class);
     }
 }

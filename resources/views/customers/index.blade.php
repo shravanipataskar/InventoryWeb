@@ -36,7 +36,7 @@
         @if ($customers->count())
             <div class="table-wrap">
                 <table class="data-table workspace-table">
-                    <thead><tr><th>CUSTOMER NAME</th><th>CUSTOMER TYPE</th><th>CONTACT PERSON</th><th>PHONE</th><th>EMAIL</th><th>CITY</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
+                    <thead><tr><th>CUSTOMER NAME</th><th>CUSTOMER TYPE</th><th>CONTACT PERSON</th><th>PHONE</th><th>EMAIL</th><th>STORE / WAREHOUSE LOCATION</th><th>CITY</th><th>STATUS</th><th>ACTIONS</th></tr></thead>
                     <tbody>
                     @foreach ($customers as $customer)
                         <tr>
@@ -45,6 +45,7 @@
                             <td>{{ $customer->contact_person ?: '—' }}</td>
                             <td>{{ $customer->phone ?: '—' }}</td>
                             <td>{{ $customer->email ?: '—' }}</td>
+                            <td>{{ $customer->store_warehouse_location ?: '—' }}</td>
                             <td>{{ $customer->city ?: '—' }}</td>
                             <td>@include('components.status-badge', ['status' => $customer->is_active ? 'Active' : 'Inactive'])</td>
                             <td class="action-cell">

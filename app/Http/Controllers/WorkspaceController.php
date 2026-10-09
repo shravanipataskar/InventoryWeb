@@ -2456,7 +2456,9 @@ class WorkspaceController extends Controller
                 ['label' => 'Status', 'key' => 'is_active', 'type' => 'active'],
                 ['label' => 'Last Sign-in', 'key' => 'last_login_at', 'type' => 'date'],
             ],
-            [['label' => 'Registered Users', 'value' => DB::table('users')->count(), 'icon' => 'icon-users', 'tone' => 'blue']]
+            [['label' => 'Registered Users', 'value' => DB::table('users')->count(), 'icon' => 'icon-users', 'tone' => 'blue']],
+            'users.create',
+            'Add User'
         );
     }
 

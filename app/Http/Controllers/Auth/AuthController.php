@@ -29,8 +29,6 @@ class AuthController extends Controller
         $this->middleware('guest')->only([
             'showLogin',
             'login',
-            'showRegister',
-            'register',
             'showForgotPassword',
             'sendResetLink',
             'showResetPassword',
@@ -153,72 +151,6 @@ class AuthController extends Controller
                 'success',
                 'Welcome back! You are signed in.'
             );
-    }
-
-
-    /*
-    |--------------------------------------------------------------------------
-    | Registration
-    |--------------------------------------------------------------------------
-    */
-
-    public function showRegister()
-    {
-        return view('auth.register');
-    }
-
-
-    public function register(Request $request)
-    {
-        $data = $request->validate([
-            'name' => [
-                'required',
-                'string',
-                'max:100',
-            ],
-
-            'email' => [
-                'required',
-                'string',
-                'email',
-                'max:255',
-                'unique:users,email',
-            ],
-
-            'password' => [
-                'required',
-                'string',
-                'min:8',
-                'confirmed',
-            ],
-        ]);
-
-        /*
-        |--------------------------------------------------------------------------
-        | Create User
-        |--------------------------------------------------------------------------
-        */
-
-        $user = User::create([
-            'name' => $data['name'],
-
-            'email' => $data['email'],
-
-            'password' => Hash::make(
-                $data['password']
-            ),
-        ]);
-        ActivityLogger::log('Registered', 'Account', 'A new account was registered.', $user);
-
-        return redirect()
-            ->route('login')
-            ->with(
-                'status',
-                'Registration successful. Please sign in with your new account.'
-            )
-            ->withInput([
-                'email' => $data['email'],
-            ]);
     }
 
 
