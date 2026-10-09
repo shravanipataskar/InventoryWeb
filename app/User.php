@@ -29,22 +29,15 @@ class User extends Authenticatable implements CanResetPasswordContract
         return $this->belongsToMany(Role::class);
     }
 
-<<<<<<< Updated upstream
     public function isAdmin()
     {
         return strtoupper(trim((string) $this->role)) === 'ADMIN';
     }
 
-    public function hasPermission($module, $action = 'view')
-    {
-        if ($this->isAdmin()) {
-            return true;
-=======
     public function canManageRoles()
     {
         if (!\Illuminate\Support\Facades\Schema::hasTable('role_user')) {
             return strtolower((string) $this->role) === 'admin';
->>>>>>> Stashed changes
         }
 
         if ($this->roles()->exists()) {
