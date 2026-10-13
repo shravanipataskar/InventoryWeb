@@ -19,18 +19,93 @@ class StockInwardController extends Controller
     public function index(Request $request)
     {
         $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
-        $stockInwards = StockInward::with([
+        $filters = $request->validate([
+            'search' => 'nullable|string|max:255',
+            'date_from' => 'nullable|date',
+            'date_to' => 'nullable|date|after_or_equal:date_from',
+            'supplier_id' => 'nullable|integer|exists:suppliers,id',
+            'product_id' => 'nullable|integer|exists:products,id',
+            'store_id' => 'nullable|integer|exists:stores,id',
+            'record_status' => 'nullable|in:all,posted,active,inactive',
+        ]);
+
+        $query = StockInward::query()
+            ->where('is_active', $listingStatus === 'active')
+            ->when(!empty($filters['search']), function ($query) use ($filters) {
+                $search = trim($filters['search']);
+                $query->where(function ($query) use ($search) {
+                    $query->where('inward_number', 'like', '%' . $search . '%')
+                        ->orWhere('invoice_number', 'like', '%' . $search . '%')
+                        ->orWhereHas('product', function ($query) use ($search) {
+                            $query->where('name', 'like', '%' . $search . '%')
+                                ->orWhere('product_code', 'like', '%' . $search . '%');
+                        })
+                        ->orWhereHas('supplier', function ($query) use ($search) {
+                            $query->where('name', 'like', '%' . $search . '%');
+                        })
+                        ->orWhereHas('store', function ($query) use ($search) {
+                            $query->where('name', 'like', '%' . $search . '%');
+                        })
+                        ->orWhereHas('goodsReceiptItem.goodsReceipt', function ($query) use ($search) {
+                            $query->where('grn_number', 'like', '%' . $search . '%')
+                                ->orWhereHas('purchaseOrder', function ($query) use ($search) {
+                                    $query->where('po_number', 'like', '%' . $search . '%');
+                                });
+                        });
+                });
+            })
+            ->when(!empty($filters['date_from']), function ($query) use ($filters) {
+                $query->whereDate('inward_date', '>=', $filters['date_from']);
+            })
+            ->when(!empty($filters['date_to']), function ($query) use ($filters) {
+                $query->whereDate('inward_date', '<=', $filters['date_to']);
+            })
+            ->when(!empty($filters['supplier_id']), function ($query) use ($filters) {
+                $query->where('supplier_id', $filters['supplier_id']);
+            })
+            ->when(!empty($filters['product_id']), function ($query) use ($filters) {
+                $query->where('product_id', $filters['product_id']);
+            })
+            ->when(!empty($filters['store_id']), function ($query) use ($filters) {
+                $query->where('store_id', $filters['store_id']);
+            })
+            ->when(isset($filters['record_status']) && $filters['record_status'] !== 'all', function ($query) use ($filters) {
+                if ($filters['record_status'] === 'posted') {
+                    $query->whereNotNull('goods_receipt_item_id');
+                } else {
+                    $query->whereNull('goods_receipt_item_id')
+                        ->where('is_active', $filters['record_status'] === 'active');
+                }
+            });
+
+        $totals = (clone $query)->selectRaw(
+            'COUNT(*) as inward_count, COALESCE(SUM(quantity), 0) as total_quantity, COALESCE(SUM(subtotal), 0) as purchase_value, COALESCE(SUM(tax_total), 0) as tax_amount'
+        )->first();
+
+        $stockInwards = $query->with([
                 'product.category',
                 'product.unit',
                 'supplier',
                 'store',
                 'goodsReceiptItem.goodsReceipt.purchaseOrder',
             ])
-            ->where('is_active', $listingStatus === 'active')
             ->orderBy('id', 'desc')
-            ->get();
+            ->paginate(20)
+            ->appends($request->query());
 
-        return view('stock_inwards.index', compact('stockInwards', 'listingStatus'));
+        $suppliers = Supplier::orderBy('name')->get(['id', 'name']);
+        $products = Product::orderBy('name')->get(['id', 'name']);
+        $stores = \App\Store::orderBy('name')->get(['id', 'name']);
+
+        return view('stock_inwards.index', compact(
+            'stockInwards',
+            'listingStatus',
+            'filters',
+            'totals',
+            'suppliers',
+            'products',
+            'stores'
+        ));
     }
 
     public function show($id)

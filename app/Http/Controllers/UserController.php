@@ -6,6 +6,7 @@ use App\Role;
 use App\User;
 use App\Support\ActivityLogger;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 
 class UserController extends Controller
@@ -67,15 +68,19 @@ class UserController extends Controller
         ]);
 
         $role = Role::findOrFail($data['role_id']);
-        $user = User::create([
-            'name' => $data['name'],
-            'email' => $data['email'],
-            'password' => Hash::make($data['password']),
-            'role' => $role->name,
-            'phone' => $data['phone'] ?? null,
-            'is_active' => ($data['status'] ?? 'active') === 'active',
-        ]);
-        $user->roles()->sync([$role->id]);
+        $user = DB::transaction(function () use ($data, $role) {
+            $user = User::create([
+                'name' => $data['name'],
+                'email' => $data['email'],
+                'password' => Hash::make($data['password']),
+                'role' => $role->name,
+                'phone' => $data['phone'] ?? null,
+                'is_active' => ($data['status'] ?? 'active') === 'active',
+            ]);
+            $user->roles()->sync([$role->id]);
+
+            return $user;
+        });
 
         ActivityLogger::log('Created user', 'Users', 'Created ' . $user->email . ' with role ' . $role->label . '.', $user);
 
@@ -115,16 +120,18 @@ class UserController extends Controller
             ])['password'];
         }
         $role = Role::findOrFail($data['role_id']);
-        $user->name = $data['name'];
-        $user->email = $data['email'];
-        $user->phone = $data['phone'] ?? null;
-        $user->is_active = (bool) $data['is_active'];
-        $user->role = $role->name;
-        if (!empty($data['password'])) {
-            $user->password = Hash::make($data['password']);
-        }
-        $user->save();
-        $user->roles()->sync([$role->id]);
+        DB::transaction(function () use ($user, $data, $role) {
+            $user->name = $data['name'];
+            $user->email = $data['email'];
+            $user->phone = $data['phone'] ?? null;
+            $user->is_active = (bool) $data['is_active'];
+            $user->role = $role->name;
+            if (!empty($data['password'])) {
+                $user->password = Hash::make($data['password']);
+            }
+            $user->save();
+            $user->roles()->sync([$role->id]);
+        });
 
         return redirect()->route('users.show', $user->id)
             ->with('success', 'User details updated.');

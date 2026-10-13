@@ -3,12 +3,14 @@
 namespace App\Http\Controllers;
 
 use App\GoodsReceipt;
+use App\ProcurementAuditLog;
 use App\Product;
 use App\PurchaseOrder;
 use App\StockInward;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Database\QueryException;
 use Illuminate\Validation\ValidationException;
 
@@ -56,6 +58,7 @@ class GoodsReceiptController extends Controller
             'items.*.purchase_order_item_id' => 'required|integer|distinct|exists:purchase_order_items,id',
             'items.*.received_quantity' => 'required|numeric|min:0',
             'items.*.rejected_quantity' => 'required|numeric|min:0',
+            'items.*.damaged_quantity' => 'nullable|numeric|min:0',
         ]);
 
         $existingReceipt = GoodsReceipt::where('submission_token', $validated['submission_token'])->first();
@@ -84,11 +87,15 @@ class GoodsReceiptController extends Controller
                 }
 
                 $received = round((float) $line['received_quantity'], 2);
-                $rejected = round((float) $line['rejected_quantity'], 2);
+                $damaged = round((float) ($line['damaged_quantity'] ?? 0), 2);
+                // rejected_quantity stays the total not accepted; damaged units are a recorded part of it.
+                $rejected = round((float) $line['rejected_quantity'] + $damaged, 2);
                 $remaining = round((float) $orderItem->ordered_quantity - (float) $orderItem->received_quantity, 2);
                 if ($rejected > $received) {
                     throw ValidationException::withMessages([
-                        'items' => 'Rejected quantity cannot exceed received quantity.',
+                        'items' => $damaged > 0
+                            ? 'Rejected and damaged quantities together cannot exceed received quantity.'
+                            : 'Rejected quantity cannot exceed received quantity.',
                     ]);
                 }
                 if ($received > $remaining) {
@@ -103,7 +110,7 @@ class GoodsReceiptController extends Controller
                 }
                 if ($received > 0) {
                     $hasAcceptedUnits = true;
-                    $lines[] = [$orderItem, $received, $rejected];
+                    $lines[] = [$orderItem, $received, $rejected, $damaged];
                 }
             }
 
@@ -129,9 +136,10 @@ class GoodsReceiptController extends Controller
                 . '-' . str_pad($receipt->id, 3, '0', STR_PAD_LEFT);
             $receipt->save();
 
-            foreach ($lines as list($orderItem, $received, $rejected)) {
+            $hasDamagedColumn = Schema::hasColumn('goods_receipt_items', 'damaged_quantity');
+            foreach ($lines as list($orderItem, $received, $rejected, $damaged)) {
                 $accepted = round($received - $rejected, 2);
-                $receiptItem = $receipt->items()->create([
+                $receiptItemValues = [
                     'purchase_order_item_id' => $orderItem->id,
                     'product_id' => $orderItem->product_id,
                     'ordered_quantity' => $orderItem->ordered_quantity,
@@ -139,7 +147,11 @@ class GoodsReceiptController extends Controller
                     'rejected_quantity' => $rejected,
                     'accepted_quantity' => $accepted,
                     'purchase_rate' => $orderItem->purchase_rate,
-                ]);
+                ];
+                if ($hasDamagedColumn) {
+                    $receiptItemValues['damaged_quantity'] = $damaged;
+                }
+                $receiptItem = $receipt->items()->create($receiptItemValues);
                 $orderItem->received_quantity = round((float) $orderItem->received_quantity + $received, 2);
                 $orderItem->save();
 
@@ -196,8 +208,13 @@ class GoodsReceiptController extends Controller
             $allReceived = $order->items->every(function ($item) {
                 return (float) $item->received_quantity >= (float) $item->ordered_quantity;
             });
+            $previousOrderStatus = $order->status;
             $order->status = $allReceived ? 'received' : 'partially_received';
             $order->save();
+            ProcurementAuditLog::recordIfAvailable($order, 'grn_posted', $previousOrderStatus, $order->status, null, [
+                'goods_receipt_id' => $receipt->id,
+                'grn_number' => $receipt->grn_number,
+            ]);
                 return $receipt;
             });
         } catch (QueryException $exception) {

@@ -9,6 +9,7 @@ use App\QuotationRequest;
 use App\Store;
 use App\Supplier;
 use App\PurchaseOrder;
+use App\ProcurementAuditLog;
 use App\Support\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -230,12 +231,16 @@ class QuotationController extends Controller
                 throw ValidationException::withMessages(['quotation' => 'Another quotation is already approved for this request.']);
             }
 
+            $previousStatus = $quotation->status;
             $quotation->update(['status' => 'approved', 'approved_at' => now(), 'approved_by' => Auth::id()]);
             Quotation::where('quotation_request_id', $requestRecord->id)
                 ->where('id', '<>', $quotation->id)
                 ->whereNotIn('status', ['approved'])
                 ->update(['status' => 'rejected', 'rejected_at' => now(), 'rejected_by' => Auth::id(), 'rejection_reason' => 'Another supplier quotation was approved.']);
             $requestRecord->update(['status' => 'approved']);
+            ProcurementAuditLog::recordIfAvailable($quotation, 'quotation_approved', $previousStatus, 'approved', null, [
+                'quotation_request_id' => $requestRecord->id,
+            ]);
 
             return $quotation;
         });
@@ -260,6 +265,9 @@ class QuotationController extends Controller
                 'rejection_reason' => $validated['rejection_reason'],
             ]);
             $requestRecord->update(['status' => 'rejected']);
+            ProcurementAuditLog::recordIfAvailable($quotation, 'quotation_request_rejected', null, 'rejected', $validated['rejection_reason'], [
+                'quotation_request_id' => $requestRecord->id,
+            ]);
 
             return $quotation;
         });
@@ -319,6 +327,10 @@ class QuotationController extends Controller
                 ]);
             }
             $quotation->update(['purchase_order_id' => $order->id]);
+            ProcurementAuditLog::recordIfAvailable($order, 'po_created', null, $order->status, null, [
+                'quotation_id' => $quotation->id,
+                'quotation_code' => $quotation->quotation_code,
+            ]);
 
             return $quotation;
         });

@@ -41,4 +41,14 @@ class Supplier extends Model
     {
         return $this->hasMany(Quotation::class);
     }
+
+    public function supplierBills()
+    {
+        return $this->hasMany(SupplierBill::class);
+    }
+
+    public function supplierPayments()
+    {
+        return $this->hasMany(SupplierPayment::class);
+    }
 }

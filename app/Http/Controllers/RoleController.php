@@ -15,6 +15,7 @@ class RoleController extends Controller
         'master_data' => ['categories', 'units', 'locations', 'companies', 'customers', 'products', 'suppliers'],
         'purchase' => ['quotations', 'purchase', 'goods_receipts'],
         'quotation_approval' => ['quotations'],
+        'bills_and_payments' => ['bills', 'payments'],
         'inventory' => ['stock'],
         'reports' => ['reports'],
         'administration' => ['users', 'roles', 'activity_log', 'settings'],
@@ -93,12 +94,15 @@ class RoleController extends Controller
     {
         $validated = $request->validate(['role_id' => 'required|exists:roles,id']);
         $user = User::findOrFail($id);
-        $user->roles()->sync([$validated['role_id']]);
-        $user->role = Role::findOrFail($validated['role_id'])->name;
-        $user->save();
+        $role = Role::findOrFail($validated['role_id']);
+        DB::transaction(function () use ($user, $role) {
+            $user->roles()->sync([$role->id]);
+            $user->role = $role->name;
+            $user->save();
+        });
 
         return redirect()
-            ->route('roles.index', ['role_id' => $validated['role_id']])
+            ->route('roles.index', ['role_id' => $role->id])
             ->with('success', 'User role updated.');
     }
 }

@@ -20,7 +20,7 @@
                     <td>{{ optional($item->product->unit)->short_name ?: optional($item->product->unit)->name ?: '—' }}</td>
                     <td>{{ number_format($item->ordered_quantity, 2) }}</td>
                     <td>{{ number_format($item->received_quantity, 2) }}</td>
-                    <td>{{ number_format($item->rejected_quantity, 2) }}</td>
+                    <td>{{ number_format($item->rejected_quantity, 2) }}@if ((float) ($item->damaged_quantity ?? 0) > 0)<small class="field-hint">incl. damaged {{ number_format($item->damaged_quantity, 2) }}</small>@endif</td>
                     <td>{{ number_format($item->accepted_quantity, 2) }}<small class="field-hint">{{ optional($item->stockInward)->inward_number }}</small></td>
                     <td>₹{{ number_format($item->purchase_rate, 2) }}</td>
                     <td>₹{{ number_format($item->accepted_quantity * $item->purchase_rate, 2) }}</td>

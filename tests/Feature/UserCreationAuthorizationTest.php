@@ -48,6 +48,14 @@ class UserCreationAuthorizationTest extends TestCase
         $this->assertFalse($createdUser->is_active);
         $this->assertTrue(Hash::check('test-password', $createdUser->password));
         $this->assertTrue($createdUser->roles->contains('id', $role->id));
+        $this->assertDatabaseHas('users', [
+            'id' => $createdUser->id,
+            'role' => $role->name,
+        ]);
+        $this->assertDatabaseHas('role_user', [
+            'user_id' => $createdUser->id,
+            'role_id' => $role->id,
+        ]);
     }
 
     public function test_new_users_default_to_active_when_status_is_omitted()

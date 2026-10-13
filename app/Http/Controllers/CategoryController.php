@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Category;
 use App\Product;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class CategoryController extends Controller
 {
@@ -63,12 +64,21 @@ class CategoryController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                function ($attribute, $value, $fail) {
+                    if (Category::whereRaw('LOWER(TRIM(name)) = ?', [Str::lower(trim($value))])->exists()) {
+                        $fail('Category is already Present');
+                    }
+                },
+            ],
             'description' => 'nullable|string',
         ]);
 
         Category::create([
-            'name' => $request->name,
+            'name' => trim($request->name),
             'description' => $request->description,
             'is_active' => 1,
         ]);
@@ -94,16 +104,27 @@ class CategoryController extends Controller
 
     public function update(Request $request, $id)
     {
+        $category = Category::findOrFail($id);
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                function ($attribute, $value, $fail) use ($category) {
+                    if (Str::lower(trim($value)) !== Str::lower(trim($category->name))
+                        && Category::whereRaw('LOWER(TRIM(name)) = ?', [Str::lower(trim($value))])
+                        ->where('id', '<>', $category->id)
+                        ->exists()) {
+                        $fail('Category is already Present');
+                    }
+                },
+            ],
             'description' => 'nullable|string',
             'is_active' => 'sometimes|in:0,1',
         ]);
 
-        $category = Category::findOrFail($id);
-
         $category->update([
-            'name' => $validated['name'],
+            'name' => trim($validated['name']),
             'description' => $validated['description'] ?? null,
         ]);
 

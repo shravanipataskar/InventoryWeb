@@ -216,7 +216,7 @@
 
                 @php
                     $masterDataRoutes = ['categories.*', 'units.*', 'halls.*', 'racks.*', 'shelves.*', 'locations.*', 'products.*', 'suppliers.*', 'customers.*', 'companies.*'];
-                    $purchaseRoutes = ['quotations.*', 'purchase-orders.*', 'goods-receipts.*'];
+                    $purchaseRoutes = ['quotations.*', 'purchase-orders.*', 'goods-receipts.*', 'supplier-bills.*', 'supplier-payments.*'];
                     $inventoryRoutes = ['opening-stock.*', 'stock-inwards.*', 'stock-outwards.*', 'stock-transfers.*', 'stock-adjustments.*', 'current-stock.*', 'stock-movement.*'];
                     $reportRoutes = ['reports.*', 'purchase-reports.*', 'issue-reports.*', 'stock-valuation.*'];
                     $administrationRoutes = ['users.*', 'roles.*', 'activity-log.*', 'settings.*', 'general-settings.*'];
@@ -271,7 +271,7 @@
                 </div>
                 @endif
 
-                @if ($can('quotations') || $can('purchase') || $can('goods_receipts'))
+                @if ($can('quotations') || $can('purchase') || $can('goods_receipts') || $can('bills') || $can('payments'))
                 <div class="nav-group" data-nav-group>
                     <button class="nav-link nav-group-toggle {{ $purchaseIsActive ? 'is-active' : '' }}"
                             type="button"
@@ -298,6 +298,12 @@
                         @if ($can('goods_receipts'))<a class="nav-link {{ request()->routeIs('goods-receipts.*') ? 'is-active' : '' }}" href="{{ route('goods-receipts.index') }}">
                             <svg><use href="#icon-check"></use></svg><span>Goods Received</span>
                         </a>@endif
+                        @if ($can('bills'))<a class="nav-link {{ request()->routeIs('supplier-bills.*') ? 'is-active' : '' }}" href="{{ route('supplier-bills.index') }}">
+                            <svg><use href="#icon-layers"></use></svg><span>Supplier Bills</span>
+                        </a>@endif
+                        @if ($can('payments'))<a class="nav-link {{ request()->routeIs('supplier-payments.*') ? 'is-active' : '' }}" href="{{ route('supplier-payments.index') }}">
+                            <svg><use href="#icon-tray-out"></use></svg><span>Payments</span>
+                        </a>@endif
                     </div>
                 </div>
                 @endif
@@ -307,6 +313,14 @@
                    href="{{ route('quotations.approval') }}">
                     <svg><use href="#icon-check"></use></svg>
                     <span>Quotation Approval</span>
+                </a>
+                @endif
+
+                @if ($can('bills', 'approve') || $can('payments', 'approve'))
+                <a class="nav-link {{ request()->routeIs('procurement.approvals') ? 'is-active' : '' }}"
+                   href="{{ route('procurement.approvals') }}">
+                    <svg><use href="#icon-check"></use></svg>
+                    <span>Bill &amp; Payment Approvals</span>
                 </a>
                 @endif
 

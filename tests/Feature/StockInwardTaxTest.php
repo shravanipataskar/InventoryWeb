@@ -99,6 +99,19 @@ class StockInwardTaxTest extends TestCase
             ->assertSee($inward->inward_number)
             ->assertSee($inward->goodsReceiptItem->goodsReceipt->purchaseOrder->po_number)
             ->assertSee($inward->goodsReceiptItem->goodsReceipt->grn_number);
+        $this->get(route('stock-inwards.index', [
+            'search' => $inward->invoice_number,
+            'date_from' => $inward->inward_date,
+            'date_to' => $inward->inward_date,
+            'supplier_id' => $supplier->id,
+            'product_id' => $product->id,
+            'store_id' => $store,
+            'record_status' => 'posted',
+        ]))
+            ->assertOk()
+            ->assertSee($inward->inward_number)
+            ->assertSee('Total Quantity In')
+            ->assertSee('11,800.00');
         $this->get(route('purchase-orders.index'))
             ->assertOk()
             ->assertSee($inward->goodsReceiptItem->goodsReceipt->purchaseOrder->po_number);

@@ -22,6 +22,7 @@ class OpeningStockSetupTest extends TestCase
             'name' => 'Opening Stock User',
             'email' => Str::uuid() . '@example.test',
             'password' => Hash::make('test-password'),
+            'role' => 'admin',
         ]);
         $this->actingAs($user);
         $this->get(route('opening-stock.create'))
@@ -64,6 +65,9 @@ class OpeningStockSetupTest extends TestCase
         ]);
         $storeId = $this->createStore('Initial Store ' . $suffix, $suffix);
 
+        $openingHeadersBefore = DB::table('opening_stock_headers')->count();
+        $openingItemsBefore = DB::table('opening_stock_items')->count();
+
         $response = $this->post(route('opening-stock.store'), [
             'store_id' => $storeId,
             'transaction_date' => now()->toDateString(),
@@ -99,16 +103,21 @@ class OpeningStockSetupTest extends TestCase
         $this->assertEquals(55000, (float) $ledgerEntry->unit_price);
         $this->assertSame((string) $user->id, (string) $ledgerEntry->created_by);
         $this->assertEquals(550000, (float) $ledgerEntry->quantity_in * (float) $ledgerEntry->unit_price);
-        $this->assertSame(1, DB::table('opening_stock_headers')->count());
-        $this->assertSame(2, DB::table('opening_stock_items')->count());
+        $this->assertSame($openingHeadersBefore + 1, DB::table('opening_stock_headers')->count());
+        $this->assertSame($openingItemsBefore + 2, DB::table('opening_stock_items')->count());
         $this->assertSame(2, DB::table('stock_transactions')->where('reference_id', $header->id)->count());
         $this->get(route('opening-stock.index'))
             ->assertOk()
             ->assertSee('Opening Stock')
             ->assertSee($header->opening_number)
+            ->assertSee($product->name)
             ->assertSee('550,040.00')
             ->assertSee($user->name)
             ->assertSee('CREATED AT');
+        $this->get(route('opening-stock.index', ['search' => $product->name]))
+            ->assertOk()
+            ->assertSee($header->opening_number)
+            ->assertSee($product->name);
         $this->get(route('stock-movement.index'))
             ->assertOk()
             ->assertSee('Opening Stock')
@@ -139,7 +148,7 @@ class OpeningStockSetupTest extends TestCase
 
         $this->assertEquals(10, (float) $product->fresh()->current_stock);
         $this->assertSame(2, DB::table('stock_transactions')->whereIn('product_id', [$product->id, $secondProduct->id])->count());
-        $this->assertSame(1, DB::table('opening_stock_headers')->count());
+        $this->assertSame($openingHeadersBefore + 1, DB::table('opening_stock_headers')->count());
     }
 
     public function test_duplicate_rows_and_invalid_serial_tracking_do_not_post_partial_stock()

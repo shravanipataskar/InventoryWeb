@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Unit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Str;
 
 class UnitController extends Controller
 {
@@ -25,12 +26,21 @@ class UnitController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                function ($attribute, $value, $fail) {
+                    if (Unit::whereRaw('LOWER(TRIM(name)) = ?', [Str::lower(trim($value))])->exists()) {
+                        $fail('Unit is already Present');
+                    }
+                },
+            ],
             'short_name' => 'required|string|max:20',
         ]);
 
         Unit::create([
-            'name' => $request->name,
+            'name' => trim($request->name),
             'short_name' => $request->short_name,
             'is_active' => 1,
         ]);
@@ -49,15 +59,26 @@ class UnitController extends Controller
 
     public function update(Request $request, $id)
     {
+        $unit = Unit::findOrFail($id);
         $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                function ($attribute, $value, $fail) use ($unit) {
+                    if (Str::lower(trim($value)) !== Str::lower(trim($unit->name))
+                        && Unit::whereRaw('LOWER(TRIM(name)) = ?', [Str::lower(trim($value))])
+                        ->where('id', '<>', $unit->id)
+                        ->exists()) {
+                        $fail('Unit is already Present');
+                    }
+                },
+            ],
             'short_name' => 'required|string|max:20',
         ]);
 
-        $unit = Unit::findOrFail($id);
-
         $unit->update([
-            'name' => $request->name,
+            'name' => trim($request->name),
             'short_name' => $request->short_name,
         ]);
 

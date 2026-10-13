@@ -3,13 +3,18 @@
 namespace App\Http\Controllers;
 
 use App\Category;
+use App\ProcurementAuditLog;
 use App\Product;
 use App\PurchaseOrder;
 use App\Supplier;
+use App\SupplierBill;
+use App\Support\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class PurchaseOrderController extends Controller
 {
@@ -105,6 +110,7 @@ class PurchaseOrderController extends Controller
                     'total_amount' => round((float) $item['ordered_quantity'] * (float) $item['purchase_rate'], 2),
                 ]);
             }
+            ProcurementAuditLog::recordIfAvailable($order, 'po_created', null, $order->status);
 
             return $order;
         });
@@ -124,7 +130,66 @@ class PurchaseOrderController extends Controller
             'goodsReceipts.store',
             'goodsReceipts.items.product.unit',
         ])->findOrFail($id);
+        $purchaseOrder->load(['quotation.request', 'creator']);
+        $billingEnabled = Schema::hasTable('supplier_bills');
+        if ($billingEnabled) {
+            $purchaseOrder->load('supplierBills.allocations.payment');
+        }
+        $history = $billingEnabled ? ProcurementAuditLog::forEntity($purchaseOrder)->get() : collect();
 
-        return view('purchase_orders.show', compact('purchaseOrder'));
+        return view('purchase_orders.show', compact('purchaseOrder', 'history', 'billingEnabled'));
+    }
+
+    public function cancel(Request $request, $id)
+    {
+        $validated = $request->validate(['reason' => 'required|string|max:2000']);
+
+        $order = DB::transaction(function () use ($id, $validated) {
+            $order = PurchaseOrder::lockForUpdate()->with('items')->findOrFail($id);
+            if (!in_array($order->status, ['ordered', 'pending', 'approved'], true)
+                || $order->goodsReceipts()->exists()
+                || $order->items->contains(function ($item) {
+                    return (float) $item->received_quantity > 0;
+                })) {
+                throw ValidationException::withMessages(['purchase_order' => 'Only a purchase order with no goods received can be cancelled. Close it instead.']);
+            }
+            if ($order->supplierBills()->whereIn('status', SupplierBill::ACTIVE_STATUSES)->exists()) {
+                throw ValidationException::withMessages(['purchase_order' => 'Cancel the supplier bills linked to this purchase order first.']);
+            }
+
+            return $this->changeStatus($order, 'cancelled', $validated['reason'], 'po_cancelled', ['cancelled_at' => now()]);
+        });
+
+        ActivityLogger::log('Purchase Order Cancelled', 'Purchase', 'Purchase order ' . $order->po_number . ' was cancelled.');
+
+        return back()->with('success', 'Purchase order cancelled.');
+    }
+
+    public function close(Request $request, $id)
+    {
+        $validated = $request->validate(['reason' => 'required|string|max:2000']);
+
+        $order = DB::transaction(function () use ($id, $validated) {
+            $order = PurchaseOrder::lockForUpdate()->findOrFail($id);
+            if (!in_array($order->status, ['partially_received', 'received'], true)) {
+                throw ValidationException::withMessages(['purchase_order' => 'Only a received or partially received purchase order can be closed.']);
+            }
+
+            return $this->changeStatus($order, 'closed', $validated['reason'], 'po_closed', ['closed_at' => now()]);
+        });
+
+        ActivityLogger::log('Purchase Order Closed', 'Purchase', 'Purchase order ' . $order->po_number . ' was closed.');
+
+        return back()->with('success', 'Purchase order closed. No further goods can be received against it.');
+    }
+
+    private function changeStatus(PurchaseOrder $order, $status, $reason, $event, array $extra)
+    {
+        $previous = $order->status;
+        $order->fill($extra + ['status' => $status, 'status_reason' => $reason]);
+        $order->save();
+        ProcurementAuditLog::record($order, $event, $previous, $status, $reason);
+
+        return $order;
     }
 }

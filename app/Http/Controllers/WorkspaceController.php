@@ -341,20 +341,22 @@ class WorkspaceController extends Controller
             ->with('success', 'Location added.');
     }
 
-    public function openingStock()
+    public function openingStock(Request $request)
     {
         $headerRows = DB::table('opening_stock_headers')
             ->join('stores', 'stores.id', '=', 'opening_stock_headers.store_id')
             ->leftJoin('users', 'users.id', '=', 'opening_stock_headers.created_by')
             ->join('opening_stock_items', 'opening_stock_items.opening_stock_header_id', '=', 'opening_stock_headers.id')
+            ->join('products', 'products.id', '=', 'opening_stock_items.product_id')
             ->where('opening_stock_headers.status', 'posted')
-            ->selectRaw('opening_stock_headers.opening_number as reference_number, stores.name as location_name, COUNT(opening_stock_items.id) as item_count, SUM(opening_stock_items.quantity) as total_quantity, SUM(opening_stock_items.opening_value) as opening_value, opening_stock_headers.opening_date as transaction_date, users.name as created_by_name, opening_stock_headers.created_at')
+            ->selectRaw('opening_stock_headers.opening_number as reference_number, stores.name as location_name, COUNT(opening_stock_items.id) as item_count, GROUP_CONCAT(DISTINCT products.name) as product_names, SUM(opening_stock_items.quantity) as total_quantity, SUM(opening_stock_items.opening_value) as opening_value, opening_stock_headers.opening_date as transaction_date, users.name as created_by_name, opening_stock_headers.created_at')
             ->groupBy('opening_stock_headers.id', 'opening_stock_headers.opening_number', 'stores.name', 'opening_stock_headers.opening_date', 'users.name', 'opening_stock_headers.created_at');
 
         $legacyReference = Schema::hasColumn('stock_transactions', 'reference_number')
             ? 'stock_transactions.reference_number'
             : 'NULL';
         $legacyRows = DB::table('stock_transactions')
+            ->join('products', 'products.id', '=', 'stock_transactions.product_id')
             ->leftJoin('stores', 'stores.id', '=', 'stock_transactions.store_id')
             ->leftJoin('users', 'users.id', '=', 'stock_transactions.created_by')
             ->whereIn('stock_transactions.reference_type', ['opening_stock', 'initial_stock'])
@@ -363,7 +365,7 @@ class WorkspaceController extends Controller
                     ->from('opening_stock_headers')
                     ->whereColumn('opening_stock_headers.id', 'stock_transactions.reference_id');
             })
-            ->selectRaw($legacyReference . ' as reference_number, stores.name as location_name, COUNT(stock_transactions.id) as item_count, SUM(stock_transactions.quantity_in) as total_quantity, SUM(stock_transactions.quantity_in * stock_transactions.unit_price) as opening_value, stock_transactions.transaction_date as transaction_date, users.name as created_by_name, MIN(stock_transactions.created_at) as created_at')
+            ->selectRaw($legacyReference . ' as reference_number, stores.name as location_name, COUNT(stock_transactions.id) as item_count, GROUP_CONCAT(DISTINCT products.name) as product_names, SUM(stock_transactions.quantity_in) as total_quantity, SUM(stock_transactions.quantity_in * stock_transactions.unit_price) as opening_value, stock_transactions.transaction_date as transaction_date, users.name as created_by_name, MIN(stock_transactions.created_at) as created_at')
             ->groupBy('stores.name', 'stock_transactions.transaction_date', 'users.name');
         if (Schema::hasColumn('stock_transactions', 'reference_number')) {
             $legacyRows->groupBy('stock_transactions.reference_number');
@@ -371,11 +373,42 @@ class WorkspaceController extends Controller
             $legacyRows->groupBy('stock_transactions.id');
         }
 
-        $initialStock = DB::query()
-            ->fromSub($headerRows->unionAll($legacyRows), 'opening_stock_records')
+        $filters = $request->validate([
+            'search' => 'nullable|string|max:255',
+            'date_range' => 'nullable|in:all,today,this_month,custom',
+            'date_from' => 'nullable|date|required_if:date_range,custom',
+            'date_to' => 'nullable|date|after_or_equal:date_from|required_if:date_range,custom',
+        ]);
+        $dateRange = $filters['date_range'] ?? 'all';
+        $initialStockQuery = DB::query()
+            ->fromSub($headerRows->unionAll($legacyRows), 'opening_stock_records');
+
+        if (!empty($filters['search'])) {
+            $search = trim($filters['search']);
+            $initialStockQuery->where(function ($query) use ($search) {
+                $query->where('reference_number', 'like', '%' . $search . '%')
+                    ->orWhere('location_name', 'like', '%' . $search . '%')
+                    ->orWhere('product_names', 'like', '%' . $search . '%')
+                    ->orWhere('created_by_name', 'like', '%' . $search . '%');
+            });
+        }
+
+        if ($dateRange === 'today') {
+            $initialStockQuery->whereDate('transaction_date', today()->toDateString());
+        } elseif ($dateRange === 'this_month') {
+            $initialStockQuery->whereBetween('transaction_date', [
+                now()->startOfMonth()->toDateString(),
+                now()->endOfMonth()->toDateString(),
+            ]);
+        } elseif ($dateRange === 'custom') {
+            $initialStockQuery->whereBetween('transaction_date', [$filters['date_from'], $filters['date_to']]);
+        }
+
+        $initialStock = $initialStockQuery
             ->orderBy('transaction_date', 'desc')
             ->orderBy('created_at', 'desc')
-            ->paginate(20);
+            ->paginate(20)
+            ->appends($request->query());
 
         $legacySummary = DB::query()->fromSub($legacyRows, 'legacy_opening_records');
         $headerSummary = DB::table('opening_stock_headers')
@@ -386,33 +419,17 @@ class WorkspaceController extends Controller
         $openingValue = (float) (clone $headerSummary)->sum('opening_stock_items.opening_value')
             + (float) (clone $legacySummary)->sum('opening_value');
 
-        return $this->recordsPage(
-            'Opening Stock',
-            'INVENTORY',
-            'Opening Stock is recorded once during initial inventory setup. Use Stock Inward for future receipts.',
-            $initialStock,
-            [
-                ['label' => 'Opening Stock No.', 'key' => 'reference_number'],
-                ['label' => 'Location', 'key' => 'location_name'],
-                ['label' => 'Products', 'key' => 'item_count'],
-                ['label' => 'Total Quantity', 'key' => 'total_quantity', 'type' => 'quantity'],
-                ['label' => 'Opening Value', 'key' => 'opening_value', 'type' => 'currency'],
-                ['label' => 'Opening Date', 'key' => 'transaction_date', 'type' => 'date'],
-                ['label' => 'Entered By', 'key' => 'created_by_name'],
-                ['label' => 'Created At', 'key' => 'created_at', 'type' => 'datetime'],
-            ],
-            [[
-                'label' => 'Opening Stock Transactions',
-                'value' => $recordCount,
-                'icon' => 'icon-box',
-                'tone' => 'blue',
-            ], [
-                'label' => 'Opening Value',
-                'value' => '₹' . number_format($openingValue, 2),
-                'icon' => 'icon-tray-in',
-                'tone' => 'green',
-            ]]
-        );
+        return view('workspace.opening-stock-index', [
+            'rows' => $initialStock,
+            'recordCount' => $recordCount,
+            'openingValue' => $openingValue,
+            'filters' => array_merge([
+                'search' => '',
+                'date_range' => 'all',
+                'date_from' => '',
+                'date_to' => '',
+            ], $filters),
+        ]);
     }
 
     public function createOpeningStock()

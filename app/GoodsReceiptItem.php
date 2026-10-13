@@ -14,6 +14,7 @@ class GoodsReceiptItem extends Model
         'received_quantity',
         'rejected_quantity',
         'accepted_quantity',
+        'damaged_quantity',
         'purchase_rate',
     ];
 

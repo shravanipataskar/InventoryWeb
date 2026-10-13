@@ -23,7 +23,13 @@ class PurchaseOrder extends Model
         'created_by',
         'quotation_id',
         'quotation_request_id',
+        'cancelled_at',
+        'closed_at',
+        'status_reason',
     ];
+
+    // Statuses in which goods may still be received (unchanged from the existing receiving workflow).
+    const RECEIVABLE_STATUSES = ['ordered', 'pending', 'approved', 'partially_received'];
 
     public function getOrderDateAttribute($value)
     {
@@ -53,5 +59,15 @@ class PurchaseOrder extends Model
     public function quotation()
     {
         return $this->belongsTo(Quotation::class);
+    }
+
+    public function supplierBills()
+    {
+        return $this->hasMany(SupplierBill::class);
+    }
+
+    public function creator()
+    {
+        return $this->belongsTo(User::class, 'created_by');
     }
 }

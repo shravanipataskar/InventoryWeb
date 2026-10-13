@@ -26,10 +26,10 @@
                 </div>
             </div>
             <div class="form-section">
-                <div class="form-card-heading"><span class="form-section-icon form-icon-gold"><svg><use href="#icon-tray-in"></use></svg></span><div><h2>{{ $purchaseOrder->po_number }} · {{ $purchaseOrder->supplier->name }}</h2><p>Rejected units do not increase stock. Enter 0 for products not included in this delivery.</p></div></div>
+                <div class="form-card-heading"><span class="form-section-icon form-icon-gold"><svg><use href="#icon-tray-in"></use></svg></span><div><h2>{{ $purchaseOrder->po_number }} · {{ $purchaseOrder->supplier->name }}</h2><p>Rejected and damaged units do not increase stock. Enter 0 for products not included in this delivery.</p></div></div>
                 <div class="table-wrap">
                     <table class="data-table listing-table">
-                        <thead><tr><th>PRODUCT</th><th>ORDERED</th><th>PREVIOUSLY RECEIVED</th><th>REMAINING</th><th>RECEIVED NOW</th><th>REJECTED</th><th>ACCEPTED</th><th>UNIT RATE</th></tr></thead>
+                        <thead><tr><th>PRODUCT</th><th>ORDERED</th><th>PREVIOUSLY RECEIVED</th><th>REMAINING</th><th>RECEIVED NOW</th><th>REJECTED</th><th>DAMAGED</th><th>ACCEPTED</th><th>UNIT RATE</th></tr></thead>
                         <tbody>
                         @foreach ($purchaseOrder->items as $index => $item)
                             @php($remaining = max(0, (float) $item->ordered_quantity - (float) $item->received_quantity))
@@ -40,6 +40,7 @@
                                 <td>{{ number_format($remaining, 2) }}</td>
                                 <td><input class="field-control receipt-quantity" type="number" name="items[{{ $index }}][received_quantity]" min="0" max="{{ $remaining }}" step="0.01" value="{{ old('items.' . $index . '.received_quantity', 0) }}" data-remaining="{{ $remaining }}" required></td>
                                 <td><input class="field-control receipt-rejected" type="number" name="items[{{ $index }}][rejected_quantity]" min="0" max="{{ $remaining }}" step="0.01" value="{{ old('items.' . $index . '.rejected_quantity', 0) }}" required></td>
+                                <td><input class="field-control receipt-damaged" type="number" name="items[{{ $index }}][damaged_quantity]" min="0" max="{{ $remaining }}" step="0.01" value="{{ old('items.' . $index . '.damaged_quantity', 0) }}"></td>
                                 <td class="receipt-accepted">0.00</td>
                                 <td>₹{{ number_format($item->purchase_rate, 2) }}</td>
                             </tr>
@@ -59,10 +60,10 @@
             function updateAccepted(input) {
                 var row = input.closest('tr');
                 var received = parseFloat(row.querySelector('.receipt-quantity').value) || 0;
-                var rejected = parseFloat(row.querySelector('.receipt-rejected').value) || 0;
+                var rejected = (parseFloat(row.querySelector('.receipt-rejected').value) || 0) + (parseFloat(row.querySelector('.receipt-damaged').value) || 0);
                 row.querySelector('.receipt-accepted').textContent = Math.max(0, received - rejected).toFixed(2);
             }
-            document.querySelectorAll('.receipt-quantity, .receipt-rejected').forEach(function (input) {
+            document.querySelectorAll('.receipt-quantity, .receipt-rejected, .receipt-damaged').forEach(function (input) {
                 input.addEventListener('input', function () { updateAccepted(input); });
                 updateAccepted(input);
             });

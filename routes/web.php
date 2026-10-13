@@ -388,6 +388,45 @@ Route::middleware('auth')->group(function () {
     Route::get('goods-receipts/{goodsReceipt}', 'GoodsReceiptController@show')
         ->middleware('permission:goods_receipts.view')
         ->name('goods-receipts.show');
+    Route::post('purchase-orders/{purchaseOrder}/cancel', 'PurchaseOrderController@cancel')
+        ->middleware('permission:purchase.approve')
+        ->name('purchase-orders.cancel');
+    Route::post('purchase-orders/{purchaseOrder}/close', 'PurchaseOrderController@close')
+        ->middleware('permission:purchase.approve')
+        ->name('purchase-orders.close');
+
+    /*
+    |--------------------------------------------------------------------------
+    | Supplier Bills, Payments and Approvals
+    |--------------------------------------------------------------------------
+    */
+
+    Route::get('supplier-bills', 'SupplierBillController@index')->middleware('permission:bills.view')->name('supplier-bills.index');
+    Route::get('purchase-orders/{purchaseOrder}/bills/create', 'SupplierBillController@create')->middleware('permission:bills.create')->name('supplier-bills.create');
+    Route::post('purchase-orders/{purchaseOrder}/bills', 'SupplierBillController@store')->middleware('permission:bills.create')->name('supplier-bills.store');
+    Route::get('supplier-bills/{bill}', 'SupplierBillController@show')->where('bill', '[0-9]+')->middleware('permission:bills.view')->name('supplier-bills.show');
+    Route::get('supplier-bills/{bill}/edit', 'SupplierBillController@edit')->middleware('permission:bills.edit')->name('supplier-bills.edit');
+    Route::put('supplier-bills/{bill}', 'SupplierBillController@update')->middleware('permission:bills.edit')->name('supplier-bills.update');
+    Route::get('supplier-bills/{bill}/attachment', 'SupplierBillController@attachment')->middleware('permission:bills.view')->name('supplier-bills.attachment');
+    Route::post('supplier-bills/{bill}/approve', 'SupplierBillController@approve')->middleware('permission:bills.approve')->name('supplier-bills.approve');
+    Route::post('supplier-bills/{bill}/reject', 'SupplierBillController@reject')->middleware('permission:bills.reject')->name('supplier-bills.reject');
+    Route::post('supplier-bills/{bill}/dispute', 'SupplierBillController@dispute')->middleware('permission:bills.reject')->name('supplier-bills.dispute');
+    Route::post('supplier-bills/{bill}/cancel', 'SupplierBillController@cancel')->middleware('permission:bills.approve')->name('supplier-bills.cancel');
+
+    Route::get('supplier-payments', 'SupplierPaymentController@index')->middleware('permission:payments.view')->name('supplier-payments.index');
+    Route::get('supplier-payments/create', 'SupplierPaymentController@create')->middleware('permission:payments.create')->name('supplier-payments.create');
+    Route::post('supplier-payments', 'SupplierPaymentController@store')->middleware('permission:payments.create')->name('supplier-payments.store');
+    Route::get('supplier-payments/{payment}', 'SupplierPaymentController@show')->where('payment', '[0-9]+')->middleware('permission:payments.view')->name('supplier-payments.show');
+    Route::get('supplier-payments/{payment}/proof', 'SupplierPaymentController@proof')->middleware('permission:payments.view')->name('supplier-payments.proof');
+    Route::post('supplier-payments/{payment}/approve', 'SupplierPaymentController@approve')->middleware('permission:payments.approve')->name('supplier-payments.approve');
+    Route::post('supplier-payments/{payment}/reject', 'SupplierPaymentController@reject')->middleware('permission:payments.reject')->name('supplier-payments.reject');
+    Route::post('supplier-payments/{payment}/cancel', 'SupplierPaymentController@cancel')->middleware('permission:payments.edit')->name('supplier-payments.cancel');
+    Route::post('supplier-payments/{payment}/complete', 'SupplierPaymentController@complete')->middleware('permission:payments.edit')->name('supplier-payments.complete');
+    Route::post('supplier-payments/{payment}/fail', 'SupplierPaymentController@fail')->middleware('permission:payments.edit')->name('supplier-payments.fail');
+    Route::post('supplier-payments/{payment}/reverse', 'SupplierPaymentController@reverse')->middleware('permission:payments.approve')->name('supplier-payments.reverse');
+
+    Route::get('procurement/approvals', 'ProcurementController@approvals')->name('procurement.approvals');
+    Route::get('suppliers/{supplier}/purchase-history', 'ProcurementController@supplierHistory')->middleware('permission:bills.view')->name('suppliers.purchase-history');
 
     /*
     |--------------------------------------------------------------------------
