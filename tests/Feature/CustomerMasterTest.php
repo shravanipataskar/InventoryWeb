@@ -98,6 +98,10 @@ class CustomerMasterTest extends TestCase
             ->assertSee($customer->name)
             ->assertSee('Customer / Recipient')
             ->assertSee('name="customer_id"', false)
+            ->assertDontSee('Outward No.')
+            ->assertDontSee('name="outward_number"', false)
+            ->assertDontSee('Invoice (Optional)')
+            ->assertDontSee('name="invoice_no"', false)
             ->assertDontSee('Search customers...');
 
         $this->post(route('stock-outwards.store'), [

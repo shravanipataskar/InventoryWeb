@@ -537,7 +537,7 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         $entry->delete();
     }
 
-    private function approvedQuotation($billCopy = null, $approve = true)
+    private function approvedQuotation($billCopy = null, $approve = true, $discountPercent = 0)
     {
         $this->actingAs($this->officer)->post(route('quotations.store'), [
             'request_date' => now()->toDateString(),
@@ -549,7 +549,11 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         $items = [];
         foreach ($request->quotations as $quotation) {
             foreach ($quotation->items as $item) {
-                $items[$quotation->id][$item->id] = ['supplier_rate' => 100, 'gst_rate' => 18];
+                $items[$quotation->id][$item->id] = [
+                    'supplier_rate' => 100,
+                    'discount_percent' => $discountPercent,
+                    'gst_rate' => 18,
+                ];
             }
         }
         $payload = ['items' => $items];
@@ -657,6 +661,31 @@ class SupplierBillPaymentWorkflowTest extends TestCase
             'reference_number' => $reference,
         ])->assertSessionHasNoErrors();
         $this->assertSame('completed', $payment->fresh()->status);
+    }
+
+    public function test_supplier_quotation_discount_is_applied_before_gst()
+    {
+        list($quotation) = $this->approvedQuotation(null, false, 10);
+        $quotation->refresh();
+        $item = $quotation->items->first();
+
+        $this->assertSame(10.0, (float) $item->discount_percent);
+        $this->assertSame(100.0, (float) $quotation->discount_total);
+        $this->assertSame(162.0, (float) $quotation->tax_total);
+        $this->assertSame(1062.0, (float) $quotation->grand_total);
+
+        $this->get(route('quotations.show', $quotation->quotation_request_id))
+            ->assertOk()
+            ->assertSee('DISCOUNT %')
+            ->assertSee('Discount')
+            ->assertSee('₹100.00');
+
+        $this->actingAs($this->owner)
+            ->post(route('quotations.approve', $quotation->id))
+            ->assertSessionHasNoErrors();
+        $this->get(route('quotations.purchase-details', $quotation->id))
+            ->assertOk()
+            ->assertSee('name="items[' . $item->id . '][discount_percent]" value="10.00"', false);
     }
 
     private function makeUser($roleName)

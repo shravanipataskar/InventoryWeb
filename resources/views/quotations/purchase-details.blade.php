@@ -149,7 +149,7 @@
                                     <td>{{ optional($item->product->unit)->short_name ?: optional($item->product->unit)->name ?: '—' }}</td>
                                     <td class="readonly-rate">₹{{ number_format($item->supplier_rate, 2) }}</td>
                                     <td><input class="field-control negotiated-rate" type="number" min="0.01" step="0.01" required name="items[{{ $item->id }}][purchase_rate]" value="{{ old('items.' . $item->id . '.purchase_rate', number_format((float) $item->supplier_rate, 2, '.', '')) }}"></td>
-                                    <td><input class="field-control negotiated-discount" type="number" min="0" max="100" step="0.01" name="items[{{ $item->id }}][discount_percent]" value="{{ old('items.' . $item->id . '.discount_percent', '0.00') }}"></td>
+                                    <td><input class="field-control negotiated-discount" type="number" min="0" max="100" step="0.01" name="items[{{ $item->id }}][discount_percent]" value="{{ old('items.' . $item->id . '.discount_percent', number_format((float) $item->discount_percent, 2, '.', '')) }}"></td>
                                     <td class="line-money line-basic">₹0.00</td>
                                     <td><span>{{ number_format($item->gst_rate, 2) }}</span><small class="purchase-tax-split">CGST {{ number_format($item->cgst_rate, 2) }}% · SGST {{ number_format($item->sgst_rate, 2) }}%</small></td>
                                     <td class="line-money line-tax">₹0.00</td>

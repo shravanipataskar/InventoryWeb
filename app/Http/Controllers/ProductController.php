@@ -87,7 +87,7 @@ class ProductController extends Controller
     public function store(Request $request)
     {
         $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => ['required', 'string', 'max:255', Rule::unique('products', 'name')],
             'hall_id' => 'required|integer|exists:halls,id',
             'rack_id' => ['nullable', 'integer', Rule::exists('racks', 'id')->where('hall_id', $request->input('hall_id'))],
             'shelf_id' => ['nullable', 'integer', Rule::exists('shelves', 'id')->where('rack_id', $request->input('rack_id'))],
@@ -95,8 +95,7 @@ class ProductController extends Controller
             'company_id' => 'nullable|exists:companies,id',
             'unit_id' => 'required|exists:units,id',
             'minimum_stock' => 'required|numeric|min:0',
-            'reorder_level' => 'required|numeric|min:0',
-            'reorder_quantity' => 'required|numeric|min:0',
+            'reorder_quantity' => 'nullable|numeric|min:0',
             'track_batch' => 'nullable|boolean',
             'track_serial' => 'nullable|boolean',
             'description' => 'nullable|string',
@@ -126,8 +125,8 @@ class ProductController extends Controller
                 'barcode' => $barcode,
                 'image' => $imagePath,
                 'minimum_stock' => $request->minimum_stock,
-                'reorder_level' => $request->reorder_level,
-                'reorder_quantity' => $request->reorder_quantity,
+                'reorder_level' => $request->minimum_stock,
+                'reorder_quantity' => $request->input('reorder_quantity', 0) ?: 0,
                 'track_batch' => $request->boolean('track_batch'),
                 'track_serial' => $request->boolean('track_serial'),
                 'description' => $request->description,
@@ -189,7 +188,7 @@ class ProductController extends Controller
         $product = Product::findOrFail($id);
 
         $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => ['required', 'string', 'max:255', Rule::unique('products', 'name')->ignore($product->id)],
             'hall_id' => 'required|integer|exists:halls,id',
             'rack_id' => ['nullable', 'integer', Rule::exists('racks', 'id')->where('hall_id', $request->input('hall_id'))],
             'shelf_id' => ['nullable', 'integer', Rule::exists('shelves', 'id')->where('rack_id', $request->input('rack_id'))],
@@ -197,7 +196,6 @@ class ProductController extends Controller
             'company_id' => 'nullable|exists:companies,id',
             'unit_id' => 'required|exists:units,id',
             'minimum_stock' => 'required|numeric|min:0',
-            'reorder_level' => 'required|numeric|min:0',
             'reorder_quantity' => 'required|numeric|min:0',
             'track_batch' => 'nullable|boolean',
             'track_serial' => 'nullable|boolean',
@@ -225,7 +223,7 @@ class ProductController extends Controller
                 'unit_id' => $request->unit_id,
                 'image' => $newImage ?: ($request->boolean('remove_image') ? null : $oldImage),
                 'minimum_stock' => $request->minimum_stock,
-                'reorder_level' => $request->reorder_level,
+                'reorder_level' => $request->minimum_stock,
                 'reorder_quantity' => $request->reorder_quantity,
                 'track_batch' => $request->boolean('track_batch'),
                 'track_serial' => $request->boolean('track_serial'),

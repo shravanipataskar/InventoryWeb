@@ -37,6 +37,8 @@ class ProductImageTest extends TestCase
             ->assertSee('Location')
             ->assertDontSee('Product code / SKU')
             ->assertDontSee('Generated automatically')
+            ->assertDontSee('Reorder quantity')
+            ->assertDontSee('Reorder level')
             ->assertDontSee('<span>Hall</span>', false);
     }
 
@@ -47,6 +49,8 @@ class ProductImageTest extends TestCase
         list($hall, $category, $unit) = $this->makeProductReferences();
 
         $withoutImage = $this->productPayload($hall, $category, $unit);
+        unset($withoutImage['reorder_quantity']);
+        unset($withoutImage['reorder_level']);
         $this->post(route('products.store'), $withoutImage)
             ->assertRedirect(route('products.index'));
         $productWithoutImage = Product::where('name', $withoutImage['name'])
@@ -54,8 +58,11 @@ class ProductImageTest extends TestCase
             ->latest('id')
             ->firstOrFail();
         $this->assertNull($productWithoutImage->image);
+        $this->assertSame(0.0, (float) $productWithoutImage->reorder_quantity);
+        $this->assertSame((float) $productWithoutImage->minimum_stock, (float) $productWithoutImage->reorder_level);
 
         $withImage = $this->productPayload($hall, $category, $unit);
+        $withImage['name'] .= ' With Image';
         $this->post(route('products.store'), $withImage + [
             'image' => UploadedFile::fake()->image('product.jpg', 120, 90),
         ])->assertRedirect(route('products.index'));
@@ -105,8 +112,10 @@ class ProductImageTest extends TestCase
         $this->get(route('products.edit', $product->id))
             ->assertOk()
             ->assertSee('data-current-product-image', false)
+            ->assertDontSee('Reorder level')
             ->assertSee('/storage/' . $oldImage, false);
 
+        unset($payload['reorder_level']);
         $this->put(route('products.update', $product->id), $payload)
             ->assertRedirect(route('products.index'));
         $this->assertSame($oldImage, $product->fresh()->image);
@@ -120,6 +129,22 @@ class ProductImageTest extends TestCase
         $this->assertNotSame($oldImage, $newImage);
         Storage::disk('public')->assertMissing($oldImage);
         Storage::disk('public')->assertExists($newImage);
+    }
+
+    public function test_duplicate_product_names_are_rejected()
+    {
+        $this->actingAs($this->makeUser());
+        list($hall, $category, $unit) = $this->makeProductReferences();
+        $payload = $this->productPayload($hall, $category, $unit);
+
+        $this->post(route('products.store'), $payload)
+            ->assertRedirect(route('products.index'));
+
+        $duplicate = $this->productPayload($hall, $category, $unit);
+        $duplicate['name'] = $payload['name'];
+        $this->from(route('products.create'))
+            ->post(route('products.store'), $duplicate)
+            ->assertSessionHasErrors('name');
     }
 
     public function test_webp_product_image_is_accepted()

@@ -37,14 +37,25 @@ class QuotationController extends Controller
         return view('quotations.index', compact('requests'));
     }
 
-    public function create()
+    public function create(Request $request)
     {
         $categories = Category::where('is_active', true)->orderBy('name')->get();
         $products = Product::where('is_active', true)->with(['category', 'unit'])->orderBy('name')->get();
         $suppliers = Supplier::where('is_active', true)->orderBy('name')->get();
         $stores = Store::where('is_active', true)->orderBy('name')->get();
+        $prefillProduct = $products->firstWhere('id', (int) $request->query('product_id'));
+        $requestedQuantity = filter_var($request->query('quantity'), FILTER_VALIDATE_FLOAT);
+        $prefillItems = $prefillProduct ? [[
+            'category_id' => $prefillProduct->category_id,
+            'product_id' => $prefillProduct->id,
+            'quantity' => $requestedQuantity !== false && $requestedQuantity > 0
+                ? $requestedQuantity
+                : ((float) $prefillProduct->reorder_quantity > 0
+                    ? (float) $prefillProduct->reorder_quantity
+                    : max(1, (float) $prefillProduct->minimum_stock - (float) $prefillProduct->current_stock)),
+        ]] : null;
 
-        return view('quotations.create', compact('categories', 'products', 'suppliers', 'stores'));
+        return view('quotations.create', compact('categories', 'products', 'suppliers', 'stores', 'prefillItems'));
     }
 
     public function store(Request $request)
@@ -279,6 +290,7 @@ class QuotationController extends Controller
         $validated = $request->validate([
             'items' => 'required|array',
             'items.*.supplier_rate' => 'required|numeric|min:0',
+            'items.*.discount_percent' => 'nullable|numeric|min:0|max:100',
             'items.*.gst_rate' => 'required|numeric|min:0|max:100',
             'bill_copy' => 'nullable|file|mimes:pdf,jpg,jpeg,png,webp|max:10240',
         ]);
@@ -316,6 +328,7 @@ class QuotationController extends Controller
             'items' => 'required|array',
             'items.*' => 'required|array',
             'items.*.*.supplier_rate' => 'required|numeric|min:0',
+            'items.*.*.discount_percent' => 'nullable|numeric|min:0|max:100',
             'items.*.*.gst_rate' => 'required|numeric|min:0|max:100',
             'bill_copies' => 'nullable|array',
             'bill_copies.*' => 'nullable|file|mimes:pdf,jpg,jpeg,png,webp|max:10240',
@@ -572,7 +585,7 @@ class QuotationController extends Controller
 
     private function submitQuotation(Quotation $quotation, array $items)
     {
-        $subtotal = $cgstTotal = $sgstTotal = 0;
+        $subtotal = $discountTotal = $cgstTotal = $sgstTotal = 0;
         foreach ($quotation->items as $item) {
             if (!isset($items[$item->id])) {
                 throw ValidationException::withMessages(['items' => 'Every quotation item must be completed.']);
@@ -581,33 +594,39 @@ class QuotationController extends Controller
             $rate = round((float) $line['supplier_rate'], 2);
             $quantity = round((float) $item->quantity, 2);
             $basic = round($quantity * $rate, 2);
+            $discountPercent = round((float) ($line['discount_percent'] ?? 0), 2);
+            $discount = round($basic * $discountPercent / 100, 2);
+            $taxable = round($basic - $discount, 2);
             $gstRate = round((float) $line['gst_rate'], 2);
             $cgstRate = round($gstRate / 2, 2);
             $sgstRate = round($gstRate - $cgstRate, 2);
-            $cgst = round($basic * $cgstRate / 100, 2);
-            $sgst = round($basic * $sgstRate / 100, 2);
+            $cgst = round($taxable * $cgstRate / 100, 2);
+            $sgst = round($taxable * $sgstRate / 100, 2);
             $item->update([
                 'supplier_rate' => $rate,
                 'basic_amount' => $basic,
+                'discount_percent' => $discountPercent,
                 'gst_rate' => $gstRate,
                 'cgst_rate' => $cgstRate,
                 'cgst_amount' => $cgst,
                 'sgst_rate' => $sgstRate,
                 'sgst_amount' => $sgst,
                 'tax_amount' => round($cgst + $sgst, 2),
-                'total_amount' => round($basic + $cgst + $sgst, 2),
+                'total_amount' => round($taxable + $cgst + $sgst, 2),
             ]);
             $subtotal += $basic;
+            $discountTotal += $discount;
             $cgstTotal += $cgst;
             $sgstTotal += $sgst;
         }
         $quotation->update([
             'status' => 'submitted',
             'subtotal' => round($subtotal, 2),
+            'discount_total' => round($discountTotal, 2),
             'cgst_total' => round($cgstTotal, 2),
             'sgst_total' => round($sgstTotal, 2),
             'tax_total' => round($cgstTotal + $sgstTotal, 2),
-            'grand_total' => round($subtotal + $cgstTotal + $sgstTotal, 2),
+            'grand_total' => round($subtotal - $discountTotal + $cgstTotal + $sgstTotal, 2),
             'submitted_at' => now(),
             'submitted_by' => Auth::id(),
         ]);

@@ -17,7 +17,6 @@
             <div class="form-section">
                 <div class="form-card-heading"><span class="form-section-icon"><svg><use href="#icon-calendar"></use></svg></span><div><h2>Outward Information</h2><p>Enter the basic details for this stock outward.</p></div></div>
                 <div class="form-grid outward-information-grid">
-                    <div class="field"><label for="outward_number">Outward No.</label><input class="field-control" id="outward_number" type="text" value="" readonly placeholder="Auto-generated"><small class="field-hint">Auto-generated</small></div>
                     <div class="field"><label for="outward_date">Outward Date <span class="required-mark">*</span></label><input class="field-control" id="outward_date" type="date" name="outward_date" value="{{ old('outward_date', date('Y-m-d')) }}" required></div>
                     <div class="field"><label for="reference_number">Reference Number</label><input class="field-control" id="reference_number" type="text" name="reference_number" value="{{ old('reference_number') }}" placeholder="e.g. REF-001" maxlength="100"></div>
                     <div class="field"><label for="outward_type">Outward Type <span class="required-mark">*</span></label><select class="field-control" id="outward_type" name="outward_type"><option value="Customer Sale" selected>Customer Sale</option></select></div>
@@ -37,7 +36,6 @@
                     </div>
                     <div class="field"><label for="location_id">Location / Store <span class="required-mark">*</span></label><select class="field-control" id="location_id" name="location_id"><option value="">Main Store</option></select></div>
                     <div class="field"><label for="sales_order">Sales Order</label><input class="field-control" id="sales_order" type="text" name="sales_order" value="{{ old('sales_order') }}" placeholder="SO-20261006-001"></div>
-                    <div class="field"><label for="invoice_no">Invoice (Optional)</label><select class="field-control" id="invoice_no" name="invoice_no"><option value="">Select invoice</option></select></div>
                     <div class="field"><label for="remarks">Remarks</label><textarea class="field-control" id="remarks" name="remarks" rows="2" placeholder="Enter remarks (optional)...">{{ old('remarks') }}</textarea>@error('remarks')<small class="field-error">{{ $message }}</small>@enderror</div>
                 </div>
             </div>

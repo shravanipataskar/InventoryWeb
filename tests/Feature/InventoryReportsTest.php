@@ -44,14 +44,14 @@ class InventoryReportsTest extends TestCase
             ->assertSee('General Settings')
             ->assertSee('7.00')
             ->assertSee('₹28.00');
-        $this->assertSame(1, preg_match('/<button\b(?=[^>]*aria-expanded="true")(?=[^>]*aria-controls="reports-submenu")[^>]*>/s', $response->getContent()));
-        $this->assertSame(1, preg_match('/<button\b(?=[^>]*aria-expanded="false")(?=[^>]*aria-controls="stock-submenu")[^>]*>/s', $response->getContent()));
+        $this->assertSame(1, preg_match('/<button\b(?=[^>]*aria-expanded="false")(?=[^>]*aria-controls="reports-submenu")[^>]*>/s', $response->getContent()));
+        $this->assertSame(1, preg_match('/<button\b(?=[^>]*aria-expanded="false")(?=[^>]*aria-controls="inventory-submenu")[^>]*>/s', $response->getContent()));
         $response->assertDontSee('<div class="sidebar-caption">MASTER</div>', false)
             ->assertDontSee('<div class="sidebar-caption sidebar-caption-spaced">INVENTORY</div>', false)
             ->assertDontSee('<div class="sidebar-caption sidebar-caption-spaced">REPORTS</div>', false);
 
         $stockResponse = $this->get(route('current-stock.index'))->assertOk();
-        $this->assertSame(1, preg_match('/<button\b(?=[^>]*aria-expanded="true")(?=[^>]*aria-controls="stock-submenu")[^>]*>/s', $stockResponse->getContent()));
+        $this->assertSame(1, preg_match('/<button\b(?=[^>]*aria-expanded="false")(?=[^>]*aria-controls="inventory-submenu")[^>]*>/s', $stockResponse->getContent()));
         $this->assertSame(1, preg_match('/<button\b(?=[^>]*aria-expanded="false")(?=[^>]*aria-controls="reports-submenu")[^>]*>/s', $stockResponse->getContent()));
 
         $response = $this->get(route('reports.download', [
@@ -62,6 +62,8 @@ class InventoryReportsTest extends TestCase
         $export = $response->streamedContent();
         $this->assertStringContainsString('Report Laptop ' . $suffix, $export);
         $this->assertStringNotContainsString('Unrelated Keyboard ' . $suffix, $export);
+        $stockLines = explode("\n", trim($export));
+        $this->assertCount(19, str_getcsv(end($stockLines)));
 
         $valuationExport = $this->get(route('reports.download', [
             'type' => 'stock-valuation',
@@ -88,7 +90,8 @@ class InventoryReportsTest extends TestCase
             'is_active' => true,
         ]);
         $product = $this->createProduct($category->id, $unit->id, 'Reorder Mouse ' . $suffix, 'RM-' . $suffix, 2, 5);
-        $product->reorder_level = 5;
+        $product->minimum_stock = 5;
+        $product->reorder_level = 100;
         $product->reorder_quantity = 12;
         $product->save();
         $storeId = $this->createStore('Report Store ' . $suffix, 'RPT-' . $suffix);
@@ -116,8 +119,18 @@ class InventoryReportsTest extends TestCase
             ->assertSee('Reorder Mouse ' . $suffix);
         $this->get(route('reports.index', ['tab' => 'low-reorder', 'product_id' => $product->id]))
             ->assertOk()
-            ->assertSee('Create PO')
+            ->assertSee('Create Quotation')
+            ->assertDontSee('Create PO')
             ->assertSee('Reorder Mouse ' . $suffix);
+        $this->get(route('quotations.create', [
+            'product_id' => $product->id,
+            'quantity' => 12,
+        ]))
+            ->assertOk()
+            ->assertSee('name="items[0][category_id]"', false)
+            ->assertSee('name="items[0][product_id]"', false)
+            ->assertSee('value="' . $product->id . '" data-category="' . $category->id . '"', false)
+            ->assertSee('name="items[0][quantity]" value="12"', false);
         $this->get(route('current-stock.index', [
             'stock' => 'low',
             'search' => 'RM-' . $suffix,
@@ -228,6 +241,7 @@ class InventoryReportsTest extends TestCase
             'name' => 'Inventory Report Test User',
             'email' => Str::uuid() . '@example.test',
             'password' => Hash::make('test-password'),
+            'role' => 'ADMIN',
         ]);
     }
 

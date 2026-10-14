@@ -6,7 +6,7 @@
 @section('content')
     @php
         $selectedSupplierIds = array_map('strval', (array) old('supplier_ids', []));
-        $quotationItems = old('items', [['category_id' => '', 'product_id' => '', 'quantity' => '']]);
+        $quotationItems = old('items', $prefillItems ?: [['category_id' => '', 'product_id' => '', 'quantity' => '']]);
     @endphp
     <style>
         .quotation-create-page{max-width:1280px;margin:0 auto;padding-bottom:24px}

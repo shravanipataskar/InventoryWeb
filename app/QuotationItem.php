@@ -8,7 +8,7 @@ class QuotationItem extends Model
 {
     protected $fillable = [
         'quotation_id', 'product_id', 'category_id', 'unit_id', 'quantity',
-        'supplier_rate', 'basic_amount', 'gst_rate', 'cgst_rate', 'cgst_amount',
+        'supplier_rate', 'basic_amount', 'discount_percent', 'gst_rate', 'cgst_rate', 'cgst_amount',
         'sgst_rate', 'sgst_amount', 'tax_amount', 'total_amount',
     ];
 

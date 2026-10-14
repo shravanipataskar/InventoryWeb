@@ -24,18 +24,22 @@ class DashboardController extends Controller
             ),
             'low_stock' => (clone $products)
                 ->where('current_stock', '>', 0)
-                ->whereColumn('current_stock', '<=', 'minimum_stock')
+                ->whereColumn('current_stock', '<', 'minimum_stock')
                 ->count(),
             'out_of_stock' => (clone $products)
                 ->where('current_stock', '<=', 0)
                 ->count(),
         ];
 
-        $lowStockProducts = Product::with(['category', 'unit'])
-            ->where('current_stock', '>', 0)
-            ->whereColumn('current_stock', '<=', 'minimum_stock')
+        $reorderCount = Product::where('is_active', true)
+            ->whereColumn('current_stock', '<', 'minimum_stock')
+            ->count();
+
+        $reorderProducts = Product::with('unit')
+            ->where('is_active', true)
+            ->whereColumn('current_stock', '<', 'minimum_stock')
+            ->orderByRaw('CASE WHEN current_stock <= 0 THEN 0 ELSE 1 END')
             ->orderBy('current_stock')
-            ->limit(5)
             ->get();
 
         $recentInwards = StockInward::with(['product', 'supplier'])
@@ -66,7 +70,8 @@ class DashboardController extends Controller
 
         return view('dashboard', compact(
             'stats',
-            'lowStockProducts',
+            'reorderProducts',
+            'reorderCount',
             'recentInwards',
             'recentOutwards',
             'categoryStock'

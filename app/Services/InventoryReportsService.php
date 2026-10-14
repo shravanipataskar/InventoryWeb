@@ -28,7 +28,7 @@ class InventoryReportsService
         $stockTotals = (clone $products)->select([])->selectRaw(
             'COALESCE(SUM(' . $quantityExpression . '), 0) as quantity_total, ' .
             'COALESCE(SUM((' . $quantityExpression . ') * products.purchase_price), 0) as value_total, ' .
-            'SUM(CASE WHEN (' . $quantityExpression . ') > 0 AND (' . $quantityExpression . ') <= COALESCE(NULLIF(products.reorder_level, 0), products.minimum_stock) THEN 1 ELSE 0 END) as low_count, ' .
+            'SUM(CASE WHEN (' . $quantityExpression . ') > 0 AND (' . $quantityExpression . ') <= products.minimum_stock THEN 1 ELSE 0 END) as low_count, ' .
             'SUM(CASE WHEN (' . $quantityExpression . ') <= 0 THEN 1 ELSE 0 END) as out_count'
         )->first();
 
@@ -103,10 +103,10 @@ class InventoryReportsService
     public function exportHeaders($type)
     {
         if (in_array($type, ['stock-details', 'current-report'], true)) {
-            return ['Product Name', 'SKU', 'Barcode', 'Category', 'Company / Brand', 'Unit', 'Location / Store', 'Hall', 'Rack', 'Shelf / Bin', 'On-Hand Quantity', 'Reserved Quantity', 'Available Quantity', 'Minimum Stock', 'Reorder Level', 'Reorder Quantity', 'Unit Cost', 'Stock Value', 'Stock Status', 'Last Movement Date'];
+            return ['Product Name', 'SKU', 'Barcode', 'Category', 'Company / Brand', 'Unit', 'Location / Store', 'Hall', 'Rack', 'Shelf / Bin', 'On-Hand Quantity', 'Reserved Quantity', 'Available Quantity', 'Minimum Stock', 'Reorder Quantity', 'Unit Cost', 'Stock Value', 'Stock Status', 'Last Movement Date'];
         }
         if ($type === 'reorder') {
-            return ['Product Name', 'SKU', 'Category', 'Company / Brand', 'Location', 'On-Hand Quantity', 'Reserved Quantity', 'Available Quantity', 'Minimum Stock', 'Reorder Level', 'Reorder Quantity', 'Unit Cost', 'Estimated Purchase Value', 'Stock Status', 'Suggested Action'];
+            return ['Product Name', 'SKU', 'Category', 'Company / Brand', 'Location', 'On-Hand Quantity', 'Reserved Quantity', 'Available Quantity', 'Minimum Stock', 'Reorder Quantity', 'Unit Cost', 'Estimated Purchase Value', 'Stock Status', 'Suggested Action'];
         }
         if ($type === 'stock-movement') {
             return ['Transaction Date', 'Transaction Type', 'Reference Number', 'Product Name', 'SKU', 'Category', 'Company / Brand', 'Location', 'Hall', 'Rack', 'Shelf / Bin', 'Quantity In', 'Quantity Out', 'Balance Quantity', 'Unit Cost', 'Stock Value', 'Reason', 'Created By'];
@@ -127,13 +127,12 @@ class InventoryReportsService
         }
 
         if ($type === 'reorder') {
-            $reorderLevel = (float) $row->reorder_level > 0 ? (float) $row->reorder_level : (float) $row->minimum_stock;
             $reorderQuantity = (float) $row->reorder_quantity > 0
                 ? (float) $row->reorder_quantity
-                : max(0, $reorderLevel - (float) $row->report_quantity);
+                : max(0, (float) $row->minimum_stock - (float) $row->report_quantity);
             return [
                 $row->name, $row->product_code, $row->category_name, $row->company_name, $row->location_name,
-                $row->report_quantity, 0, $row->report_quantity, $row->minimum_stock, $reorderLevel,
+                $row->report_quantity, 0, $row->report_quantity, $row->minimum_stock,
                 $reorderQuantity, $row->purchase_price, $reorderQuantity * $row->purchase_price,
                 $this->stockStatus($row), 'Create Purchase Order',
             ];
@@ -150,7 +149,7 @@ class InventoryReportsService
         return [
             $row->name, $row->product_code, $row->barcode, $row->category_name, $row->company_name,
             $row->unit_name, $row->location_name, $row->hall_name, $row->rack_name, $row->shelf_name,
-            $row->report_quantity, 0, $row->report_quantity, $row->minimum_stock, $row->reorder_level,
+            $row->report_quantity, 0, $row->report_quantity, $row->minimum_stock,
             $row->reorder_quantity, $row->purchase_price, $row->report_quantity * $row->purchase_price,
             $this->stockStatus($row), $this->lastMovementDate($row),
         ];
@@ -171,9 +170,7 @@ class InventoryReportsService
             return 'Out of Stock';
         }
 
-        $reorder = (float) $row->reorder_level > 0 ? (float) $row->reorder_level : (float) $row->minimum_stock;
-
-        return (float) $row->report_quantity <= $reorder ? 'Low Stock' : 'Healthy';
+        return (float) $row->report_quantity <= (float) $row->minimum_stock ? 'Low Stock' : 'Healthy';
     }
 
     private function productRows(array $filters)
@@ -214,7 +211,7 @@ class InventoryReportsService
     private function lowStockRows(array $filters)
     {
         return $this->productRows($filters)->whereRaw(
-            $this->quantityExpression($filters) . ' <= COALESCE(NULLIF(products.reorder_level, 0), products.minimum_stock)'
+            $this->quantityExpression($filters) . ' <= products.minimum_stock'
         );
     }
 
@@ -282,9 +279,9 @@ class InventoryReportsService
         if ($filters['stock_status'] === 'out') {
             $query->whereRaw($quantityExpression . ' <= 0');
         } elseif ($filters['stock_status'] === 'low') {
-            $query->whereRaw($quantityExpression . ' > 0 AND ' . $quantityExpression . ' <= COALESCE(NULLIF(products.reorder_level, 0), products.minimum_stock)');
+            $query->whereRaw($quantityExpression . ' > 0 AND ' . $quantityExpression . ' <= products.minimum_stock');
         } elseif ($filters['stock_status'] === 'healthy') {
-            $query->whereRaw($quantityExpression . ' > COALESCE(NULLIF(products.reorder_level, 0), products.minimum_stock)');
+            $query->whereRaw($quantityExpression . ' > products.minimum_stock');
         }
     }
 

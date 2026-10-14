@@ -56,7 +56,6 @@
                 <div class="form-card-heading"><span class="form-section-icon form-icon-gold"><svg><use href="#icon-alert"></use></svg></span><div><h2>Stock settings</h2><p>Set stock thresholds and replenishment quantities.</p></div></div>
                 <div class="form-grid">
                     <div class="field"><label for="minimum_stock">Minimum stock level <span class="required-mark">*</span></label><input class="field-control" id="minimum_stock" type="number" name="minimum_stock" value="{{ old('minimum_stock', $product->minimum_stock) }}" min="0" step="0.01" required>@error('minimum_stock')<small class="field-error">{{ $message }}</small>@enderror</div>
-                    <div class="field"><label for="reorder_level">Reorder level <span class="required-mark">*</span></label><input class="field-control" id="reorder_level" type="number" name="reorder_level" value="{{ old('reorder_level', $product->reorder_level) }}" min="0" step="0.01" required>@error('reorder_level')<small class="field-error">{{ $message }}</small>@enderror</div>
                     <div class="field"><label for="reorder_quantity">Reorder quantity <span class="required-mark">*</span></label><input class="field-control" id="reorder_quantity" type="number" name="reorder_quantity" value="{{ old('reorder_quantity', $product->reorder_quantity) }}" min="0" step="0.01" required>@error('reorder_quantity')<small class="field-error">{{ $message }}</small>@enderror</div>
                 </div>
             </div>

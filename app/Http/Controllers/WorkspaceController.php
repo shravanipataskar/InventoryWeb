@@ -131,11 +131,11 @@ class WorkspaceController extends Controller
         }
 
         if ($request->input('stock') === 'low') {
-            $query->whereRaw('current_stock > 0 AND current_stock <= COALESCE(NULLIF(reorder_level, 0), minimum_stock)');
+            $query->whereRaw('current_stock > 0 AND current_stock <= minimum_stock');
         } elseif ($request->input('stock') === 'out') {
             $query->where('current_stock', '<=', 0);
         } elseif ($request->input('stock') === 'available') {
-            $query->whereRaw('current_stock > COALESCE(NULLIF(reorder_level, 0), minimum_stock)');
+            $query->whereRaw('current_stock > minimum_stock');
         }
 
         $products = $query->orderBy('name')
@@ -155,7 +155,7 @@ class WorkspaceController extends Controller
                 . ' LIMIT 1), products.purchase_price)'
             )),
             'low_stock' => (clone $summaryQuery)
-                ->whereRaw('current_stock > 0 AND current_stock <= COALESCE(NULLIF(reorder_level, 0), minimum_stock)')
+                ->whereRaw('current_stock > 0 AND current_stock <= minimum_stock')
                 ->count(),
             'out_of_stock' => (clone $summaryQuery)->where('current_stock', '<=', 0)->count(),
         ];
@@ -2489,7 +2489,6 @@ class WorkspaceController extends Controller
                 'products.current_stock as quantity',
                 'products.purchase_price as unit_cost',
                 'products.minimum_stock',
-                'products.reorder_level',
                 'last_movement.last_movement_date',
             ])
             ->selectRaw('(products.current_stock * products.purchase_price) as stock_value')

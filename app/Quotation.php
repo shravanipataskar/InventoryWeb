@@ -8,7 +8,7 @@ class Quotation extends Model
 {
     protected $fillable = [
         'quotation_request_id', 'supplier_id', 'quotation_code', 'quotation_date',
-        'status', 'subtotal', 'cgst_total', 'sgst_total', 'tax_total',
+        'status', 'subtotal', 'discount_total', 'cgst_total', 'sgst_total', 'tax_total',
         'grand_total', 'submitted_at', 'approved_at', 'rejected_at',
         'created_by', 'submitted_by', 'approved_by', 'rejected_by',
         'rejection_reason', 'purchase_order_id',

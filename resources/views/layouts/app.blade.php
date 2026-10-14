@@ -510,6 +510,7 @@
                 ================================================== --}}
                 <div class="topbar-right">
 
+                    @yield('topbar-actions')
 
                     {{-- Date --}}
                     <div class="date-chip">

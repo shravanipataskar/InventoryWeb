@@ -44,12 +44,13 @@
                 </div>
             </header>
             <div class="quote-review-table-wrap"><table class="quote-review-table">
-                <thead><tr><th>CATEGORY</th><th>PRODUCT</th><th>QTY</th><th>UNIT</th><th>RATE</th><th>BASIC</th><th>GST %</th><th>TAX</th><th>TOTAL</th></tr></thead>
+                <thead><tr><th>CATEGORY</th><th>PRODUCT</th><th>QTY</th><th>UNIT</th><th>RATE</th><th>BASIC</th><th>DISCOUNT %</th><th>GST %</th><th>TAX</th><th>TOTAL</th></tr></thead>
                 <tbody>@foreach ($quotation->items as $item)
                     <tr><td>{{ optional($item->product->category)->name }}</td><td>{{ $item->product->name }}</td><td>{{ number_format($item->quantity, 2) }}</td><td>{{ optional($item->product->unit)->short_name ?: optional($item->product->unit)->name }}</td>
                         @if ($quotation->status === 'draft' && auth()->user()->hasPermission('quotations', 'edit'))
                             <td><input class="field-control quote-rate" data-quantity="{{ $item->quantity }}" type="number" step="0.01" min="0" form="submit-all-quotations" name="items[{{ $quotation->id }}][{{ $item->id }}][supplier_rate]" value="{{ old('items.' . $quotation->id . '.' . $item->id . '.supplier_rate', $item->supplier_rate) }}" required></td>
                             <td class="quote-basic">₹{{ number_format($item->basic_amount, 2) }}</td>
+                            <td><input class="field-control quote-discount" type="number" step="0.01" min="0" max="100" form="submit-all-quotations" name="items[{{ $quotation->id }}][{{ $item->id }}][discount_percent]" value="{{ old('items.' . $quotation->id . '.' . $item->id . '.discount_percent', $item->discount_percent) }}" required></td>
                             <td>
                                 <input class="field-control quote-gst" type="number" step="0.01" min="0" max="100" form="submit-all-quotations" name="items[{{ $quotation->id }}][{{ $item->id }}][gst_rate]" value="{{ old('items.' . $quotation->id . '.' . $item->id . '.gst_rate', $item->gst_rate) }}" required>
                                 <small class="quote-tax-split">CGST <span class="quote-cgst">{{ number_format($item->cgst_rate, 2) }}</span>% · SGST <span class="quote-sgst">{{ number_format($item->sgst_rate, 2) }}</span>%</small>
@@ -57,7 +58,7 @@
                             <td class="quote-tax">₹{{ number_format($item->tax_amount, 2) }}</td>
                             <td class="quote-total">₹{{ number_format($item->total_amount, 2) }}</td>
                         @else
-                            <td>₹{{ number_format($item->supplier_rate, 2) }}</td><td>₹{{ number_format($item->basic_amount, 2) }}</td><td>{{ number_format($item->gst_rate, 2) }}<small class="quote-tax-split">CGST {{ number_format($item->cgst_rate, 2) }}% · SGST {{ number_format($item->sgst_rate, 2) }}%</small></td><td>₹{{ number_format($item->tax_amount, 2) }}</td>
+                            <td>₹{{ number_format($item->supplier_rate, 2) }}</td><td>₹{{ number_format($item->basic_amount, 2) }}</td><td>{{ number_format($item->discount_percent, 2) }}%<small class="quote-tax-split">₹{{ number_format((float) $item->basic_amount * (float) $item->discount_percent / 100, 2) }}</small></td><td>{{ number_format($item->gst_rate, 2) }}<small class="quote-tax-split">CGST {{ number_format($item->cgst_rate, 2) }}% · SGST {{ number_format($item->sgst_rate, 2) }}%</small></td><td>₹{{ number_format($item->tax_amount, 2) }}</td>
                         @endif
                         @if (!($quotation->status === 'draft' && auth()->user()->hasPermission('quotations', 'edit')))<td>₹{{ number_format($item->total_amount, 2) }}</td>@endif</tr>
                 @endforeach</tbody>
@@ -86,6 +87,7 @@
             <footer class="quote-review-footer">
                 <div class="quote-review-totals">
                     <div><span>Subtotal</span><strong class="quote-subtotal">₹{{ number_format($quotation->subtotal, 2) }}</strong></div>
+                    <div><span>Discount</span><strong class="quote-discount-total">₹{{ number_format($quotation->discount_total, 2) }}</strong></div>
                     <div><span>Total Tax</span><strong class="quote-tax-total">₹{{ number_format($quotation->tax_total, 2) }}</strong></div>
                     <div class="quote-grand-total-box"><span>Grand Total</span><strong class="quote-grand-total">₹{{ number_format($quotation->grand_total, 2) }}</strong></div>
                 </div>
@@ -229,24 +231,30 @@
             function update() {
                 var row = rate.closest('tr');
                 var basic = (parseFloat(rate.dataset.quantity) || 0) * (parseFloat(rate.value) || 0);
+                var discountPercent = parseFloat(row.querySelector('.quote-discount').value) || 0;
+                var discount = basic * (discountPercent / 100);
+                var taxable = basic - discount;
                 var gstRate = parseFloat(row.querySelector('.quote-gst').value) || 0;
                 var cgstRate = Math.round((gstRate / 2) * 100) / 100;
                 var sgstRate = Math.round((gstRate - cgstRate) * 100) / 100;
                 row.querySelector('.quote-cgst').textContent = cgstRate.toFixed(2);
                 row.querySelector('.quote-sgst').textContent = sgstRate.toFixed(2);
-                var cgst = basic * (cgstRate / 100);
-                var sgst = basic * (sgstRate / 100);
+                var cgst = taxable * (cgstRate / 100);
+                var sgst = taxable * (sgstRate / 100);
                 row.querySelector('.quote-basic').textContent = '₹' + basic.toFixed(2);
                 row.querySelector('.quote-tax').textContent = '₹' + (cgst + sgst).toFixed(2);
-                row.querySelector('.quote-total').textContent = '₹' + (basic + cgst + sgst).toFixed(2);
-                var subtotal = 0, tax = 0;
+                row.querySelector('.quote-total').textContent = '₹' + (taxable + cgst + sgst).toFixed(2);
+                var subtotal = 0, discountTotal = 0, tax = 0;
                 row.closest('tbody').querySelectorAll('tr').forEach(function (line) {
-                    subtotal += parseFloat(line.querySelector('.quote-basic').textContent.replace('₹', '')) || 0;
+                    var lineBasic = parseFloat(line.querySelector('.quote-basic').textContent.replace('₹', '')) || 0;
+                    subtotal += lineBasic;
+                    discountTotal += lineBasic * ((parseFloat(line.querySelector('.quote-discount').value) || 0) / 100);
                     tax += parseFloat(line.querySelector('.quote-tax').textContent.replace('₹', '')) || 0;
                 });
                 row.closest('section').querySelector('.quote-subtotal').textContent = '₹' + subtotal.toFixed(2);
+                row.closest('section').querySelector('.quote-discount-total').textContent = '₹' + discountTotal.toFixed(2);
                 row.closest('section').querySelector('.quote-tax-total').textContent = '₹' + tax.toFixed(2);
-                row.closest('section').querySelector('.quote-grand-total').textContent = '₹' + (subtotal + tax).toFixed(2);
+                row.closest('section').querySelector('.quote-grand-total').textContent = '₹' + (subtotal - discountTotal + tax).toFixed(2);
             }
             rate.closest('tr').querySelectorAll('input').forEach(function (input) {
                 if (!input.readOnly) input.addEventListener('input', update);
