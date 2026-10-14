@@ -132,6 +132,8 @@ Route::middleware('auth')->group(function () {
     Route::put('/customers/{customer}', [CustomerController::class, 'update'])
         ->middleware('permission:customers.edit')
         ->name('customers.update');
+    Route::get('/customers/{customer}/documents/{document}', [CustomerController::class, 'document'])
+        ->name('customers.documents.show');
     Route::get('/customers/{customer}', [CustomerController::class, 'show'])
         ->name('customers.show');
     Route::patch('/customers/{customer}/status', [CustomerController::class, 'status'])
@@ -262,6 +264,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/quotations/{quotation}/approve', 'QuotationController@approve')->middleware('permission:quotations.approve')->name('quotations.approve');
     Route::post('/quotations/{quotation}/reject', 'QuotationController@reject')->middleware('permission:quotations.reject')->name('quotations.reject');
     Route::post('/quotations/{quotation}/generate-purchase', 'QuotationController@generatePurchase')->middleware('permission:quotations.approve')->name('quotations.generate-purchase');
+    Route::get('/quotations/{quotation}/purchase-details', 'QuotationController@purchaseDetails')->middleware('permission:quotations.view')->name('quotations.purchase-details');
+    Route::post('/quotations/{quotation}/purchase-details/payments', 'QuotationController@savePurchasePayment')->middleware('permission:purchase.approve')->name('quotations.purchase-payments.store');
     Route::get('/quotations/{quotationRequest}/rejected', 'QuotationController@rejected')->middleware('permission:quotations.approve')->name('quotations.rejected');
     Route::get('/quotations/{quotation}', 'QuotationController@show')->middleware('permission:quotations.view')->name('quotations.show');
 
@@ -357,10 +361,29 @@ Route::middleware('auth')->group(function () {
     |--------------------------------------------------------------------------
     */
 
-    Route::resource(
-        'suppliers',
-        'SupplierController'
-    )->middleware('permission:suppliers.view');
+    Route::get('suppliers', 'SupplierController@index')
+        ->middleware('permission:suppliers.view')
+        ->name('suppliers.index');
+    Route::get('suppliers/create', 'SupplierController@create')
+        ->middleware('permission:suppliers.create')
+        ->name('suppliers.create');
+    Route::post('suppliers', 'SupplierController@store')
+        ->middleware('permission:suppliers.create')
+        ->name('suppliers.store');
+    Route::get('suppliers/{supplier}/edit', 'SupplierController@edit')
+        ->middleware('permission:suppliers.edit')
+        ->name('suppliers.edit');
+    Route::put('suppliers/{supplier}', 'SupplierController@update')
+        ->middleware('permission:suppliers.edit')
+        ->name('suppliers.update');
+    Route::patch('suppliers/{supplier}', 'SupplierController@update')
+        ->middleware('permission:suppliers.edit');
+    Route::delete('suppliers/{supplier}', 'SupplierController@destroy')
+        ->middleware('permission:suppliers.delete')
+        ->name('suppliers.destroy');
+    Route::get('suppliers/{supplier}', 'SupplierController@show')
+        ->middleware('permission:suppliers.view')
+        ->name('suppliers.show');
 
 
     /*
@@ -377,6 +400,17 @@ Route::middleware('auth')->group(function () {
     Route::resource('purchase-orders', 'PurchaseOrderController')
         ->only(['index', 'create', 'store', 'show'])
         ->middleware('permission:purchase.view');
+    Route::get('purchase-orders/{purchaseOrder}/edit', 'PurchaseOrderController@edit')
+        ->middleware('permission:purchase.edit')
+        ->name('purchase-orders.edit');
+    Route::put('purchase-orders/{purchaseOrder}', 'PurchaseOrderController@update')
+        ->middleware('permission:purchase.edit')
+        ->name('purchase-orders.update');
+    Route::post('purchase-orders/{purchaseOrder}/release', 'PurchaseOrderController@release')
+        ->middleware('permission:purchase.approve')
+        ->name('purchase-orders.release');
+    Route::get('quotations/{quotation}/bill-copy', 'QuotationController@billCopy')
+        ->name('quotations.bill-copy');
     Route::get('purchase-orders/{purchaseOrder}/receive', 'GoodsReceiptController@create')
         ->name('goods-receipts.create');
     Route::post('purchase-orders/{purchaseOrder}/receive', 'GoodsReceiptController@store')

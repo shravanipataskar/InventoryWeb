@@ -47,7 +47,7 @@
             <input type="hidden" name="status" value="{{ $listingStatus }}">
             <div class="stock-inward-filter-row">
                 <label class="stock-inward-search">
-                    <span aria-hidden="true">⌕</span>
+                    <span class="search-glyph" aria-hidden="true">⌕</span>
                     <input type="search" name="search" value="{{ $filters['search'] ?? '' }}" placeholder="Search product, supplier, invoice or inward no..." aria-label="Search stock inward">
                 </label>
                 <label class="stock-inward-date"><span>From</span><input type="date" name="date_from" value="{{ $filters['date_from'] ?? '' }}" aria-label="From date"></label>
@@ -89,7 +89,7 @@
                         @endforeach
                     </select>
                 </label>
-                <button class="button button-primary stock-inward-search-button" type="submit"><span aria-hidden="true">⌕</span> Search</button>
+                <button class="button button-primary stock-inward-search-button" type="submit"><span class="search-button-glyph" aria-hidden="true">⌕</span> Search</button>
                 <a class="button button-light stock-inward-reset-button" href="{{ route('stock-inwards.index', ['status' => $listingStatus]) }}"><span aria-hidden="true">↻</span> Reset</a>
                 <nav class="stock-inward-status-tabs" aria-label="Active status">
                     <a class="{{ $listingStatus === 'active' ? 'is-selected' : '' }}" href="{{ route('stock-inwards.index', array_merge(request()->query(), ['status' => 'active'])) }}" {{ $listingStatus === 'active' ? 'aria-current=page' : '' }}>Active</a>

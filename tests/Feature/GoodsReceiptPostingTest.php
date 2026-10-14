@@ -5,11 +5,13 @@ namespace Tests\Feature;
 use App\Category;
 use App\GoodsReceipt;
 use App\Product;
+use App\ProcurementAuditLog;
 use App\PurchaseOrder;
 use App\StockInward;
 use App\Supplier;
 use App\Unit;
 use App\User;
+use App\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
@@ -19,6 +21,35 @@ use Tests\TestCase;
 class GoodsReceiptPostingTest extends TestCase
 {
     use DatabaseTransactions;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->withoutMiddleware(VerifyCsrfToken::class);
+    }
+
+    public function test_purchase_order_detail_displays_the_order_summary_and_sections()
+    {
+        list($user, $supplier, $product, $store, $purchaseOrder) = $this->makePurchase();
+        $user->role = 'ADMIN';
+        $user->save();
+        $this->actingAs($user);
+
+        $this->get(route('purchase-orders.show', $purchaseOrder->id))
+            ->assertOk()
+            ->assertSee($purchaseOrder->po_number)
+            ->assertSee('Total Order Value')
+            ->assertSee('Total Items')
+            ->assertSee('Pending Value')
+            ->assertSee('Supplier Information')
+            ->assertSee('Order Information')
+            ->assertSee('Order Items')
+            ->assertSee('Goods Received')
+            ->assertSee('Supplier Bills &amp; Payments', false)
+            ->assertSee('Audit History')
+            ->assertSee($supplier->name)
+            ->assertSee($product->name);
+    }
 
     public function test_posting_goods_received_creates_one_inward_and_updates_stock_once()
     {
@@ -65,7 +96,7 @@ class GoodsReceiptPostingTest extends TestCase
         $this->get(route('purchase-orders.show', $purchaseOrder->id))
             ->assertOk()
             ->assertSee($receipt->grn_number)
-            ->assertSee('Goods received')
+            ->assertSee('Goods Received')
             ->assertSee('RECEIVED ITEMS')
             ->assertSee($product->name)
             ->assertSee('Accepted: 4.00')
@@ -152,12 +183,81 @@ class GoodsReceiptPostingTest extends TestCase
         ])->assertRedirect();
 
         $order = PurchaseOrder::where('supplier_id', $supplier->id)
-            ->where('status', 'approved')
+            ->where('status', 'draft')
             ->orderByDesc('id')
             ->firstOrFail();
         $this->assertSame('PO-' . now()->format('Ymd') . '-' . str_pad($order->id, 3, '0', STR_PAD_LEFT), $order->po_number);
         $this->assertSame(3.0, (float) $order->items()->firstOrFail()->ordered_quantity);
         $this->assertSame(55000.0, (float) $order->items()->firstOrFail()->purchase_rate);
+    }
+
+    public function test_new_purchase_order_cannot_be_received_until_released()
+    {
+        list($user, $supplier, $product, $store) = $this->makePurchase();
+        $user->role = 'ADMIN';
+        $user->save();
+        $this->actingAs($user);
+        $this->post(route('purchase-orders.store'), [
+            'supplier_id' => $supplier->id,
+            'store_id' => $store,
+            'order_date' => now()->toDateString(),
+            'items' => [[
+                'product_id' => $product->id,
+                'ordered_quantity' => 3,
+                'purchase_rate' => 55000,
+            ]],
+        ])->assertRedirect();
+        $order = PurchaseOrder::where('supplier_id', $supplier->id)->orderByDesc('id')->firstOrFail();
+        $this->assertSame('draft', $order->status);
+
+        $this->get(route('goods-receipts.create', $order->id))->assertRedirect(route('purchase-orders.show', $order->id));
+        $this->assertSame(0, GoodsReceipt::where('purchase_order_id', $order->id)->count());
+
+        $this->post(route('purchase-orders.release', $order->id))->assertRedirect();
+        $this->assertSame('released', $order->fresh()->status);
+        $this->assertSame($user->id, (int) $order->fresh()->released_by);
+        $this->assertNotNull($order->fresh()->released_at);
+        $this->assertTrue(ProcurementAuditLog::where('entity_type', 'PurchaseOrder')->where('entity_id', $order->id)->where('event', 'po_released')->exists());
+        $this->get(route('goods-receipts.create', $order->id))->assertOk();
+    }
+
+    public function test_draft_purchase_order_can_be_edited_and_recalculates_tax_totals()
+    {
+        list($user, $supplier, $product, $store) = $this->makePurchase();
+        $this->actingAs($user);
+        $payload = [
+            'supplier_id' => $supplier->id,
+            'store_id' => $store,
+            'order_date' => now()->toDateString(),
+            'expected_date' => now()->addDays(5)->toDateString(),
+            'items' => [[
+                'product_id' => $product->id,
+                'ordered_quantity' => 2,
+                'purchase_rate' => 100,
+                'tax_percent' => 18,
+            ]],
+        ];
+
+        $this->post(route('purchase-orders.store'), $payload)->assertRedirect();
+        $order = PurchaseOrder::where('supplier_id', $supplier->id)->where('status', 'draft')->orderByDesc('id')->firstOrFail();
+        $this->get(route('purchase-orders.edit', $order->id))
+            ->assertOk()
+            ->assertSee('Save Draft Changes')
+            ->assertSee('GST %');
+
+        $payload['items'][0]['ordered_quantity'] = 4;
+        $this->put(route('purchase-orders.update', $order->id), $payload)
+            ->assertRedirect(route('purchase-orders.show', $order->id));
+        $order->refresh();
+
+        $this->assertSame(400.0, (float) $order->subtotal);
+        $this->assertSame(72.0, (float) $order->tax_amount);
+        $this->assertSame(472.0, (float) $order->grand_total);
+        $this->assertSame(4.0, (float) $order->items()->firstOrFail()->ordered_quantity);
+        $this->assertSame(18.0, (float) $order->items()->firstOrFail()->tax_percent);
+
+        $this->post(route('purchase-orders.release', $order->id))->assertRedirect();
+        $this->get(route('purchase-orders.edit', $order->id))->assertNotFound();
     }
 
     public function test_invalid_receipt_quantities_do_not_create_stock_or_receipt_rows()
@@ -201,7 +301,7 @@ class GoodsReceiptPostingTest extends TestCase
 
     private function makePurchase()
     {
-        $user = $this->makeUser('store_manager');
+        $user = $this->makeUser('ADMIN');
         $supplier = Supplier::create([
             'supplier_code' => 'GRN-' . strtoupper(Str::random(8)),
             'name' => 'Goods Receipt Supplier',

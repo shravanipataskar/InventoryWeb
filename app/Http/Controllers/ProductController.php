@@ -12,6 +12,7 @@ use App\Unit;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -112,25 +113,34 @@ class ProductController extends Controller
             }
         }
 
-        Product::create([
-            'product_code' => $productCode,
-            'name' => $request->name,
-            'hall_id' => $request->hall_id,
-            'rack_id' => $request->input('rack_id') ?: null,
-            'shelf_id' => $request->input('shelf_id') ?: null,
-            'category_id' => $request->category_id,
-            'company_id' => $request->input('company_id') ?: null,
-            'unit_id' => $request->unit_id,
-            'barcode' => $barcode,
-            'image' => $imagePath,
-            'minimum_stock' => $request->minimum_stock,
-            'reorder_level' => $request->reorder_level,
-            'reorder_quantity' => $request->reorder_quantity,
-            'track_batch' => $request->boolean('track_batch'),
-            'track_serial' => $request->boolean('track_serial'),
-            'description' => $request->description,
-            'is_active' => 1,
-        ]);
+        try {
+            Product::create([
+                'product_code' => $productCode,
+                'name' => $request->name,
+                'hall_id' => $request->hall_id,
+                'rack_id' => $request->input('rack_id') ?: null,
+                'shelf_id' => $request->input('shelf_id') ?: null,
+                'category_id' => $request->category_id,
+                'company_id' => $request->input('company_id') ?: null,
+                'unit_id' => $request->unit_id,
+                'barcode' => $barcode,
+                'image' => $imagePath,
+                'minimum_stock' => $request->minimum_stock,
+                'reorder_level' => $request->reorder_level,
+                'reorder_quantity' => $request->reorder_quantity,
+                'track_batch' => $request->boolean('track_batch'),
+                'track_serial' => $request->boolean('track_serial'),
+                'description' => $request->description,
+                'is_active' => 1,
+            ]);
+        } catch (\Throwable $exception) {
+            if ($imagePath && !Storage::disk('public')->delete($imagePath)) {
+                Log::warning('Unable to remove product image after a failed product save.', [
+                    'image_path' => $imagePath,
+                ]);
+            }
+            throw $exception;
+        }
 
         return redirect()
             ->route('products.index')
@@ -167,6 +177,13 @@ class ProductController extends Controller
         ));
     }
 
+    public function show($id)
+    {
+        $product = Product::with(['category', 'unit', 'hall', 'rack', 'shelf'])->findOrFail($id);
+
+        return view('products.show', compact('product'));
+    }
+
     public function update(Request $request, $id)
     {
         $product = Product::findOrFail($id);
@@ -197,22 +214,32 @@ class ProductController extends Controller
             throw new \RuntimeException('The product image could not be saved.');
         }
 
-        $product->update([
-            'name' => $request->name,
-            'hall_id' => $request->hall_id,
-            'rack_id' => $request->input('rack_id') ?: null,
-            'shelf_id' => $request->input('shelf_id') ?: null,
-            'category_id' => $request->category_id,
-            'company_id' => $request->input('company_id') ?: null,
-            'unit_id' => $request->unit_id,
-            'image' => $newImage ?: ($request->boolean('remove_image') ? null : $oldImage),
-            'minimum_stock' => $request->minimum_stock,
-            'reorder_level' => $request->reorder_level,
-            'reorder_quantity' => $request->reorder_quantity,
-            'track_batch' => $request->boolean('track_batch'),
-            'track_serial' => $request->boolean('track_serial'),
-            'description' => $request->description,
-        ]);
+        try {
+            $product->update([
+                'name' => $request->name,
+                'hall_id' => $request->hall_id,
+                'rack_id' => $request->input('rack_id') ?: null,
+                'shelf_id' => $request->input('shelf_id') ?: null,
+                'category_id' => $request->category_id,
+                'company_id' => $request->input('company_id') ?: null,
+                'unit_id' => $request->unit_id,
+                'image' => $newImage ?: ($request->boolean('remove_image') ? null : $oldImage),
+                'minimum_stock' => $request->minimum_stock,
+                'reorder_level' => $request->reorder_level,
+                'reorder_quantity' => $request->reorder_quantity,
+                'track_batch' => $request->boolean('track_batch'),
+                'track_serial' => $request->boolean('track_serial'),
+                'description' => $request->description,
+            ]);
+        } catch (\Throwable $exception) {
+            if ($newImage && !Storage::disk('public')->delete($newImage)) {
+                Log::warning('Unable to remove replacement product image after a failed product update.', [
+                    'product_id' => $product->id,
+                    'image_path' => $newImage,
+                ]);
+            }
+            throw $exception;
+        }
 
         if ($oldImage && ($newImage || $request->boolean('remove_image'))) {
             if (!Storage::disk('public')->delete($oldImage)) {

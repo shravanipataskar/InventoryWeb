@@ -12,10 +12,10 @@
         <div class="form-alert" role="alert"><strong>Please check the form:</strong><ul>@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
     @endif
     <section class="form-card">
-        <form action="{{ route('customers.store') }}" method="POST">
+        <form action="{{ route('customers.store') }}" method="POST" enctype="multipart/form-data" data-customer-form>
             @csrf
             @include('customers._fields')
-            <div class="form-actions"><a class="button button-light" href="{{ route('customers.index') }}">Cancel</a><button class="button button-primary" type="submit">Save Customer</button></div>
+            <div class="form-actions"><a class="button button-light" href="{{ route('customers.index') }}">Cancel</a><button class="button button-primary" type="submit" data-customer-submit data-loading-label="Saving customer...">Save Customer</button></div>
         </form>
     </section>
 @endsection

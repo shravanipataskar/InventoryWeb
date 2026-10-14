@@ -55,7 +55,7 @@
                     @foreach ($filters as $key => $value)
                         @if ($key !== 'search' && $value !== null && $value !== '')<input type="hidden" name="{{ $key }}" value="{{ $value }}">@endif
                     @endforeach
-                    <span aria-hidden="true">⌕</span><input type="search" name="search" value="{{ $filters['search'] }}" placeholder="Search product, SKU, barcode..." aria-label="Search stock valuation">
+                    <span class="search-glyph" aria-hidden="true">⌕</span><input type="search" name="search" value="{{ $filters['search'] }}" placeholder="Search product, SKU, barcode..." aria-label="Search stock valuation">
                     <button type="submit">Search</button>
                 </form>
                 <details class="valuation-columns-menu"><summary class="button button-light">Columns⌄</summary><div>

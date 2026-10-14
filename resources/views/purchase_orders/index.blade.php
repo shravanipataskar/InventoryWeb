@@ -10,7 +10,6 @@
             <h1>Purchase Orders</h1>
             <p>Track ordered quantities and receive goods into a selected store.</p>
         </div>
-        <a class="button button-primary" href="{{ route('purchase-orders.create') }}"><span class="button-plus">+</span> New Purchase Order</a>
     </div>
 
     @if (session('success'))<div class="inventory-notice notice-in" role="status"><span class="notice-symbol">✓</span><span>{{ session('success') }}</span></div>@endif

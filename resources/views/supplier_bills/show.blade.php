@@ -32,7 +32,7 @@
 
     <div class="stats-grid">
         @include('components.stat-card', ['label' => 'Payable total', 'value' => '₹' . number_format((float) $bill->total_amount, 2), 'note' => 'Invoice as printed: ₹' . number_format((float) $bill->invoice_total, 2), 'icon' => 'icon-tray-in', 'tone' => 'tone-teal'])
-        @include('components.stat-card', ['label' => 'Paid', 'value' => '₹' . number_format((float) $bill->paid_amount, 2), 'note' => 'Completed payments only', 'icon' => 'icon-check', 'tone' => 'tone-blue'])
+        @include('components.stat-card', ['label' => 'Paid', 'value' => '₹' . number_format((float) $bill->paid_amount, 2), 'note' => 'PO advances and completed payments', 'icon' => 'icon-check', 'tone' => 'tone-blue'])
         @include('components.stat-card', ['label' => 'Outstanding', 'value' => '₹' . number_format((float) $bill->outstanding_amount, 2), 'note' => '₹' . \App\Support\Money::fromMinor($reservedMinor) . ' reserved by pending requests', 'icon' => 'icon-alert', 'tone' => $bill->isOverdue() ? 'tone-red' : 'tone-gold'])
     </div>
 
@@ -112,13 +112,26 @@
                     <td><a class="button button-small button-light" href="{{ route('supplier-payments.show', $allocation->payment->id) }}">View</a></td>
                 </tr>
             @empty
+                @if ($bill->purchasePaymentAllocations->isEmpty())
                 <tr><td colspan="7">No payments have been requested for this bill.</td></tr>
+                @endif
             @endforelse
+            @foreach ($bill->purchasePaymentAllocations as $allocation)
+                <tr>
+                    <td><span class="unit-code">PO Advance #{{ $allocation->purchase_payment_id }}</span></td>
+                    <td>{{ $allocation->purchasePayment->payment_method }}</td>
+                    <td>{{ \Carbon\Carbon::parse($allocation->purchasePayment->payment_date)->format('d M Y') }}</td>
+                    <td>{{ $allocation->purchasePayment->reference_number ?: '—' }}</td>
+                    <td>₹{{ number_format((float) $allocation->amount, 2) }}</td>
+                    <td>@include('procurement._status', ['status' => $allocation->purchasePayment->status])</td>
+                    <td><a class="button button-small button-light" href="{{ route('purchase-orders.show', $bill->purchase_order_id) }}">View PO</a></td>
+                </tr>
+            @endforeach
             </tbody>
         </table></div>
     </section>
 
-    @if (in_array($bill->status, array_merge(\App\SupplierBill::EDITABLE_STATUSES, [\App\SupplierBill::STATUS_APPROVED]), true) && $user->hasPermission('bills', 'approve') && (float) $bill->paid_amount == 0 && $reservedMinor === 0)
+    @if ($canCancel && $user->hasPermission('bills', 'approve'))
         <section class="panel listing-panel">
             <div class="panel-heading"><h2>Cancel bill</h2><p>Cancelling keeps the record and its history and frees the invoice number for a corrected bill.</p></div>
             <form class="inline-form" method="POST" action="{{ route('supplier-bills.cancel', $bill->id) }}" data-submit-once>@csrf<input class="field-control" type="text" name="reason" placeholder="Cancellation reason" required><button class="button button-small button-danger" type="submit">Cancel Bill</button></form>

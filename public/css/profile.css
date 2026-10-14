@@ -32,3 +32,17 @@
 .profile-dropdown-item{width:100%;box-sizing:border-box;display:flex;align-items:center;gap:12px;padding:11px 10px;border:0;border-radius:9px;background:transparent;text-decoration:none;color:#294552;font-size:13px;cursor:pointer;text-align:left}
 .profile-dropdown-item:hover{background:#f4f8f8}.profile-dropdown-icon{width:25px;text-align:center;color:#168f95;font-size:17px}.profile-logout{color:#df4f4f}.profile-logout .profile-dropdown-icon{color:#df4f4f}
 @media(max-width:800px){.profile-page{padding:25px 18px}.profile-grid{grid-template-columns:1fr}.profile-security-card{align-items:flex-start;flex-direction:column}.profile-trigger-name{display:none}}
+.topbar .profile-menu{position:relative;z-index:1001;flex:0 0 auto}
+.topbar .profile-trigger{min-height:42px;max-width:220px;padding:4px 9px;border:1px solid #e4eaee;border-radius:12px;background:#fff;gap:9px;transition:background .16s ease,border-color .16s ease,box-shadow .16s ease}
+.topbar .profile-trigger:hover,.topbar .profile-trigger[aria-expanded=true]{border-color:#cbd9df;background:#f8fbfc;box-shadow:0 2px 8px rgba(24,51,64,.06)}
+.topbar .profile-trigger-name{max-width:124px;overflow:hidden;color:#294552;text-overflow:ellipsis;white-space:nowrap}
+.topbar .profile-avatar{flex:0 0 32px;width:32px;height:32px;border-radius:10px}
+.topbar .profile-chevron{margin-left:1px;font-size:14px;line-height:1}
+.topbar .profile-dropdown{display:none;position:absolute;top:calc(100% + 10px);right:0;z-index:1002;width:min(320px,calc(100vw - 24px));max-height:calc(100vh - 92px);overflow-y:auto;box-sizing:border-box;padding:10px;background:#fff;border:1px solid #e1e8ed;border-radius:14px;box-shadow:0 18px 48px rgba(26,47,62,.18)}
+.topbar .profile-dropdown.show{display:block}
+.topbar .profile-dropdown-header{min-width:0;align-items:flex-start;padding:10px}
+.topbar .profile-dropdown-header>div{min-width:0;overflow-wrap:anywhere}
+.topbar .profile-dropdown-header strong{color:#213b4b;line-height:1.4}
+.topbar .profile-dropdown-header small{line-height:1.45}
+.topbar .profile-dropdown-item{min-height:42px}
+@media(max-width:800px){.topbar .profile-trigger{max-width:44px;padding:5px}.topbar .profile-trigger-name,.topbar .profile-chevron{display:none}.topbar .profile-dropdown{right:0}}

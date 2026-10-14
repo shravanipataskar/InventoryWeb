@@ -31,7 +31,7 @@ class GoodsReceiptController extends Controller
         $purchaseOrder = PurchaseOrder::with(['supplier', 'items.product.unit'])
             ->findOrFail($purchaseOrderId);
 
-        if (!in_array($purchaseOrder->status, ['ordered', 'pending', 'approved', 'partially_received'], true)) {
+        if (!in_array($purchaseOrder->status, PurchaseOrder::RECEIVABLE_STATUSES, true)) {
             return redirect()->route('purchase-orders.show', $purchaseOrder->id)
                 ->with('error', 'This purchase order has no remaining quantities to receive.');
         }
@@ -70,7 +70,7 @@ class GoodsReceiptController extends Controller
         try {
             $receipt = DB::transaction(function () use ($validated, $purchaseOrderId) {
             $order = PurchaseOrder::lockForUpdate()->with('items')->findOrFail($purchaseOrderId);
-            if (!in_array($order->status, ['ordered', 'pending', 'approved', 'partially_received'], true)) {
+            if (!in_array($order->status, PurchaseOrder::RECEIVABLE_STATUSES, true)) {
                 throw ValidationException::withMessages([
                     'items' => 'This purchase order is already fully received or cancelled.',
                 ]);

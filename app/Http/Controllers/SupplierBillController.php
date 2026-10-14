@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\ProcurementAuditLog;
 use App\PurchaseOrder;
+use App\Services\PurchasePaymentAllocationService;
 use App\Services\SupplierBillService;
 use App\Services\SupplierPaymentService;
 use App\Supplier;
@@ -22,11 +23,17 @@ class SupplierBillController extends Controller
 {
     private $bills;
     private $payments;
+    private $purchasePayments;
 
-    public function __construct(SupplierBillService $bills, SupplierPaymentService $payments)
+    public function __construct(
+        SupplierBillService $bills,
+        SupplierPaymentService $payments,
+        PurchasePaymentAllocationService $purchasePayments
+    )
     {
         $this->bills = $bills;
         $this->payments = $payments;
+        $this->purchasePayments = $purchasePayments;
     }
 
     public function index(Request $request)
@@ -175,12 +182,18 @@ class SupplierBillController extends Controller
     {
         $bill = SupplierBill::with([
             'supplier', 'purchaseOrder.quotation', 'items.product.unit', 'items.purchaseOrderItem',
-            'allocations.payment', 'creator', 'approver',
+            'allocations.payment', 'purchasePaymentAllocations.purchasePayment', 'creator', 'approver',
         ])->findOrFail($id);
         $history = ProcurementAuditLog::forEntity($bill)->get();
         $reservedMinor = $this->payments->reservedMinor($bill->id);
+        $canCancel = in_array($bill->status, array_merge(
+            SupplierBill::EDITABLE_STATUSES,
+            [SupplierBill::STATUS_APPROVED, SupplierBill::STATUS_PARTIALLY_PAID, SupplierBill::STATUS_PAID]
+        ), true)
+            && $this->purchasePayments->completedSupplierPaymentsMinorForBill($bill->id) === 0
+            && $reservedMinor === 0;
 
-        return view('supplier_bills.show', compact('bill', 'history', 'reservedMinor'));
+        return view('supplier_bills.show', compact('bill', 'history', 'reservedMinor', 'canCancel'));
     }
 
     public function edit($id)
@@ -257,8 +270,10 @@ class SupplierBillController extends Controller
     public function approve(Request $request, $id)
     {
         $validated = $request->validate(['reason' => 'nullable|string|max:2000']);
+        $orderId = SupplierBill::where('id', $id)->value('purchase_order_id');
 
-        $bill = DB::transaction(function () use ($id, $validated) {
+        $bill = DB::transaction(function () use ($id, $orderId, $validated) {
+            $order = PurchaseOrder::lockForUpdate()->findOrFail($orderId);
             $bill = SupplierBill::lockForUpdate()->findOrFail($id);
             $this->assertNotCreator($bill->created_by, 'approve');
             if (!in_array($bill->status, SupplierBill::EDITABLE_STATUSES, true)) {
@@ -281,6 +296,7 @@ class SupplierBillController extends Controller
             ProcurementAuditLog::record($bill, $isException ? 'bill_exception_approved' : 'bill_approved', $previous, $bill->status, $validated['reason'] ?? null, [
                 'match_status' => $bill->match_status,
             ]);
+            $this->purchasePayments->allocateForOrder($order);
 
             return $bill;
         });
@@ -302,7 +318,10 @@ class SupplierBillController extends Controller
 
     public function cancel(Request $request, $id)
     {
-        return $this->closeBill($request, $id, SupplierBill::STATUS_CANCELLED, array_merge(SupplierBill::EDITABLE_STATUSES, [SupplierBill::STATUS_APPROVED]), 'bill_cancelled', 'Bill cancelled.');
+        return $this->closeBill($request, $id, SupplierBill::STATUS_CANCELLED, array_merge(
+            SupplierBill::EDITABLE_STATUSES,
+            [SupplierBill::STATUS_APPROVED, SupplierBill::STATUS_PARTIALLY_PAID, SupplierBill::STATUS_PAID]
+        ), 'bill_cancelled', 'Bill cancelled.');
     }
 
     public function attachment($id)
@@ -339,22 +358,31 @@ class SupplierBillController extends Controller
     private function closeBill(Request $request, $id, $toStatus, array $fromStatuses, $event, $message)
     {
         $validated = $request->validate(['reason' => 'required|string|max:2000']);
+        $orderId = SupplierBill::where('id', $id)->value('purchase_order_id');
 
-        $bill = DB::transaction(function () use ($id, $validated, $toStatus, $fromStatuses, $event) {
+        $bill = DB::transaction(function () use ($id, $orderId, $validated, $toStatus, $fromStatuses, $event) {
+            $order = PurchaseOrder::lockForUpdate()->findOrFail($orderId);
             $bill = SupplierBill::lockForUpdate()->findOrFail($id);
             if (!in_array($bill->status, $fromStatuses, true)) {
                 throw ValidationException::withMessages(['bill' => 'This action is not allowed for a bill that is ' . str_replace('_', ' ', $bill->status) . '.']);
             }
-            if (Money::toMinor($bill->paid_amount) > 0 || $this->payments->reservedMinor($bill->id) > 0) {
+            if ($this->purchasePayments->completedSupplierPaymentsMinorForBill($bill->id) > 0
+                || $this->payments->reservedMinor($bill->id) > 0) {
                 throw ValidationException::withMessages(['bill' => 'Cancel or reverse the payments linked to this bill first.']);
             }
+            $releasedAdvance = Money::toMinor($bill->purchasePaymentAllocations()->sum('amount'));
+            $bill->purchasePaymentAllocations()->delete();
+            $bill->paid_amount = 0;
             $previous = $bill->status;
             $bill->status = $toStatus;
             $bill->status_reason = $validated['reason'];
             // Release the invoice number so a corrected invoice can be recorded again.
             $bill->duplicate_key = null;
             $bill->save();
-            ProcurementAuditLog::record($bill, $event, $previous, $toStatus, $validated['reason']);
+            ProcurementAuditLog::record($bill, $event, $previous, $toStatus, $validated['reason'], [
+                'released_purchase_advance' => Money::fromMinor($releasedAdvance),
+            ]);
+            $this->purchasePayments->allocateForOrder($order);
 
             return $bill;
         });

@@ -1189,10 +1189,18 @@ class WorkspaceController extends Controller
             $adjustmentCount = (clone $adjustmentQuery)->count();
             $netAdjustmentQuery = DB::table('stock_adjustments')
                 ->selectRaw("COALESCE(SUM(CASE WHEN LOWER(type) LIKE '%decreas%' OR LOWER(type) LIKE '%out%' THEN -quantity ELSE quantity END), 0) as net");
+            $increaseQuery = DB::table('stock_adjustments')
+                ->whereRaw("LOWER(type) NOT LIKE '%decreas%' AND LOWER(type) NOT LIKE '%out%'");
+            $decreaseQuery = DB::table('stock_adjustments')
+                ->whereRaw("LOWER(type) LIKE '%decreas%' OR LOWER(type) LIKE '%out%'");
             if (Schema::hasColumn('stock_adjustments', 'is_active')) {
                 $netAdjustmentQuery->where('is_active', true);
+                $increaseQuery->where('is_active', true);
+                $decreaseQuery->where('is_active', true);
             }
             $netAdjustment = $netAdjustmentQuery->value('net');
+            $increaseQuantity = $increaseQuery->sum('quantity');
+            $decreaseQuantity = $decreaseQuery->sum('quantity');
         } else {
             $adjustmentQuery = DB::table('stock_adjustments')
                 ->join('products', 'products.id', '=', 'stock_adjustments.product_id')
@@ -1209,11 +1217,46 @@ class WorkspaceController extends Controller
             $netAdjustment = DB::table('stock_adjustments')
                 ->where('is_active', true)
                 ->sum('adjustment_quantity');
+            $increaseQuantity = DB::table('stock_adjustments')
+                ->where('is_active', true)
+                ->where('adjustment_quantity', '>', 0)
+                ->sum('adjustment_quantity');
+            $decreaseQuantity = abs(DB::table('stock_adjustments')
+                ->where('is_active', true)
+                ->where('adjustment_quantity', '<', 0)
+                ->sum('adjustment_quantity'));
         }
 
-        $adjustments = $adjustmentQuery
+        $adjustmentTypes = Schema::hasColumn('stock_adjustments', 'adjustment_number')
+            ? DB::table('stock_adjustments')->whereNotNull('type')->distinct()->orderBy('type')->pluck('type')
+            : collect(['Increase', 'Decrease']);
+        $adjustmentProducts = DB::table('products')->orderBy('name')->pluck('name');
+        $adjustmentFilters = request();
+        $adjustmentRowsQuery = DB::query()->fromSub($adjustmentQuery, 'adjustments');
+        if ($adjustmentFilters->filled('search')) {
+            $search = trim($adjustmentFilters->input('search'));
+            $adjustmentRowsQuery->where(function ($query) use ($search) {
+                $query->where('reference_number', 'like', '%' . $search . '%')
+                    ->orWhere('product_name', 'like', '%' . $search . '%')
+                    ->orWhere('reason', 'like', '%' . $search . '%');
+            });
+        }
+        if ($adjustmentFilters->filled('type')) {
+            $adjustmentRowsQuery->where('adjustment_type', $adjustmentFilters->input('type'));
+        }
+        if ($adjustmentFilters->filled('product')) {
+            $adjustmentRowsQuery->where('product_name', $adjustmentFilters->input('product'));
+        }
+        if ($adjustmentFilters->filled('date_from')) {
+            $adjustmentRowsQuery->whereDate('adjustment_date', '>=', $adjustmentFilters->input('date_from'));
+        }
+        if ($adjustmentFilters->filled('date_to')) {
+            $adjustmentRowsQuery->whereDate('adjustment_date', '<=', $adjustmentFilters->input('date_to'));
+        }
+        $adjustments = $adjustmentRowsQuery
             ->orderBy('adjustment_date', 'desc')
-            ->paginate(20);
+            ->paginate(20)
+            ->appends($adjustmentFilters->query());
 
         return $this->recordsPage(
             'Stock Adjustments',
@@ -1223,7 +1266,7 @@ class WorkspaceController extends Controller
             [
                 ['label' => 'Reference', 'key' => 'reference_number'],
                 ['label' => 'Product', 'key' => 'product_name'],
-                ['label' => 'Type', 'key' => 'adjustment_type'],
+                ['label' => 'Type', 'key' => 'adjustment_type', 'type' => 'adjustment-type'],
                 ['label' => 'Change', 'key' => 'adjustment_quantity', 'type' => 'quantity'],
                 ['label' => 'Reason', 'key' => 'reason'],
                 ['label' => 'Date', 'key' => 'adjustment_date', 'type' => 'date'],
@@ -1232,6 +1275,16 @@ class WorkspaceController extends Controller
                 'label' => 'Recorded Adjustments',
                 'value' => $adjustmentCount,
                 'icon' => 'icon-settings',
+                'tone' => 'blue',
+            ], [
+                'label' => 'Total Increases',
+                'value' => number_format($increaseQuantity, 2),
+                'icon' => 'icon-tray-in',
+                'tone' => 'green',
+            ], [
+                'label' => 'Total Decreases',
+                'value' => number_format($decreaseQuantity, 2),
+                'icon' => 'icon-tray-out',
                 'tone' => 'orange',
             ], [
                 'label' => 'Net Quantity Change',
@@ -1240,7 +1293,11 @@ class WorkspaceController extends Controller
                 'tone' => 'purple',
             ]],
             'stock-adjustments.create',
-            'Record Stock Adjustment'
+            'Record Stock Adjustment',
+            [
+                'adjustmentTypes' => $adjustmentTypes,
+                'adjustmentProducts' => $adjustmentProducts,
+            ]
         );
     }
 
@@ -1416,10 +1473,34 @@ class WorkspaceController extends Controller
             $movementsQuery->where(function ($query) use ($search) {
                 $query->where('reference', 'like', '%' . $search . '%')
                     ->orWhere('product_name', 'like', '%' . $search . '%')
+                    ->orWhere('location_name', 'like', '%' . $search . '%')
                     ->orWhere('movement_type', 'like', '%' . $search . '%');
             });
         }
 
+        $movementTypes = ['Opening Stock', 'Stock Inward', 'Stock Outward', 'Stock Transfer', 'Transfer In', 'Transfer Out', 'Stock Adjustment'];
+        $movementProducts = Product::orderBy('name')->pluck('name');
+        $movementLocations = DB::table('stores')->orderBy('name')->pluck('name');
+        if ($request->filled('type')) {
+            $movementsQuery->where('movement_type', $request->input('type'));
+        }
+        if ($request->filled('product')) {
+            $movementsQuery->where('product_name', $request->input('product'));
+        }
+        if ($request->filled('location')) {
+            $movementsQuery->where('location_name', $request->input('location'));
+        }
+        if ($request->filled('date_from')) {
+            $movementsQuery->whereDate('movement_date', '>=', $request->input('date_from'));
+        }
+        if ($request->filled('date_to')) {
+            $movementsQuery->whereDate('movement_date', '<=', $request->input('date_to'));
+        }
+
+        $netMovement = DB::query()
+            ->fromSub(clone $movementRows, 'movement_totals')
+            ->selectRaw("COALESCE(SUM(CASE WHEN movement_type IN ('Stock Outward', 'Transfer Out') THEN -quantity WHEN movement_type = 'Stock Transfer' THEN 0 ELSE quantity END), 0) as net")
+            ->value('net');
         $movements = $movementsQuery
             ->orderBy('movement_date', 'desc')
             ->paginate(20)
@@ -1431,15 +1512,14 @@ class WorkspaceController extends Controller
             'A unified chronological view of opening, received, issued, transferred, and adjusted stock.',
             $movements,
             [
-                ['label' => 'Type', 'key' => 'movement_type'],
+                ['label' => 'Type', 'key' => 'movement_type', 'type' => 'movement-type'],
                 ['label' => 'Reference', 'key' => 'reference'],
                 ['label' => 'Product', 'key' => 'product_name'],
-                ['label' => 'Location', 'key' => 'location_name'],
                 ['label' => 'Location', 'key' => 'location_name'],
                 ['label' => 'Quantity', 'key' => 'quantity', 'type' => 'quantity'],
                 ['label' => 'Balance', 'key' => 'balance_quantity', 'type' => 'quantity'],
                 ['label' => 'Value', 'key' => 'amount', 'type' => 'currency'],
-                ['label' => 'Date', 'key' => 'movement_date', 'type' => 'date'],
+                ['label' => 'Date & Time', 'key' => 'movement_date', 'type' => 'datetime'],
             ],
             [[
                 'label' => 'Inward Records',
@@ -1452,11 +1532,28 @@ class WorkspaceController extends Controller
                 'icon' => 'icon-tray-out',
                 'tone' => 'orange',
             ], [
-                'label' => 'Transfers & Adjustments',
-                'value' => $this->transferCount() + $this->adjustmentCount(),
+                'label' => 'Transfers',
+                'value' => $this->transferCount(),
                 'icon' => 'icon-chart',
                 'tone' => 'purple',
-            ]]
+            ], [
+                'label' => 'Adjustments',
+                'value' => $this->adjustmentCount(),
+                'icon' => 'icon-settings',
+                'tone' => 'orange',
+            ], [
+                'label' => 'Net Movement',
+                'value' => number_format($netMovement, 2),
+                'icon' => 'icon-chart',
+                'tone' => 'pink',
+            ]],
+            null,
+            null,
+            [
+                'movementTypes' => $movementTypes,
+                'movementProducts' => $movementProducts,
+                'movementLocations' => $movementLocations,
+            ]
         );
     }
 

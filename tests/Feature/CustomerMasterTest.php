@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Category;
 use App\Customer;
 use App\Hall;
+use App\Http\Middleware\VerifyCsrfToken;
 use App\Product;
 use App\Rack;
 use App\Shelf;
@@ -18,6 +19,12 @@ use Tests\TestCase;
 class CustomerMasterTest extends TestCase
 {
     use DatabaseTransactions;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->withoutMiddleware(VerifyCsrfToken::class);
+    }
 
     public function test_customer_master_can_be_created_and_used_in_stock_outward_history()
     {
@@ -225,6 +232,7 @@ class CustomerMasterTest extends TestCase
             'name' => 'Customer Test User',
             'email' => Str::uuid() . '@example.test',
             'password' => Hash::make('test-password'),
+            'role' => 'ADMIN',
         ]);
     }
 }

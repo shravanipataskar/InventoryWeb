@@ -21,7 +21,12 @@
             <input class="field-control" id="phone" type="tel" name="phone" value="{{ old('phone', isset($supplier) ? $supplier->phone : '') }}" placeholder="e.g. 9876543210" maxlength="20" required>
             @error('phone')<small class="field-error">{{ $message }}</small>@enderror
         </div>
-        <div class="field field-wide">
+        <div class="field">
+            <label for="email">Email <span class="required-mark">*</span></label>
+            <input class="field-control" id="email" type="email" name="email" value="{{ old('email', isset($supplier) ? $supplier->email : '') }}" placeholder="abc@example.com" maxlength="255" required>
+            @error('email')<small class="field-error">{{ $message }}</small>@enderror
+        </div>
+        <div class="field">
             <label for="warehouse_location">Supplier Warehouse / Dispatch Location</label>
             <input class="field-control" id="warehouse_location" type="text" name="warehouse_location" value="{{ old('warehouse_location', isset($supplier) ? $supplier->warehouse_location : '') }}" placeholder="e.g. Warehouse A, MIDC Bhosari, Pune" maxlength="1000">
             @error('warehouse_location')<small class="field-error">{{ $message }}</small>@enderror

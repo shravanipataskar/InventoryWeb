@@ -15,19 +15,70 @@ class StockOutwardController extends Controller
     public function index(Request $request)
     {
         $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
-        $stockOutwards = StockOutward::with(['product', 'customer'])
+        $filters = $request->validate([
+            'search' => 'nullable|string|max:255',
+            'date_from' => 'nullable|date',
+            'date_to' => 'nullable|date|after_or_equal:date_from',
+            'product_id' => 'nullable|integer|exists:products,id',
+            'customer_id' => 'nullable|integer|exists:customers,id',
+        ]);
+
+        $query = StockOutward::query()
+            ->with(['product', 'customer'])
             ->where('is_active', $listingStatus === 'active')
+            ->when(!empty($filters['search']), function ($query) use ($filters) {
+                $search = trim($filters['search']);
+                $query->where(function ($query) use ($search) {
+                    $query->where('reference_number', 'like', '%' . $search . '%')
+                        ->orWhere('issued_to', 'like', '%' . $search . '%')
+                        ->orWhereHas('product', function ($query) use ($search) {
+                            $query->where('name', 'like', '%' . $search . '%')
+                                ->orWhere('product_code', 'like', '%' . $search . '%');
+                        })
+                        ->orWhereHas('customer', function ($query) use ($search) {
+                            $query->where('name', 'like', '%' . $search . '%');
+                        });
+                });
+            })
+            ->when(!empty($filters['date_from']), function ($query) use ($filters) {
+                $query->whereDate('outward_date', '>=', $filters['date_from']);
+            })
+            ->when(!empty($filters['date_to']), function ($query) use ($filters) {
+                $query->whereDate('outward_date', '<=', $filters['date_to']);
+            })
+            ->when(!empty($filters['product_id']), function ($query) use ($filters) {
+                $query->where('product_id', $filters['product_id']);
+            })
+            ->when(!empty($filters['customer_id']), function ($query) use ($filters) {
+                $query->where('customer_id', $filters['customer_id']);
+            });
+
+        $totals = (clone $query)
+            ->selectRaw('COUNT(*) as total_records, COALESCE(SUM(quantity), 0) as total_quantity, COALESCE(SUM(total_amount), 0) as total_amount')
+            ->first();
+
+        $activeCount = StockOutward::where('is_active', true)->count();
+        $inactiveCount = StockOutward::where('is_active', false)->count();
+
+        $stockOutwards = $query
             ->orderBy('id', 'desc')
-            ->get();
+            ->paginate(10)
+            ->appends($request->query());
+
+        $products = Product::orderBy('name')->get(['id', 'name']);
+        $customers = Customer::orderBy('name')->get(['id', 'name']);
 
         return view(
             'stock_outwards.index',
-            compact('stockOutwards', 'listingStatus')
+            compact('stockOutwards', 'listingStatus', 'filters', 'totals', 'products', 'customers', 'activeCount', 'inactiveCount')
         );
     }
 
     public function create()
     {
+        $selectedCustomerId = Customer::where('is_active', true)
+            ->whereKey(request()->query('customer_id'))
+            ->value('id');
         $products = Product::with(['category', 'hall', 'rack', 'shelf'])
             ->where('is_active', 1)
             ->where('current_stock', '>', 0)
@@ -42,7 +93,7 @@ class StockOutwardController extends Controller
 
         return view(
             'stock_outwards.create',
-            compact('products', 'customers', 'categories')
+            compact('products', 'customers', 'categories', 'selectedCustomerId')
         );
     }
 

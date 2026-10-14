@@ -9,14 +9,20 @@ use App\QuotationRequest;
 use App\Store;
 use App\Supplier;
 use App\PurchaseOrder;
+use App\PurchasePayment;
 use App\ProcurementAuditLog;
+use App\Services\PurchasePaymentAllocationService;
 use App\Support\ActivityLogger;
+use App\Support\Money;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
+use Throwable;
 
 class QuotationController extends Controller
 {
@@ -58,6 +64,10 @@ class QuotationController extends Controller
                 Rule::exists('products', 'id')->where('is_active', true),
             ],
             'items.*.quantity' => 'required|numeric|min:0.01',
+        ], [
+            'supplier_ids.required' => 'Please select at least one supplier.',
+            'supplier_ids.array' => 'Please select at least one supplier.',
+            'supplier_ids.min' => 'Please select at least one supplier.',
         ]);
 
         foreach ($validated['items'] as $item) {
@@ -119,6 +129,106 @@ class QuotationController extends Controller
         return view('quotations.show', compact('quotationRequest'));
     }
 
+    public function purchaseDetails(PurchasePaymentAllocationService $paymentAllocations, $id)
+    {
+        $quotation = Quotation::with([
+            'request.store',
+            'supplier',
+            'items.product.category',
+            'items.product.unit',
+            'purchaseOrder.items.product.category',
+            'purchaseOrder.items.product.unit',
+            'purchaseOrder.payments.enteredBy',
+        ])->findOrFail($id);
+
+        abort_unless($quotation->status === 'approved', 404);
+
+        $purchaseOrder = $quotation->purchaseOrder;
+        $totalPaid = $purchaseOrder
+            ? Money::fromMinor($paymentAllocations->paidMinorForOrder($purchaseOrder->id))
+            : 0;
+        $totalPayable = $purchaseOrder ? (float) $purchaseOrder->grand_total : (float) $quotation->grand_total;
+        $remaining = $purchaseOrder
+            ? Money::fromMinor(max(0, Money::toMinor($totalPayable) - $paymentAllocations->committedMinorForOrder($purchaseOrder->id)))
+            : $totalPayable;
+
+        return view('quotations.purchase-details', compact('quotation', 'totalPaid', 'totalPayable', 'remaining'));
+    }
+
+    public function savePurchasePayment(Request $request, PurchasePaymentAllocationService $paymentAllocations, $id)
+    {
+        $quotation = Quotation::with(['items.product', 'request'])->findOrFail($id);
+        abort_unless($quotation->status === 'approved', 404);
+
+        $validated = $request->validate([
+            'payment_date' => 'required|date',
+            'amount' => 'required|numeric|min:0.01',
+            'payment_method' => ['required', Rule::in(PurchasePayment::METHODS)],
+            'reference_number' => 'nullable|string|max:100',
+            'remarks' => 'nullable|string|max:2000',
+            'submission_token' => 'required|uuid',
+            'items' => $quotation->purchase_order_id ? 'nullable|array' : 'required|array',
+            'items.*.purchase_rate' => $quotation->purchase_order_id ? 'nullable|numeric|min:0.01' : 'required|numeric|min:0.01',
+            'items.*.discount_percent' => 'nullable|numeric|min:0|max:100',
+        ]);
+
+        $purchaseOrder = DB::transaction(function () use ($quotation, $validated, $paymentAllocations) {
+            $lockedQuotation = Quotation::with('items')->lockForUpdate()->findOrFail($quotation->id);
+            if (PurchasePayment::where('submission_token', $validated['submission_token'])->exists()) {
+                return $lockedQuotation->purchaseOrder()->firstOrFail();
+            }
+
+            $order = $lockedQuotation->purchaseOrder;
+            if (!$order) {
+                $order = $this->createPurchaseOrderFromNegotiatedQuotation($lockedQuotation, $validated['items']);
+            } else {
+                $order = PurchaseOrder::lockForUpdate()->findOrFail($order->id);
+                if ($order->status === 'cancelled') {
+                    throw ValidationException::withMessages(['purchase_order' => 'A cancelled purchase order cannot receive further payments.']);
+                }
+            }
+
+            $committed = $paymentAllocations->committedMinorForOrder($order->id);
+            $remaining = max(0, Money::toMinor($order->grand_total) - $committed);
+            if ($remaining <= 0) {
+                throw ValidationException::withMessages([
+                    'amount' => 'The full payable amount has already been paid. No further payment can be added.',
+                ]);
+            }
+
+            $amount = Money::toMinor($validated['amount']);
+            if ($amount > $remaining) {
+                throw ValidationException::withMessages([
+                    'amount' => 'Payment amount cannot be greater than the remaining payable amount of ₹' . number_format(Money::fromMinor($remaining), 2) . '.',
+                ]);
+            }
+
+            PurchasePayment::create([
+                'purchase_order_id' => $order->id,
+                'payment_date' => $validated['payment_date'],
+                'amount' => Money::fromMinor($amount),
+                'payment_method' => $validated['payment_method'],
+                'reference_number' => $validated['reference_number'] ?? null,
+                'remarks' => $validated['remarks'] ?? null,
+                'status' => 'paid',
+                'submission_token' => $validated['submission_token'],
+                'entered_by' => Auth::id(),
+            ]);
+            $paymentAllocations->allocateForOrder($order, true);
+            ProcurementAuditLog::recordIfAvailable($order, 'po_payment_recorded', $order->status, $order->status, null, [
+                'amount' => Money::fromMinor($amount),
+                'remaining_amount' => Money::fromMinor($remaining - $amount),
+            ]);
+
+            return $order;
+        });
+
+        ActivityLogger::log('Purchase Payment Recorded', 'Purchase', 'Payment recorded against purchase order ' . $purchaseOrder->po_number . '.');
+
+        return redirect()->route('quotations.purchase-details', $quotation->id)
+            ->with('success', 'Payment saved successfully.');
+    }
+
     public function approval()
     {
         $quotations = QuotationRequest::with([
@@ -170,12 +280,22 @@ class QuotationController extends Controller
             'items' => 'required|array',
             'items.*.supplier_rate' => 'required|numeric|min:0',
             'items.*.gst_rate' => 'required|numeric|min:0|max:100',
+            'bill_copy' => 'nullable|file|mimes:pdf,jpg,jpeg,png,webp|max:10240',
         ]);
 
-        DB::transaction(function () use ($quotation, $validated) {
-            $this->submitQuotation($quotation, $validated['items']);
-            $quotation->request()->update(['status' => 'submitted']);
-        });
+        $billCopy = $this->storeBillCopy($request, 'bill_copy');
+        try {
+            DB::transaction(function () use ($quotation, $validated, $billCopy) {
+                $this->submitQuotation($quotation, $validated['items']);
+                if ($billCopy) {
+                    $quotation->update($billCopy);
+                }
+                $quotation->request()->update(['status' => 'submitted']);
+            });
+        } catch (Throwable $exception) {
+            $this->deleteBillCopies([$billCopy]);
+            throw $exception;
+        }
 
         ActivityLogger::log('Quotation Submitted', 'Quotation', 'Quotation ' . $quotation->quotation_code . ' was submitted.');
 
@@ -197,17 +317,45 @@ class QuotationController extends Controller
             'items.*' => 'required|array',
             'items.*.*.supplier_rate' => 'required|numeric|min:0',
             'items.*.*.gst_rate' => 'required|numeric|min:0|max:100',
+            'bill_copies' => 'nullable|array',
+            'bill_copies.*' => 'nullable|file|mimes:pdf,jpg,jpeg,png,webp|max:10240',
         ]);
 
-        DB::transaction(function () use ($requestRecord, $draftQuotations, $validated) {
-            foreach ($draftQuotations as $quotation) {
-                if (!isset($validated['items'][$quotation->id])) {
-                    throw ValidationException::withMessages(['items' => 'Every supplier quotation must be completed.']);
+        $draftQuotationIds = $draftQuotations->pluck('id')->map(function ($id) {
+            return (string) $id;
+        })->all();
+        $uploadedCopies = [];
+        try {
+            foreach ($request->file('bill_copies', []) as $quotationId => $file) {
+                if (!in_array((string) $quotationId, $draftQuotationIds, true)) {
+                    throw ValidationException::withMessages([
+                        'bill_copies' => 'A bill copy can only be attached to a draft supplier quotation in this request.',
+                    ]);
                 }
-                $this->submitQuotation($quotation, $validated['items'][$quotation->id]);
             }
-            $requestRecord->update(['status' => 'submitted']);
-        });
+
+            foreach ($draftQuotations as $quotation) {
+                if ($request->hasFile('bill_copies.' . $quotation->id)) {
+                    $uploadedCopies[$quotation->id] = $this->storeBillCopy($request, 'bill_copies.' . $quotation->id);
+                }
+            }
+
+            DB::transaction(function () use ($requestRecord, $draftQuotations, $validated, $uploadedCopies) {
+                foreach ($draftQuotations as $quotation) {
+                    if (!isset($validated['items'][$quotation->id])) {
+                        throw ValidationException::withMessages(['items' => 'Every supplier quotation must be completed.']);
+                    }
+                    $this->submitQuotation($quotation, $validated['items'][$quotation->id]);
+                    if (isset($uploadedCopies[$quotation->id])) {
+                        $quotation->update($uploadedCopies[$quotation->id]);
+                    }
+                }
+                $requestRecord->update(['status' => 'submitted']);
+            });
+        } catch (Throwable $exception) {
+            $this->deleteBillCopies($uploadedCopies);
+            throw $exception;
+        }
 
         ActivityLogger::log('Quotations Submitted', 'Quotation', 'All supplier quotations for request ' . $requestRecord->quotation_request_code . ' were submitted.');
 
@@ -215,13 +363,53 @@ class QuotationController extends Controller
             ->with('success', 'All supplier quotations were submitted for authority review.');
     }
 
+    public function billCopy($id, Request $request)
+    {
+        $user = Auth::user();
+        abort_unless(
+            $user && (
+                $user->hasPermission('quotations', 'view')
+                || $user->hasPermission('quotations', 'edit')
+                || $user->hasPermission('quotations', 'approve')
+            ),
+            403
+        );
+
+        $quotation = Quotation::findOrFail($id);
+        $path = $quotation->bill_copy_path;
+        abort_unless(
+            $path && strpos($path, 'quotation-bill-copies/') === 0 && Storage::disk('local')->exists($path),
+            404
+        );
+
+        if ($request->boolean('download')) {
+            return Storage::disk('local')->download($path, $quotation->bill_copy_name ?: basename($path));
+        }
+
+        return response()->file(Storage::disk('local')->path($path));
+    }
+
     public function approve($id)
     {
-        $quotation = DB::transaction(function () use ($id) {
+        $quotation = $this->approveSelectedQuotation($id);
+
+        ActivityLogger::log('Quotation Approved', 'Quotation', 'Quotation ' . $quotation->quotation_code . ' was approved.');
+
+        return redirect()->route('quotations.show', $quotation->quotation_request_id)
+            ->with('success', 'Quotation approved. Other quotations for this request were rejected.')
+            ->with('approval_quotation_id', $quotation->id);
+    }
+
+    private function approveSelectedQuotation($id)
+    {
+        return DB::transaction(function () use ($id) {
             $quotation = Quotation::lockForUpdate()->findOrFail($id);
             $requestRecord = QuotationRequest::lockForUpdate()->findOrFail($quotation->quotation_request_id);
-            if ($requestRecord->status === 'approved' || $quotation->status === 'approved' || $quotation->purchase_order_id) {
-                throw ValidationException::withMessages(['quotation' => 'This quotation has already been approved.']);
+            if ($quotation->status === 'approved' && $requestRecord->status === 'approved') {
+                return $quotation;
+            }
+            if ($quotation->purchase_order_id) {
+                throw ValidationException::withMessages(['quotation' => 'This quotation already has a purchase order.']);
             }
             if (!in_array($requestRecord->status, ['submitted', 'under_review'], true)
                 || !in_array($quotation->status, ['submitted', 'under_review'], true)) {
@@ -244,10 +432,6 @@ class QuotationController extends Controller
 
             return $quotation;
         });
-
-        ActivityLogger::log('Quotation Approved', 'Quotation', 'Quotation ' . $quotation->quotation_code . ' was approved.');
-
-        return back()->with('success', 'Quotation approved. Other quotations for this request were rejected.');
     }
 
     public function reject(Request $request, $id)
@@ -278,67 +462,100 @@ class QuotationController extends Controller
 
     public function generatePurchase($id)
     {
-        $quotation = DB::transaction(function () use ($id) {
-            $quotation = Quotation::with(['request', 'items'])->lockForUpdate()->findOrFail($id);
-            $requestRecord = QuotationRequest::lockForUpdate()->findOrFail($quotation->quotation_request_id);
-            if ($requestRecord->status !== 'approved' || $quotation->status !== 'approved') {
-                throw ValidationException::withMessages(['quotation' => 'Only an approved quotation can generate a purchase.']);
-            }
-            if ($quotation->purchase_order_id || $requestRecord->quotations()->whereNotNull('purchase_order_id')->exists()) {
-                throw ValidationException::withMessages(['quotation' => 'Purchase has already been generated for this quotation.']);
-            }
+        $quotation = Quotation::with('request')->findOrFail($id);
+        if (in_array($quotation->status, ['submitted', 'under_review'], true)) {
+            $quotation = $this->approveSelectedQuotation($id);
+        }
+        if ($quotation->status !== 'approved') {
+            throw ValidationException::withMessages(['quotation' => 'Only an approved quotation can continue to purchase details.']);
+        }
 
-            $order = PurchaseOrder::create([
-                'po_number' => 'TEMP-' . Str::uuid(),
-                'supplier_id' => $quotation->supplier_id,
-                'store_id' => $quotation->request->store_id,
-                'po_date' => $quotation->quotation_date,
-                'expected_date' => $quotation->request->required_date,
-                'status' => 'approved',
-                'subtotal' => $quotation->subtotal,
-                'discount_amount' => 0,
-                'tax_amount' => $quotation->tax_total,
-                'cgst_total' => $quotation->cgst_total,
-                'sgst_total' => $quotation->sgst_total,
-                'grand_total' => $quotation->grand_total,
-                'notes' => 'Generated from quotation ' . $quotation->quotation_code,
-                'created_by' => Auth::id(),
-                'quotation_id' => $quotation->id,
-                'quotation_request_id' => $quotation->quotation_request_id,
+        return redirect()->route('quotations.purchase-details', $quotation->id)
+            ->with('success', 'Review negotiated purchase details and record the first payment to generate the purchase order.');
+    }
+
+    private function createPurchaseOrderFromNegotiatedQuotation(Quotation $quotation, array $items)
+    {
+        if ($quotation->status !== 'approved' || $quotation->purchase_order_id) {
+            throw ValidationException::withMessages(['quotation' => 'Only an approved quotation without a purchase order can generate a purchase order.']);
+        }
+
+        $quotationItems = $quotation->items->keyBy('id');
+        if (count($items) !== $quotationItems->count() || $quotationItems->keys()->diff(array_keys($items))->isNotEmpty()) {
+            throw ValidationException::withMessages(['items' => 'Submit negotiated rates for every item in the approved quotation.']);
+        }
+
+        $subtotal = $discountTotal = $cgstTotal = $sgstTotal = 0;
+        $lines = [];
+        foreach ($quotationItems as $item) {
+            $line = $items[$item->id];
+            $rate = round((float) $line['purchase_rate'], 2);
+            $discountPercent = round((float) ($line['discount_percent'] ?? 0), 2);
+            $basic = round((float) $item->quantity * $rate, 2);
+            $discount = round($basic * $discountPercent / 100, 2);
+            $taxable = round($basic - $discount, 2);
+            $gstRate = round((float) $item->gst_rate, 2);
+            $cgstRate = round($gstRate / 2, 2);
+            $sgstRate = round($gstRate - $cgstRate, 2);
+            $cgst = round($taxable * $cgstRate / 100, 2);
+            $sgst = round($taxable * $sgstRate / 100, 2);
+            $subtotal += $basic;
+            $discountTotal += $discount;
+            $cgstTotal += $cgst;
+            $sgstTotal += $sgst;
+            $lines[] = compact('item', 'rate', 'discountPercent', 'basic', 'discount', 'gstRate', 'cgstRate', 'cgst', 'sgstRate', 'sgst');
+        }
+        $grandTotal = round($subtotal - $discountTotal + $cgstTotal + $sgstTotal, 2);
+        if ($grandTotal <= 0) {
+            throw ValidationException::withMessages(['amount' => 'A purchase order must have a payable amount greater than zero.']);
+        }
+
+        $order = PurchaseOrder::create([
+            'po_number' => 'TEMP-' . Str::uuid(),
+            'supplier_id' => $quotation->supplier_id,
+            'store_id' => $quotation->request->store_id,
+            'po_date' => now()->toDateString(),
+            'expected_date' => $quotation->request->required_date,
+            'status' => 'draft',
+            'subtotal' => round($subtotal, 2),
+            'discount_amount' => round($discountTotal, 2),
+            'tax_amount' => round($cgstTotal + $sgstTotal, 2),
+            'cgst_total' => round($cgstTotal, 2),
+            'sgst_total' => round($sgstTotal, 2),
+            'grand_total' => $grandTotal,
+            'notes' => 'Generated from quotation ' . $quotation->quotation_code,
+            'created_by' => Auth::id(),
+            'quotation_id' => $quotation->id,
+            'quotation_request_id' => $quotation->quotation_request_id,
+        ]);
+        $order->po_number = 'PO-' . now()->format('Ymd') . '-' . str_pad($order->id, 4, '0', STR_PAD_LEFT);
+        $order->save();
+
+        foreach ($lines as $line) {
+            $item = $line['item'];
+            $order->items()->create([
+                'product_id' => $item->product_id,
+                'unit_id' => $item->unit_id,
+                'quantity' => $item->quantity,
+                'received_quantity' => 0,
+                'purchase_rate' => $line['rate'],
+                'discount_percent' => $line['discountPercent'],
+                'tax_percent' => $line['gstRate'],
+                'total_amount' => round($line['basic'] - $line['discount'] + $line['cgst'] + $line['sgst'], 2),
+                'cgst_rate' => $line['cgstRate'],
+                'cgst_amount' => $line['cgst'],
+                'sgst_rate' => $line['sgstRate'],
+                'sgst_amount' => $line['sgst'],
             ]);
-            $order->po_number = 'PO-' . date('Ymd', strtotime($quotation->quotation_date))
-                . '-' . str_pad($order->id, 3, '0', STR_PAD_LEFT);
-            $order->save();
+        }
 
-            foreach ($quotation->items as $item) {
-                $order->items()->create([
-                    'product_id' => $item->product_id,
-                    'unit_id' => $item->unit_id,
-                    'quantity' => $item->quantity,
-                    'received_quantity' => 0,
-                    'purchase_rate' => $item->supplier_rate,
-                    'discount_percent' => 0,
-                    'tax_percent' => $item->gst_rate,
-                    'total_amount' => $item->total_amount,
-                    'cgst_rate' => $item->cgst_rate,
-                    'cgst_amount' => $item->cgst_amount,
-                    'sgst_rate' => $item->sgst_rate,
-                    'sgst_amount' => $item->sgst_amount,
-                ]);
-            }
-            $quotation->update(['purchase_order_id' => $order->id]);
-            ProcurementAuditLog::recordIfAvailable($order, 'po_created', null, $order->status, null, [
-                'quotation_id' => $quotation->id,
-                'quotation_code' => $quotation->quotation_code,
-            ]);
+        $quotation->update(['purchase_order_id' => $order->id]);
+        ProcurementAuditLog::recordIfAvailable($order, 'po_created', null, $order->status, null, [
+            'quotation_id' => $quotation->id,
+            'quotation_code' => $quotation->quotation_code,
+        ]);
 
-            return $quotation;
-        });
-
-        ActivityLogger::log('Purchase Generated from Quotation', 'Purchase', 'Purchase generated from quotation ' . $quotation->quotation_code . '.');
-
-        return redirect()->route('purchase-orders.show', $quotation->purchase_order_id)
-            ->with('success', 'Purchase order generated from the approved quotation.');
+        return $order;
     }
 
     private function loadRequest($id)
@@ -394,5 +611,34 @@ class QuotationController extends Controller
             'submitted_at' => now(),
             'submitted_by' => Auth::id(),
         ]);
+    }
+
+    private function storeBillCopy(Request $request, $field)
+    {
+        if (!$request->hasFile($field)) {
+            return null;
+        }
+
+        $file = $request->file($field);
+        $path = $file->store('quotation-bill-copies', 'local');
+        if (!$path) {
+            throw new RuntimeException('The supplier quotation bill copy could not be stored.');
+        }
+
+        return [
+            'bill_copy_path' => $path,
+            'bill_copy_name' => Str::limit(preg_replace('/[^A-Za-z0-9._ -]/', '_', $file->getClientOriginalName()), 180, ''),
+        ];
+    }
+
+    private function deleteBillCopies(array $copies)
+    {
+        foreach ($copies as $copy) {
+            if ($copy && isset($copy['bill_copy_path'])
+                && Storage::disk('local')->exists($copy['bill_copy_path'])
+                && !Storage::disk('local')->delete($copy['bill_copy_path'])) {
+                throw new RuntimeException('A supplier quotation bill copy could not be removed from storage.');
+            }
+        }
     }
 }

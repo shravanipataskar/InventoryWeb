@@ -6,7 +6,13 @@
 @section('content')
     <div class="page-heading">
         <div><span class="section-kicker">GOODS RECEIVED / {{ $goodsReceipt->grn_number }}</span><h1>{{ $goodsReceipt->grn_number }}</h1><p>Posted {{ \Carbon\Carbon::parse($goodsReceipt->received_date)->format('d M Y') }} into {{ optional($goodsReceipt->store)->name ?: '—' }}</p></div>
-        <div class="page-heading-actions"><a class="button button-light" href="{{ route('purchase-orders.show', $goodsReceipt->purchase_order_id) }}">View Purchase Order</a><a class="button button-light" href="{{ route('goods-receipts.index') }}">Back to list</a></div>
+        <div class="page-heading-actions">
+            @if (auth()->user()->hasPermission('bills', 'create') && $goodsReceipt->purchaseOrder->status !== 'cancelled')
+                <a class="button button-primary" href="{{ route('supplier-bills.create', $goodsReceipt->purchase_order_id) }}">Create Purchase Bill</a>
+            @endif
+            <a class="button button-light" href="{{ route('purchase-orders.show', $goodsReceipt->purchase_order_id) }}">View Purchase Order</a>
+            <a class="button button-light" href="{{ route('goods-receipts.index') }}">Back to list</a>
+        </div>
     </div>
     @if (session('success'))<div class="inventory-notice notice-in" role="status"><span class="notice-symbol">✓</span><span>{{ session('success') }}</span></div>@endif
     <section class="panel listing-panel">
@@ -32,6 +38,9 @@
     <section class="panel listing-panel">
         <div class="form-grid">
             <div class="field"><label>Supplier</label><p>{{ optional($goodsReceipt->supplier)->name ?: '—' }}</p></div>
+            <div class="field"><label>PO Number</label><p>{{ optional($goodsReceipt->purchaseOrder)->po_number ?: '—' }}</p></div>
+            <div class="field"><label>GRN Date</label><p>{{ \Carbon\Carbon::parse($goodsReceipt->received_date)->format('d M Y') }}</p></div>
+            <div class="field"><label>Warehouse / Store</label><p>{{ optional($goodsReceipt->store)->name ?: '—' }}</p></div>
             <div class="field"><label>Supplier invoice</label><p>{{ $goodsReceipt->invoice_number ?: '—' }}</p></div>
             <div class="field"><label>Received by</label><p>{{ optional($goodsReceipt->receiver)->name ?: '—' }}</p></div>
             <div class="field"><label>Remarks</label><p>{{ $goodsReceipt->remarks ?: '—' }}</p></div>

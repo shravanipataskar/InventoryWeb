@@ -31,13 +31,14 @@
                         <td>{{ $supplier->phone ?: '—' }}</td>
                         <td>@include('components.status-badge', ['status' => $supplier->is_active ? 'Active' : 'Inactive'])</td>
                         <td class="action-cell">
-                            <a class="button button-small button-light" href="{{ route('suppliers.edit', $supplier->id) }}">Edit</a>
+                            <a class="button button-small button-light" href="{{ route('suppliers.show', $supplier->id) }}" title="View supplier details" aria-label="View {{ $supplier->name }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg> View</a>
+                            <a class="button button-small button-light" href="{{ route('suppliers.edit', $supplier->id) }}" title="Edit supplier" aria-label="Edit {{ $supplier->name }}">Edit</a>
                             <form class="status-action-form" action="{{ route('suppliers.status', $supplier->id) }}" method="POST">
                                 @csrf
                                 @method('PATCH')
                                 <input type="hidden" name="is_active" value="{{ $supplier->is_active ? 0 : 1 }}">
                                 <input type="hidden" name="listing_status" value="{{ $listingStatus }}">
-                                <button class="button button-small {{ $supplier->is_active ? 'button-deactivate' : 'button-activate' }}" type="submit">{{ $supplier->is_active ? 'Inactive' : 'Active' }}</button>
+                                <button class="button button-small {{ $supplier->is_active ? 'button-deactivate' : 'button-activate' }}" type="submit" title="{{ $supplier->is_active ? 'Deactivate supplier' : 'Activate supplier' }}">{{ $supplier->is_active ? 'Inactive' : 'Active' }}</button>
                             </form>
                         </td>
                     </tr>

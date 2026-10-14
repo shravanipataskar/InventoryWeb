@@ -33,7 +33,7 @@
                         <td class="muted-cell">{{ $loop->iteration }}</td>
                         <td>
                             @if ($product->image && Storage::disk('public')->exists($product->image))
-                                <img class="product-thumbnail" src="{{ asset('storage/' . $product->image) }}" alt="{{ $product->name }}">
+                                <img class="product-thumbnail" src="{{ Storage::disk('public')->url($product->image) }}" alt="{{ $product->name }}">
                             @else
                                 <span class="product-thumbnail-placeholder" aria-label="No product image">{{ strtoupper(substr($product->name, 0, 1)) }}</span>
                             @endif
@@ -51,13 +51,14 @@
                         <td>@include('components.status-badge', ['status' => $stockLabel])</td>
                         <td>@include('components.status-badge', ['status' => $product->is_active ? 'Active' : 'Inactive'])</td>
                         <td class="action-cell">
-                            <a class="button button-small button-light" href="{{ route('products.edit', $product->id) }}">Edit</a>
+                            <a class="button button-small button-light" href="{{ route('products.show', $product->id) }}" title="View product details" aria-label="View {{ $product->name }}"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg> View</a>
+                            <a class="button button-small button-light" href="{{ route('products.edit', $product->id) }}" title="Edit product" aria-label="Edit {{ $product->name }}">Edit</a>
                             <form class="status-action-form" action="{{ route('products.status', $product->id) }}" method="POST">
                                 @csrf
                                 @method('PATCH')
                                 <input type="hidden" name="is_active" value="{{ $product->is_active ? 0 : 1 }}">
                                 <input type="hidden" name="listing_status" value="{{ $listingStatus }}">
-                                <button class="button button-small {{ $product->is_active ? 'button-deactivate' : 'button-activate' }}" type="submit">{{ $product->is_active ? 'Inactive' : 'Active' }}</button>
+                                <button class="button button-small {{ $product->is_active ? 'button-deactivate' : 'button-activate' }}" type="submit" title="{{ $product->is_active ? 'Deactivate product' : 'Activate product' }}">{{ $product->is_active ? 'Inactive' : 'Active' }}</button>
                             </form>
                         </td>
                     </tr>

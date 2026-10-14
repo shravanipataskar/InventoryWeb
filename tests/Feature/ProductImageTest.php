@@ -15,11 +15,18 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use App\Http\Middleware\VerifyCsrfToken;
 use Tests\TestCase;
 
 class ProductImageTest extends TestCase
 {
     use DatabaseTransactions;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->withoutMiddleware(VerifyCsrfToken::class);
+    }
 
     public function test_product_create_hides_generated_identifiers_and_uses_location_navigation_label()
     {
@@ -42,7 +49,10 @@ class ProductImageTest extends TestCase
         $withoutImage = $this->productPayload($hall, $category, $unit);
         $this->post(route('products.store'), $withoutImage)
             ->assertRedirect(route('products.index'));
-        $productWithoutImage = Product::where('product_code', $withoutImage['product_code'])->firstOrFail();
+        $productWithoutImage = Product::where('name', $withoutImage['name'])
+            ->whereNull('image')
+            ->latest('id')
+            ->firstOrFail();
         $this->assertNull($productWithoutImage->image);
 
         $withImage = $this->productPayload($hall, $category, $unit);
@@ -50,15 +60,29 @@ class ProductImageTest extends TestCase
             'image' => UploadedFile::fake()->image('product.jpg', 120, 90),
         ])->assertRedirect(route('products.index'));
 
-        $product = Product::where('product_code', $withImage['product_code'])->firstOrFail();
+        $product = Product::where('name', $withImage['name'])
+            ->whereNotNull('image')
+            ->latest('id')
+            ->firstOrFail();
         $this->assertStringStartsWith('products/', $product->image);
         Storage::disk('public')->assertExists($product->image);
 
         $this->get(route('products.index'))
             ->assertOk()
             ->assertSee('product-thumbnail')
-            ->assertSee(asset('storage/' . $product->image), false)
-            ->assertSee('product-thumbnail-placeholder');
+            ->assertSee('/storage/' . $product->image, false)
+            ->assertSee('product-thumbnail-placeholder')
+            ->assertSee(route('products.show', $product->id), false);
+        $this->get(route('products.show', $product->id))
+            ->assertOk()
+            ->assertSee($product->name)
+            ->assertSee($product->product_code)
+            ->assertSee('Current Stock')
+            ->assertSee('Back to Products')
+            ->assertSee('/storage/' . $product->image, false);
+        $this->get(route('products.show', $productWithoutImage->id))
+            ->assertOk()
+            ->assertSee('product-details-image-placeholder');
     }
 
     public function test_edit_preserves_image_without_upload_and_replaces_it_after_successful_upload()
@@ -71,14 +95,17 @@ class ProductImageTest extends TestCase
             'image' => UploadedFile::fake()->image('first.png', 100, 100),
         ])->assertRedirect(route('products.index'));
 
-        $product = Product::where('product_code', $payload['product_code'])->firstOrFail();
+        $product = Product::where('name', $payload['name'])
+            ->whereNotNull('image')
+            ->latest('id')
+            ->firstOrFail();
         $oldImage = $product->image;
         Storage::disk('public')->assertExists($oldImage);
 
         $this->get(route('products.edit', $product->id))
             ->assertOk()
-            ->assertSee('Current product image')
-            ->assertSee(asset('storage/' . $oldImage), false);
+            ->assertSee('data-current-product-image', false)
+            ->assertSee('/storage/' . $oldImage, false);
 
         $this->put(route('products.update', $product->id), $payload)
             ->assertRedirect(route('products.index'));
@@ -124,7 +151,10 @@ class ProductImageTest extends TestCase
             unlink($temporaryPath);
         }
 
-        $product = Product::where('product_code', $payload['product_code'])->firstOrFail();
+        $product = Product::where('name', $payload['name'])
+            ->whereNotNull('image')
+            ->latest('id')
+            ->firstOrFail();
         $this->assertStringStartsWith('products/', $product->image);
         Storage::disk('public')->assertExists($product->image);
     }
@@ -136,7 +166,7 @@ class ProductImageTest extends TestCase
         list($hall, $category, $unit) = $this->makeProductReferences();
 
         $invalid = $this->productPayload($hall, $category, $unit);
-        $this->post(route('products.store'), $invalid + [
+        $this->from(route('products.create'))->post(route('products.store'), $invalid + [
             'image' => UploadedFile::fake()->create('payload.txt', 10, 'text/plain'),
         ])->assertSessionHasErrors('image');
 
@@ -144,7 +174,7 @@ class ProductImageTest extends TestCase
         $largeImagePath = tempnam(sys_get_temp_dir(), 'product-image-');
         file_put_contents(
             $largeImagePath,
-            file_get_contents($largeImage->getPathname()) . str_repeat("\0", 2100 * 1024)
+            file_get_contents($largeImage->getPathname()) . str_repeat("\0", 5200 * 1024)
         );
         $oversized = $this->productPayload($hall, $category, $unit);
         $largeImageUpload = new UploadedFile(
@@ -154,9 +184,9 @@ class ProductImageTest extends TestCase
             UPLOAD_ERR_OK,
             true
         );
-        $this->assertGreaterThan(2048, $largeImageUpload->getSize() / 1024);
+        $this->assertGreaterThan(5120, $largeImageUpload->getSize() / 1024);
         try {
-            $this->post(route('products.store'), $oversized + [
+            $this->from(route('products.create'))->post(route('products.store'), $oversized + [
                 'image' => $largeImageUpload,
             ])->assertSessionHasErrors('image');
         } finally {
@@ -253,6 +283,7 @@ class ProductImageTest extends TestCase
             'name' => 'Image Test User',
             'email' => Str::uuid() . '@example.test',
             'password' => Hash::make('test-password'),
+            'role' => 'ADMIN',
         ]);
     }
 
@@ -289,6 +320,8 @@ class ProductImageTest extends TestCase
             'purchase_price' => 10,
             'selling_price' => 15,
             'minimum_stock' => 1,
+            'reorder_level' => 1,
+            'reorder_quantity' => 1,
         ];
     }
 }

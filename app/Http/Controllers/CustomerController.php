@@ -5,8 +5,11 @@ namespace App\Http\Controllers;
 use App\Customer;
 use App\StockOutward;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
+use RuntimeException;
+use Throwable;
 
 class CustomerController extends Controller
 {
@@ -64,7 +67,13 @@ class CustomerController extends Controller
         unset($validated['status']);
         $validated['customer_code'] = $this->generateCustomerCode();
 
-        $customer = Customer::create($validated);
+        $uploadedDocuments = $this->storeDocuments($request, $validated);
+        try {
+            $customer = Customer::create($uploadedDocuments);
+        } catch (Throwable $exception) {
+            $this->deleteStoredDocuments($uploadedDocuments);
+            throw $exception;
+        }
 
         return redirect()
             ->route('customers.show', $customer->id)
@@ -108,11 +117,52 @@ class CustomerController extends Controller
         $validated = $this->validateCustomer($request, $customer);
         $validated['is_active'] = $request->input('status') === 'active';
         unset($validated['status']);
-        $customer->update($validated);
+        $oldDocuments = [];
+        foreach (['aadhaar_card', 'pan_card'] as $document) {
+            if ($request->hasFile($document)) {
+                $oldDocuments[] = $customer->{$document};
+            }
+        }
+
+        $uploadedDocuments = $this->storeDocuments($request, $validated);
+        try {
+            $customer->update($uploadedDocuments);
+        } catch (Throwable $exception) {
+            $this->deleteStoredDocuments($uploadedDocuments);
+            throw $exception;
+        }
+
+        $this->deleteStoredDocuments(array_filter($oldDocuments));
 
         return redirect()
             ->route('customers.show', $customer->id)
             ->with('success', 'Customer updated successfully.');
+    }
+
+    public function document(Request $request, $id, $document)
+    {
+        abort_unless(in_array($document, ['aadhaar_card', 'pan_card'], true), 404);
+        $user = auth()->user();
+        abort_unless(
+            $user && ($user->hasPermission('customers', 'view') || $user->hasPermission('customers', 'edit')),
+            403
+        );
+
+        $customer = Customer::findOrFail($id);
+        $path = $customer->{$document};
+        abort_unless(
+            $path && strpos($path, 'customers/documents/') === 0 && Storage::disk('local')->exists($path),
+            404
+        );
+
+        if ($request->boolean('download')) {
+            return Storage::disk('local')->download(
+                $path,
+                $document . '.' . pathinfo($path, PATHINFO_EXTENSION)
+            );
+        }
+
+        return response()->file(Storage::disk('local')->path($path));
     }
 
     public function status(Request $request, $id)
@@ -144,7 +194,7 @@ class CustomerController extends Controller
             ],
             'customer_type' => ['required', Rule::in($this->customerTypes)],
             'contact_person' => 'nullable|string|max:255',
-            'phone' => ['nullable', 'string', 'max:30', 'regex:/^\+?[0-9\s().-]{7,30}$/'],
+            'phone' => ['required', 'string', 'max:30', 'regex:/^\+?[0-9\s().-]{7,30}$/'],
             'email' => 'nullable|email|max:255',
             'store_warehouse_location' => 'nullable|string|max:1000',
             'address' => 'nullable|string|max:2000',
@@ -153,8 +203,50 @@ class CustomerController extends Controller
             'pincode' => 'nullable|string|max:20',
             'gstin' => 'nullable|string|max:20',
             'pan' => 'nullable|string|max:20',
+            'aadhaar_card' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
+            'pan_card' => 'nullable|image|mimes:jpg,jpeg,png,webp|max:5120',
             'status' => 'required|in:active,inactive',
+        ], [
+            'aadhaar_card.image' => 'Please upload a valid Aadhaar Card image.',
+            'aadhaar_card.mimes' => 'Please upload a valid Aadhaar Card image.',
+            'aadhaar_card.max' => 'Maximum file size is 5 MB.',
+            'pan_card.image' => 'Please upload a valid PAN Card image.',
+            'pan_card.mimes' => 'Please upload a valid PAN Card image.',
+            'pan_card.max' => 'Maximum file size is 5 MB.',
         ]);
+    }
+
+    private function storeDocuments(Request $request, array $validated)
+    {
+        $storedPaths = [];
+        try {
+            foreach (['aadhaar_card', 'pan_card'] as $document) {
+                if ($request->hasFile($document)) {
+                    $path = $request->file($document)->store('customers/documents', 'local');
+                    if (!$path) {
+                        throw new RuntimeException('The customer document could not be stored.');
+                    }
+
+                    $validated[$document] = $path;
+                    $storedPaths[] = $path;
+                }
+            }
+        } catch (Throwable $exception) {
+            $this->deleteStoredDocuments($storedPaths);
+            throw $exception;
+        }
+
+        return $validated;
+    }
+
+    private function deleteStoredDocuments(array $paths)
+    {
+        foreach ($paths as $path) {
+            if ($path && Storage::disk('local')->exists($path)
+                && !Storage::disk('local')->delete($path)) {
+                throw new RuntimeException('A customer document could not be removed from storage.');
+            }
+        }
     }
 
     private function generateCustomerCode()

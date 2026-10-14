@@ -53,7 +53,7 @@
                     <option value="oldest" {{ $sort === 'oldest' ? 'selected' : '' }}>Oldest First</option>
                 </select>
             </label>
-            <button class="button company-primary-button company-search-button" type="submit"><span aria-hidden="true">⌕</span> Search</button>
+            <button class="button company-primary-button company-search-button" type="submit"><span class="search-button-glyph" aria-hidden="true">⌕</span> Search</button>
             <a class="button button-light" href="{{ route('companies.index') }}">Reset</a>
         </form>
 

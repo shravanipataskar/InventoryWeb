@@ -23,7 +23,6 @@ class Product extends Model
         'reorder_level',
         'reorder_quantity',
         'description',
-        'image',
         'track_batch',
         'track_serial',
         'is_active'

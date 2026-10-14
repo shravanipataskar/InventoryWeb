@@ -26,7 +26,7 @@
                         <select class="field-control" id="customer_id" name="customer_id" required data-customer-select>
                             <option value="">Select customer</option>
                             @foreach ($customers as $customer)
-                                <option value="{{ $customer->id }}" data-contact="{{ $customer->contact_person }}" data-phone="{{ $customer->phone }}" data-email="{{ $customer->email }}" {{ old('customer_id') == $customer->id ? 'selected' : '' }}>{{ $customer->name }}</option>
+                                <option value="{{ $customer->id }}" data-contact="{{ $customer->contact_person }}" data-phone="{{ $customer->phone }}" data-email="{{ $customer->email }}" {{ old('customer_id', $selectedCustomerId) == $customer->id ? 'selected' : '' }}>{{ $customer->name }}</option>
                             @endforeach
                         </select>
                         <small class="field-hint" data-customer-details aria-live="polite"></small>

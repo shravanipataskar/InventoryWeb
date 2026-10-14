@@ -62,6 +62,11 @@ class SupplierBill extends Model
         return $this->hasMany(PaymentAllocation::class);
     }
 
+    public function purchasePaymentAllocations()
+    {
+        return $this->hasMany(PurchasePaymentBillAllocation::class);
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

@@ -21,6 +21,8 @@ class PurchaseOrder extends Model
         'sgst_total',
         'notes',
         'created_by',
+        'released_by',
+        'released_at',
         'quotation_id',
         'quotation_request_id',
         'cancelled_at',
@@ -29,7 +31,9 @@ class PurchaseOrder extends Model
     ];
 
     // Statuses in which goods may still be received (unchanged from the existing receiving workflow).
-    const RECEIVABLE_STATUSES = ['ordered', 'pending', 'approved', 'partially_received'];
+    const RECEIVABLE_STATUSES = ['released', 'ordered', 'pending', 'approved', 'partially_received'];
+
+    protected $dates = ['released_at'];
 
     public function getOrderDateAttribute($value)
     {
@@ -66,8 +70,18 @@ class PurchaseOrder extends Model
         return $this->hasMany(SupplierBill::class);
     }
 
+    public function payments()
+    {
+        return $this->hasMany(PurchasePayment::class);
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function releaser()
+    {
+        return $this->belongsTo(User::class, 'released_by');
     }
 }

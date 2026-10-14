@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\PaymentAllocation;
 use App\ProcurementAuditLog;
+use App\PurchasePaymentBillAllocation;
 use App\SupplierBill;
 use App\SupplierPayment;
 use App\Support\Money;
@@ -44,6 +45,7 @@ class SupplierPaymentService
                 $query->where('status', SupplierPayment::STATUS_COMPLETED);
             })
             ->sum('amount'));
+        $paid += Money::toMinor(PurchasePaymentBillAllocation::where('supplier_bill_id', $bill->id)->sum('amount'));
         $total = Money::toMinor($bill->total_amount);
 
         if ($paid > $total) {

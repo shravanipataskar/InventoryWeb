@@ -15,9 +15,12 @@ use App\SupplierBill;
 use App\SupplierPayment;
 use App\Unit;
 use App\User;
+use App\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -35,6 +38,7 @@ class SupplierBillPaymentWorkflowTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->withoutMiddleware(VerifyCsrfToken::class);
         $this->officer = $this->makeUser('PURCHASE_OFFICER');
         $this->owner = $this->makeUser('OWNER');
         $this->admin = $this->makeUser('ADMIN');
@@ -76,7 +80,7 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         $this->store = DB::table('stores')->insertGetId($storeValues);
     }
 
-    public function test_quotation_approval_selects_one_supplier_and_generates_a_single_purchase_order()
+    public function test_quotation_approval_defers_purchase_order_until_the_first_payment()
     {
         list($approved, $other) = $this->approvedQuotation();
 
@@ -89,15 +93,169 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         // A rejected quotation cannot generate a PO.
         $this->post(route('quotations.generate-purchase', $other->id))->assertSessionHasErrors('quotation');
 
-        $this->post(route('quotations.generate-purchase', $approved->id))->assertRedirect();
-        $order = PurchaseOrder::where('quotation_id', $approved->id)->firstOrFail();
+        $this->actingAs($this->owner)
+            ->post(route('quotations.generate-purchase', $approved->id))
+            ->assertRedirect(route('quotations.purchase-details', $approved->id));
+        $this->assertSame(0, PurchaseOrder::where('quotation_id', $approved->id)->count());
+
+        $items = [];
+        foreach ($approved->items as $item) {
+            $items[$item->id] = ['purchase_rate' => 100, 'discount_percent' => 0];
+        }
+        $this->post(route('quotations.purchase-payments.store', $approved->id), [
+            'payment_date' => now()->toDateString(),
+            'amount' => 200,
+            'payment_method' => 'Bank Transfer',
+            'submission_token' => (string) Str::uuid(),
+            'items' => $items,
+        ])->assertRedirect(route('quotations.purchase-details', $approved->id));
+        $order = PurchaseOrder::where('quotation_id', $approved->id)->with('items')->firstOrFail();
+        $this->post(route('quotations.purchase-payments.store', $approved->id), [
+            'payment_date' => now()->toDateString(),
+            'amount' => 200,
+            'payment_method' => 'Bank Transfer',
+            'submission_token' => $firstToken = DB::table('purchase_payments')->where('purchase_order_id', $order->id)->value('submission_token'),
+            'items' => $items,
+        ])->assertRedirect(route('quotations.purchase-details', $approved->id));
         $this->assertSame('1180.00', (string) $order->grand_total);
         $this->assertSame('18.00', (string) $order->items->first()->tax_percent);
-
-        $this->post(route('quotations.generate-purchase', $approved->id))->assertSessionHasErrors('quotation');
         $this->assertSame(1, PurchaseOrder::where('quotation_id', $approved->id)->count());
+        $this->assertSame(1, DB::table('purchase_payments')->where('purchase_order_id', $order->id)->count());
         $this->assertTrue(ProcurementAuditLog::where('entity_type', 'PurchaseOrder')->where('entity_id', $order->id)->where('event', 'po_created')->exists());
-        $this->assertTrue(ProcurementAuditLog::where('entity_type', 'Quotation')->where('entity_id', $approved->id)->where('event', 'quotation_approved')->exists());
+    }
+
+    public function test_negotiated_price_discount_and_partial_purchase_payments_are_persisted()
+    {
+        list($quotation) = $this->approvedQuotation(null, false);
+        $this->actingAs($this->owner)
+            ->post(route('quotations.approve', $quotation->id))
+            ->assertRedirect(route('quotations.show', $quotation->quotation_request_id));
+        $quotation->refresh();
+        $item = $quotation->items->first();
+
+        $this->get(route('quotations.purchase-details', $quotation->id))
+            ->assertOk()
+            ->assertSee('Purchase Details')
+            ->assertSee('Bank &amp; Payment Details', false)
+            ->assertSee('Add Payment Entry');
+
+        $firstToken = (string) Str::uuid();
+        $initialPayment = [
+            'payment_date' => now()->toDateString(),
+            'amount' => 300,
+            'payment_method' => 'Bank Transfer',
+            'reference_number' => 'TXN-FIRST',
+            'remarks' => 'Advance',
+            'submission_token' => $firstToken,
+            'items' => [$item->id => ['purchase_rate' => 80, 'discount_percent' => 5]],
+        ];
+        $this->post(route('quotations.purchase-payments.store', $quotation->id), $initialPayment)
+            ->assertRedirect(route('quotations.purchase-details', $quotation->id));
+
+        $order = PurchaseOrder::where('quotation_id', $quotation->id)->with('items')->firstOrFail();
+        $this->assertSame('draft', $order->status);
+        $this->assertSame(800.0, (float) $order->subtotal);
+        $this->assertSame(40.0, (float) $order->discount_amount);
+        $this->assertSame(136.8, (float) $order->tax_amount);
+        $this->assertSame(896.8, (float) $order->grand_total);
+        $this->assertSame(80.0, (float) $order->items->first()->purchase_rate);
+        $this->assertSame(5.0, (float) $order->items->first()->discount_percent);
+        $this->get(route('purchase-orders.show', $order->id))
+            ->assertOk()
+            ->assertSee('Paid Amount')
+            ->assertSee('Outstanding Amount')
+            ->assertSee('Purchase Payment History')
+            ->assertSee('TXN-FIRST');
+        $this->get(route('suppliers.show', $quotation->supplier_id))
+            ->assertOk()
+            ->assertSee('Purchase History')
+            ->assertSee('₹300.00')
+            ->assertSee('₹596.80');
+
+        $this->post(route('quotations.purchase-payments.store', $quotation->id), [
+            'payment_date' => now()->addDay()->toDateString(),
+            'amount' => 600,
+            'payment_method' => 'UPI',
+            'submission_token' => (string) Str::uuid(),
+        ])->assertSessionHasErrors([
+            'amount' => 'Payment amount cannot be greater than the remaining payable amount of ₹596.80.',
+        ]);
+        $this->assertSame(1, DB::table('purchase_payments')->where('purchase_order_id', $order->id)->count());
+
+        $secondToken = (string) Str::uuid();
+        $this->post(route('quotations.purchase-payments.store', $quotation->id), [
+            'payment_date' => now()->addDay()->toDateString(),
+            'amount' => 200,
+            'payment_method' => 'UPI',
+            'submission_token' => $secondToken,
+        ])->assertRedirect();
+        $this->post(route('quotations.purchase-payments.store', $quotation->id), [
+            'payment_date' => now()->addDays(2)->toDateString(),
+            'amount' => 396.8,
+            'payment_method' => 'NEFT',
+            'submission_token' => (string) Str::uuid(),
+        ])->assertRedirect();
+
+        $this->assertSame(3, DB::table('purchase_payments')->where('purchase_order_id', $order->id)->count());
+        $this->assertSame(896.8, (float) DB::table('purchase_payments')->where('purchase_order_id', $order->id)->sum('amount'));
+        $this->get(route('quotations.purchase-details', $quotation->id))
+            ->assertOk()
+            ->assertSee('Payment Completed')
+            ->assertSee('Fully Paid')
+            ->assertSee('TXN-FIRST');
+
+        $this->post(route('quotations.purchase-payments.store', $quotation->id), [
+            'payment_date' => now()->toDateString(),
+            'amount' => 1,
+            'payment_method' => 'Cash',
+            'submission_token' => (string) Str::uuid(),
+        ])->assertSessionHasErrors('amount');
+        $this->assertSame(3, DB::table('purchase_payments')->where('purchase_order_id', $order->id)->count());
+    }
+
+    public function test_approval_confirmation_approves_one_supplier_without_creating_a_purchase_order()
+    {
+        list($quotation, $other) = $this->approvedQuotation(null, false);
+
+        $this->actingAs($this->owner)
+            ->post(route('quotations.approve', $quotation->id))
+            ->assertRedirect(route('quotations.show', $quotation->quotation_request_id))
+            ->assertSessionHas('approval_quotation_id', $quotation->id);
+
+        $quotation->refresh();
+        $this->assertSame('approved', $quotation->status);
+        $this->assertSame($this->owner->id, (int) $quotation->approved_by);
+        $this->assertSame('rejected', $other->fresh()->status);
+        $this->assertNull($quotation->purchase_order_id);
+        $this->assertSame(0, PurchaseOrder::where('quotation_id', $quotation->id)->count());
+        $this->get(route('quotations.purchase-details', $quotation->id))->assertOk();
+    }
+
+    public function test_supplier_quotation_bill_copy_is_stored_and_available_for_view_and_download()
+    {
+        Storage::fake('local');
+        list($quotation) = $this->approvedQuotation(UploadedFile::fake()->image('supplier-quotation.jpg'));
+
+        $quotation->refresh();
+        $this->assertNotEmpty($quotation->bill_copy_path);
+        $this->assertSame('supplier-quotation.jpg', $quotation->bill_copy_name);
+        Storage::disk('local')->assertExists($quotation->bill_copy_path);
+
+        $this->actingAs($this->owner)
+            ->get(route('quotations.show', $quotation->quotation_request_id))
+            ->assertOk()
+            ->assertSee('Supplier bill copy')
+            ->assertSee('supplier-quotation.jpg')
+            ->assertSee('CGST 9.00% · SGST 9.00%')
+            ->assertDontSee('<th>CGST %</th>', false)
+            ->assertSee(route('quotations.bill-copy', $quotation->id), false);
+
+        $this->get(route('quotations.bill-copy', $quotation->id))
+            ->assertOk()
+            ->assertHeader('content-type', 'image/jpeg');
+        $this->get(route('quotations.bill-copy', [$quotation->id, 'download' => 1]))
+            ->assertOk()
+            ->assertHeader('content-disposition', 'attachment; filename=supplier-quotation.jpg');
     }
 
     public function test_partial_receipt_with_damaged_goods_only_adds_accepted_stock()
@@ -131,13 +289,15 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         // Officer lacks approval rights; owner approves.
         $this->post(route('supplier-bills.approve', $bill->id))->assertForbidden();
         $this->actingAs($this->owner)->post(route('supplier-bills.approve', $bill->id))->assertSessionHasNoErrors();
-        $this->assertSame('approved_for_payment', $bill->fresh()->status);
+        $this->assertSame('partially_paid', $bill->fresh()->status);
+        $this->assertSame('200.00', $bill->fresh()->paid_amount);
+        $this->assertSame('980.00', $bill->fresh()->outstanding_amount);
 
         // First installment.
         $first = $this->requestPayment($bill, '500.00');
         $this->assertSame('pending_approval', $first->status);
         // A second request cannot exceed what remains after the pending one.
-        $this->actingAs($this->officer)->post(route('supplier-payments.store'), $this->paymentPayload($bill, '700.00'))->assertSessionHasErrors('allocations');
+        $this->actingAs($this->officer)->post(route('supplier-payments.store'), $this->paymentPayload($bill, '500.01'))->assertSessionHasErrors('allocations');
 
         // Requester cannot approve own payment (admin requested here to test separation of duties).
         $own = $this->requestPayment($bill, '100.00', $this->admin);
@@ -147,10 +307,10 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         $this->approveAndComplete($first, 'UTR0001');
         $bill->refresh();
         $this->assertSame('partially_paid', $bill->status);
-        $this->assertSame('680.00', $bill->outstanding_amount);
+        $this->assertSame('480.00', $bill->outstanding_amount);
 
         // Duplicate UTR on another payment is refused.
-        $second = $this->requestPayment($bill, '680.00');
+        $second = $this->requestPayment($bill, '480.00');
         $this->actingAs($this->owner)->post(route('supplier-payments.approve', $second->id));
         $this->actingAs($this->officer)->post(route('supplier-payments.complete', $second->id), [
             'payment_date' => now()->toDateString(),
@@ -170,14 +330,14 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         $this->actingAs($this->owner)->post(route('supplier-payments.reverse', $second->id), ['reason' => 'Bounced'])->assertSessionHasNoErrors();
         $bill->refresh();
         $this->assertSame('partially_paid', $bill->status);
-        $this->assertSame('680.00', $bill->outstanding_amount);
+        $this->assertSame('480.00', $bill->outstanding_amount);
         $this->assertSame('reversed', $second->fresh()->status);
     }
 
     public function test_failed_payment_does_not_reduce_outstanding_and_submission_is_idempotent()
     {
         $bill = $this->approvedBill();
-        $payload = $this->paymentPayload($bill, '1180.00');
+        $payload = $this->paymentPayload($bill, '980.00');
         $this->actingAs($this->officer)->post(route('supplier-payments.store'), $payload)->assertRedirect();
         $this->post(route('supplier-payments.store'), $payload)->assertRedirect();
         $this->assertSame(1, SupplierPayment::where('submission_token', $payload['submission_token'])->count());
@@ -188,10 +348,38 @@ class SupplierBillPaymentWorkflowTest extends TestCase
 
         $bill->refresh();
         $this->assertSame('failed', $payment->fresh()->status);
-        $this->assertSame('approved_for_payment', $bill->status);
-        $this->assertSame('1180.00', $bill->outstanding_amount);
+        $this->assertSame('partially_paid', $bill->status);
+        $this->assertSame('980.00', $bill->outstanding_amount);
         // The failed request no longer reserves the balance.
-        $this->requestPayment($bill, '1180.00');
+        $this->requestPayment($bill, '980.00');
+    }
+
+    public function test_later_purchase_payment_is_applied_to_an_approved_supplier_bill()
+    {
+        $bill = $this->approvedBill();
+        $this->assertSame('980.00', $bill->outstanding_amount);
+        $this->get(route('supplier-bills.show', $bill->id))->assertSee('PO Advance #');
+
+        $order = PurchaseOrder::with('quotation')->findOrFail($bill->purchase_order_id);
+        $this->actingAs($this->owner)->post(
+            route('quotations.purchase-payments.store', $order->quotation_id),
+            [
+                'payment_date' => now()->toDateString(),
+                'amount' => '100.00',
+                'payment_method' => 'UPI',
+                'submission_token' => (string) Str::uuid(),
+            ]
+        )->assertRedirect(route('quotations.purchase-details', $order->quotation_id));
+
+        $bill->refresh();
+        $this->assertSame('300.00', $bill->paid_amount);
+        $this->assertSame('880.00', $bill->outstanding_amount);
+        $this->actingAs($this->officer)
+            ->post(route('supplier-payments.store'), $this->paymentPayload($bill, '880.01'))
+            ->assertSessionHasErrors('allocations');
+        $this->actingAs($this->owner)->get(route('purchase-orders.show', $order->id))
+            ->assertOk()
+            ->assertSee('₹300.00');
     }
 
     public function test_quantity_mismatch_puts_bill_on_hold_and_requires_reasoned_exception_approval()
@@ -212,7 +400,8 @@ class SupplierBillPaymentWorkflowTest extends TestCase
 
         $this->actingAs($this->owner)->post(route('supplier-bills.approve', $bill->id), ['reason' => 'Balance arriving tomorrow, agreed by owner'])->assertSessionHasNoErrors();
         $bill->refresh();
-        $this->assertSame('approved_for_payment', $bill->status);
+        $this->assertSame('partially_paid', $bill->status);
+        $this->assertSame('200.00', $bill->paid_amount);
         $this->assertTrue($bill->exception_approved);
         $this->assertTrue(ProcurementAuditLog::forEntity($bill)->where('event', 'bill_exception_approved')->exists());
     }
@@ -325,9 +514,9 @@ class SupplierBillPaymentWorkflowTest extends TestCase
 
         $this->actingAs($this->owner)->get(route('purchase-orders.show', $received->id))
             ->assertOk()
-            ->assertSee('Goods received')
-            ->assertSee('Supplier bills &amp; payments', false)
-            ->assertSee('Po closed');
+            ->assertDontSee('<h2>Goods Received</h2>', false)
+            ->assertDontSee('<h2>Supplier Bills &amp; Payments</h2>', false)
+            ->assertSee('Closed');
     }
 
     public function test_cannot_cancel_a_bill_with_pending_payment_and_audit_rows_are_immutable()
@@ -335,7 +524,7 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         $bill = $this->approvedBill();
         $this->requestPayment($bill, '100.00');
         $this->actingAs($this->owner)->post(route('supplier-bills.cancel', $bill->id), ['reason' => 'Duplicate'])->assertSessionHasErrors('bill');
-        $this->assertSame('approved_for_payment', $bill->fresh()->status);
+        $this->assertSame('partially_paid', $bill->fresh()->status);
 
         $entry = ProcurementAuditLog::forEntity($bill)->firstOrFail();
         try {
@@ -348,7 +537,7 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         $entry->delete();
     }
 
-    private function approvedQuotation()
+    private function approvedQuotation($billCopy = null, $approve = true)
     {
         $this->actingAs($this->officer)->post(route('quotations.store'), [
             'request_date' => now()->toDateString(),
@@ -363,9 +552,16 @@ class SupplierBillPaymentWorkflowTest extends TestCase
                 $items[$quotation->id][$item->id] = ['supplier_rate' => 100, 'gst_rate' => 18];
             }
         }
-        $this->post(route('quotations.request.submit', $request->id), ['items' => $items])->assertRedirect();
+        $payload = ['items' => $items];
+        if ($billCopy) {
+            $firstDraftQuotationId = $request->quotations()->orderBy('id')->value('id');
+            $payload['bill_copies'] = [$firstDraftQuotationId => $billCopy];
+        }
+        $this->post(route('quotations.request.submit', $request->id), $payload)->assertRedirect();
         list($approved, $other) = $request->quotations()->orderBy('id')->get()->all();
-        $this->actingAs($this->owner)->post(route('quotations.approve', $approved->id))->assertSessionHasNoErrors();
+        if ($approve) {
+            $this->actingAs($this->owner)->post(route('quotations.approve', $approved->id))->assertSessionHasNoErrors();
+        }
 
         return [Quotation::find($approved->id), Quotation::find($other->id)];
     }
@@ -373,9 +569,21 @@ class SupplierBillPaymentWorkflowTest extends TestCase
     private function purchaseOrder()
     {
         list($approved) = $this->approvedQuotation();
-        $this->actingAs($this->owner)->post(route('quotations.generate-purchase', $approved->id))->assertRedirect();
+        $lines = [];
+        foreach ($approved->items as $item) {
+            $lines[$item->id] = ['purchase_rate' => $item->supplier_rate, 'discount_percent' => 0];
+        }
+        $this->actingAs($this->owner)->post(route('quotations.purchase-payments.store', $approved->id), [
+            'payment_date' => now()->toDateString(),
+            'amount' => 200,
+            'payment_method' => 'Bank Transfer',
+            'submission_token' => (string) Str::uuid(),
+            'items' => $lines,
+        ])->assertRedirect();
+        $order = PurchaseOrder::with('items')->where('quotation_id', $approved->id)->firstOrFail();
+        $this->post(route('purchase-orders.release', $order->id))->assertRedirect();
 
-        return PurchaseOrder::with('items')->where('quotation_id', $approved->id)->firstOrFail();
+        return $order->fresh('items');
     }
 
     private function receive(PurchaseOrder $order, $received, $rejected = 0, $damaged = 0)

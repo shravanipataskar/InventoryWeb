@@ -1,25 +1,26 @@
 @extends('layouts.app')
 
-@section('title', 'New Purchase Order')
-@section('topbar-title', 'New purchase order')
+@section('title', $editing ? 'Edit ' . $purchaseOrder->po_number : 'New Purchase Order')
+@section('topbar-title', $editing ? 'Edit purchase order' : 'New purchase order')
 
 @section('content')
     <div class="page-heading">
-        <div><span class="section-kicker">PURCHASING</span><h1>New Purchase Order</h1><p>Record the products and quantities expected from your supplier.</p></div>
-        <a class="button button-light" href="{{ route('purchase-orders.index') }}">Back to purchase orders</a>
+        <div><span class="section-kicker">PURCHASING / PURCHASE ORDERS</span><h1>{{ $editing ? 'Edit ' . $purchaseOrder->po_number : 'New Purchase Order' }}</h1><p>{{ $editing ? 'Changes are available only before the purchase order is released.' : 'Record the products and quantities expected from your supplier.' }}</p></div>
+        <a class="button button-light" href="{{ $editing ? route('purchase-orders.show', $purchaseOrder->id) : route('purchase-orders.index') }}">{{ $editing ? 'Back to purchase order' : 'Back to purchase orders' }}</a>
     </div>
     @if ($errors->any())
         <div class="form-alert" role="alert"><strong>Please check the form:</strong><ul>@foreach ($errors->all() as $error)<li>{{ $error }}</li>@endforeach</ul></div>
     @endif
     <section class="form-card">
-        <form action="{{ route('purchase-orders.store') }}" method="POST">
+        <form action="{{ $editing ? route('purchase-orders.update', $purchaseOrder->id) : route('purchase-orders.store') }}" method="POST">
             @csrf
+            @if ($editing) @method('PUT') @endif
             <div class="form-section">
                 <div class="form-grid">
-                    <div class="field"><label for="supplier_id">Supplier <span class="required-mark">*</span></label><select class="field-control" id="supplier_id" name="supplier_id" required><option value="">Select supplier</option>@foreach ($suppliers as $supplier)<option value="{{ $supplier->id }}" {{ old('supplier_id') == $supplier->id ? 'selected' : '' }}>{{ $supplier->name }}</option>@endforeach</select></div>
-                    <div class="field"><label for="store_id">Order location <span class="required-mark">*</span></label><select class="field-control" id="store_id" name="store_id" required><option value="">Select location</option>@foreach ($stores as $store)<option value="{{ $store->id }}" {{ old('store_id', $prefillStoreId) == $store->id ? 'selected' : '' }}>{{ $store->name }}</option>@endforeach</select></div>
-                    <div class="field"><label for="order_date">Order date <span class="required-mark">*</span></label><input class="field-control" id="order_date" name="order_date" type="date" value="{{ old('order_date', date('Y-m-d')) }}" required></div>
-                    <div class="field"><label for="expected_date">Expected date</label><input class="field-control" id="expected_date" name="expected_date" type="date" value="{{ old('expected_date') }}"></div>
+                    <div class="field"><label for="supplier_id">Supplier <span class="required-mark">*</span></label><select class="field-control" id="supplier_id" name="supplier_id" {{ $editing && $purchaseOrder->quotation_id ? 'disabled' : '' }} required><option value="">Select supplier</option>@foreach ($suppliers as $supplier)<option value="{{ $supplier->id }}" {{ old('supplier_id', $editing ? $purchaseOrder->supplier_id : '') == $supplier->id ? 'selected' : '' }}>{{ $supplier->company_name ?: $supplier->name }}</option>@endforeach</select>@if ($editing && $purchaseOrder->quotation_id)<input type="hidden" name="supplier_id" value="{{ $purchaseOrder->supplier_id }}">@endif</div>
+                    <div class="field"><label for="store_id">Order location <span class="required-mark">*</span></label><select class="field-control" id="store_id" name="store_id" required><option value="">Select location</option>@foreach ($stores as $store)<option value="{{ $store->id }}" {{ old('store_id', $editing ? $purchaseOrder->store_id : $prefillStoreId) == $store->id ? 'selected' : '' }}>{{ $store->name }}</option>@endforeach</select></div>
+                    <div class="field"><label for="order_date">Order date <span class="required-mark">*</span></label><input class="field-control" id="order_date" name="order_date" type="date" value="{{ old('order_date', $editing ? $purchaseOrder->po_date : date('Y-m-d')) }}" required></div>
+                    <div class="field"><label for="expected_date">Expected date</label><input class="field-control" id="expected_date" name="expected_date" type="date" value="{{ old('expected_date', $editing ? $purchaseOrder->expected_date : '') }}"></div>
                 </div>
             </div>
             <div class="form-section">
@@ -34,7 +35,8 @@
                             <div class="field"><label>Category</label><select class="field-control purchase-order-category"><option value="">All categories</option>@foreach ($categories as $category)<option value="{{ $category->id }}" {{ $selectedCategoryId == $category->id ? 'selected' : '' }}>{{ $category->name }}</option>@endforeach</select></div>
                             <div class="field"><label>Product <span class="required-mark">*</span></label><select class="field-control purchase-order-product" name="items[{{ $index }}][product_id]" required><option value="">Select product</option>@foreach ($products as $product)<option value="{{ $product->id }}" data-category-id="{{ $product->category_id }}" {{ ($oldItem['product_id'] ?? '') == $product->id ? 'selected' : '' }}>{{ $product->name }} ({{ $product->product_code }})</option>@endforeach</select></div>
                             <div class="field"><label>Ordered quantity <span class="required-mark">*</span></label><input class="field-control" type="number" name="items[{{ $index }}][ordered_quantity]" min="0.01" step="0.01" value="{{ $oldItem['ordered_quantity'] ?? '' }}" required></div>
-                            <div class="field"><label>Unit purchase rate (₹) <span class="required-mark">*</span></label><input class="field-control" type="number" name="items[{{ $index }}][purchase_rate]" min="0" step="0.01" value="{{ $oldItem['purchase_rate'] ?? '' }}" required></div>
+                            <div class="field"><label>Unit purchase rate (₹) <span class="required-mark">*</span></label><input class="field-control" type="number" name="items[{{ $index }}][purchase_rate]" min="0.01" step="0.01" value="{{ $oldItem['purchase_rate'] ?? '' }}" required></div>
+                            <div class="field"><label>GST %</label><input class="field-control" type="number" name="items[{{ $index }}][tax_percent]" min="0" max="100" step="0.01" value="{{ $oldItem['tax_percent'] ?? 0 }}"></div>
                             <button class="button button-danger button-small purchase-order-line-remove" type="button" aria-label="Delete this product">Delete</button>
                         </div>
                     @endforeach
@@ -44,13 +46,14 @@
                         <div class="field"><label>Category</label><select class="field-control purchase-order-category"><option value="">All categories</option>@foreach ($categories as $category)<option value="{{ $category->id }}">{{ $category->name }}</option>@endforeach</select></div>
                         <div class="field"><label>Product <span class="required-mark">*</span></label><select class="field-control purchase-order-product" name="items[__INDEX__][product_id]" required><option value="">Select product</option>@foreach ($products as $product)<option value="{{ $product->id }}" data-category-id="{{ $product->category_id }}">{{ $product->name }} ({{ $product->product_code }})</option>@endforeach</select></div>
                         <div class="field"><label>Ordered quantity <span class="required-mark">*</span></label><input class="field-control" type="number" name="items[__INDEX__][ordered_quantity]" min="0.01" step="0.01" required></div>
-                        <div class="field"><label>Unit purchase rate (₹) <span class="required-mark">*</span></label><input class="field-control" type="number" name="items[__INDEX__][purchase_rate]" min="0" step="0.01" required></div>
+                        <div class="field"><label>Unit purchase rate (₹) <span class="required-mark">*</span></label><input class="field-control" type="number" name="items[__INDEX__][purchase_rate]" min="0.01" step="0.01" required></div>
+                        <div class="field"><label>GST %</label><input class="field-control" type="number" name="items[__INDEX__][tax_percent]" min="0" max="100" step="0.01" value="0"></div>
                         <button class="button button-danger button-small purchase-order-line-remove" type="button" aria-label="Delete this product">Delete</button>
                     </div>
                 </template>
                 <button class="button button-light purchase-order-add" id="add-purchase-order-line" type="button"><span aria-hidden="true">+</span> Add product</button>
             </div>
-            <div class="form-actions"><a class="button button-light" href="{{ route('purchase-orders.index') }}">Cancel</a><button class="button button-primary" type="submit" {{ !$stores->count() ? 'disabled' : '' }}>Create Purchase Order</button></div>
+            <div class="form-actions"><a class="button button-light" href="{{ $editing ? route('purchase-orders.show', $purchaseOrder->id) : route('purchase-orders.index') }}">Cancel</a><button class="button button-primary" type="submit" {{ !$stores->count() ? 'disabled' : '' }}>{{ $editing ? 'Save Draft Changes' : 'Create Purchase Order' }}</button></div>
         </form>
     </section>
     <script>

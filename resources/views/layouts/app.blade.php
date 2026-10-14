@@ -16,7 +16,11 @@
     <link href="{{ mix('css/app.css') }}" rel="stylesheet">
 
     {{-- Profile UI --}}
-    <link href="{{ asset('css/profile.css') }}" rel="stylesheet">
+    <link href="{{ asset('css/profile.css') }}?v=20261014" rel="stylesheet">
+    <style>
+        .search-glyph{font-size:26px!important;line-height:1}
+        .search-button-glyph{display:inline-flex;align-items:center;font-size:22px;line-height:1;transform:rotate(-20deg)}
+    </style>
 </head>
 
 <body>
@@ -537,7 +541,9 @@
             ================================================== --}}
             <section class="page-content">
 
-                @include('components.flash')
+                @unless (request()->routeIs('quotations.show', 'quotations.purchase-details'))
+                    @include('components.flash')
+                @endunless
 
                 @yield('content')
 

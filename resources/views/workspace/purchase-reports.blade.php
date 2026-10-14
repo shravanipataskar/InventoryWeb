@@ -72,7 +72,7 @@
                 @foreach ($filters as $name => $value)
                     @if ($name !== 'search' && $value !== null && $value !== '')<input type="hidden" name="{{ $name }}" value="{{ $value }}">@endif
                 @endforeach
-                <span aria-hidden="true">⌕</span><input type="search" name="search" value="{{ data_get($filters, 'search') }}" placeholder="Search invoice, product, supplier..." aria-label="Search invoice, product, supplier">
+                <span class="search-glyph" aria-hidden="true">⌕</span><input type="search" name="search" value="{{ data_get($filters, 'search') }}" placeholder="Search invoice, product, supplier..." aria-label="Search invoice, product, supplier">
                 <button type="submit" aria-label="Search">Search</button>
             </form>
         </div>

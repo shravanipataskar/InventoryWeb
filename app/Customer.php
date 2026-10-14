@@ -20,6 +20,8 @@ class Customer extends Model
         'pincode',
         'gstin',
         'pan',
+        'aadhaar_card',
+        'pan_card',
         'is_active',
     ];
 
