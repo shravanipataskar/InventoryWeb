@@ -10,6 +10,7 @@ use App\Store;
 use App\Supplier;
 use App\PurchaseOrder;
 use App\PurchasePayment;
+use App\PurchasePaymentInstallment;
 use App\ProcurementAuditLog;
 use App\Services\PurchasePaymentAllocationService;
 use App\Support\ActivityLogger;
@@ -150,20 +151,295 @@ class QuotationController extends Controller
             'purchaseOrder.items.product.category',
             'purchaseOrder.items.product.unit',
             'purchaseOrder.payments.enteredBy',
+            'purchaseOrder.installments.payments',
         ])->findOrFail($id);
 
         abort_unless($quotation->status === 'approved', 404);
 
         $purchaseOrder = $quotation->purchaseOrder;
-        $totalPaid = $purchaseOrder
-            ? Money::fromMinor($paymentAllocations->paidMinorForOrder($purchaseOrder->id))
-            : 0;
+        if ($purchaseOrder) {
+            $quotationRates = $quotation->items->keyBy('product_id');
+            foreach ($purchaseOrder->items as $item) {
+                $quotationItem = $quotationRates->get($item->product_id);
+                $basicMinor = Money::multiply(Money::toMinor($item->quantity), Money::toMinor($item->purchase_rate));
+                $discountMinor = Money::percentOf($basicMinor, Money::toMinor($item->discount_percent));
+                $item->setAttribute('quotation_rate', $quotationItem ? $quotationItem->supplier_rate : null);
+                $item->setAttribute('basic_amount', Money::fromMinor($basicMinor - $discountMinor));
+                $item->setAttribute('tax_amount', Money::fromMinor(
+                    Money::toMinor($item->cgst_amount) + Money::toMinor($item->sgst_amount)
+                ));
+            }
+        }
+        $paidMinor = $purchaseOrder ? $paymentAllocations->paidMinorForOrder($purchaseOrder->id) : 0;
+        $totalPaid = Money::fromMinor($paidMinor);
         $totalPayable = $purchaseOrder ? (float) $purchaseOrder->grand_total : (float) $quotation->grand_total;
-        $remaining = $purchaseOrder
-            ? Money::fromMinor(max(0, Money::toMinor($totalPayable) - $paymentAllocations->committedMinorForOrder($purchaseOrder->id)))
-            : $totalPayable;
+        $payableMinor = Money::toMinor($totalPayable);
+        $committedMinor = $purchaseOrder ? $paymentAllocations->committedMinorForOrder($purchaseOrder->id) : 0;
+        $remaining = Money::fromMinor(max(0, $payableMinor - $paidMinor));
+        $eligibleRemaining = Money::fromMinor(max(0, $payableMinor - $committedMinor));
+        $eligiblePercentage = $payableMinor > 0
+            ? round((Money::toMinor($eligibleRemaining) / $payableMinor) * 100, 2)
+            : 0;
+        $committedAmount = Money::fromMinor($committedMinor);
+        if ($purchaseOrder) {
+            foreach ($purchaseOrder->payments as $payment) {
+                $payment->setAttribute('voucher_number', 'PP-' . str_pad($payment->id, 8, '0', STR_PAD_LEFT));
+                $payment->setAttribute('payment_percentage', $payableMinor > 0
+                    ? round((Money::toMinor($payment->amount) / $payableMinor) * 100, 2)
+                    : 0);
+            }
+        }
 
-        return view('quotations.purchase-details', compact('quotation', 'totalPaid', 'totalPayable', 'remaining'));
+        $paymentPercentage = $totalPayable > 0 ? round(($totalPaid / $totalPayable) * 100, 2) : 0;
+        $hasOverdueInstallment = $purchaseOrder && $purchaseOrder->installments->contains(function ($installment) {
+            return $installment->status() === 'Overdue';
+        });
+        $paymentStatus = $remaining <= 0
+            ? 'Paid'
+            : ($hasOverdueInstallment ? 'Overdue' : ($totalPaid > 0 ? 'Partially Paid' : 'Pending'));
+        $canManagePayments = Auth::user() && Auth::user()->hasPermission('purchase', 'approve');
+        $canViewPurchaseOrder = Auth::user() && Auth::user()->hasPermission('purchase', 'view');
+        $canEditPurchaseItems = Auth::user()
+            && (Auth::user()->hasPermission('purchase', 'edit') || $canManagePayments)
+            && $purchaseOrder
+            && $purchaseOrder->status === 'draft'
+            && !$purchaseOrder->goodsReceipts()->exists()
+            && !$purchaseOrder->supplierBills()->exists();
+
+        return view('quotations.purchase-details', compact(
+            'quotation',
+            'totalPaid',
+            'totalPayable',
+            'remaining',
+            'eligibleRemaining',
+            'eligiblePercentage',
+            'committedAmount',
+            'paymentPercentage',
+            'paymentStatus',
+            'canManagePayments',
+            'canViewPurchaseOrder',
+            'canEditPurchaseItems'
+        ));
+    }
+
+    public function createPurchaseOrder(Request $request, $id)
+    {
+        $quotation = Quotation::with(['items', 'request'])->findOrFail($id);
+        abort_unless($quotation->status === 'approved', 404);
+
+        $validated = $request->validate([
+            'items' => 'required|array',
+            'items.*.purchase_rate' => 'required|numeric|min:0.01',
+            'items.*.discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100', 'regex:/^\d+(\.\d{1,2})?$/'],
+        ]);
+
+        $order = DB::transaction(function () use ($quotation, $validated) {
+            $lockedQuotation = Quotation::with(['items', 'request'])->lockForUpdate()->findOrFail($quotation->id);
+            if ($lockedQuotation->purchaseOrder) {
+                return $lockedQuotation->purchaseOrder;
+            }
+
+            return $this->createPurchaseOrderFromNegotiatedQuotation($lockedQuotation, $validated['items']);
+        });
+
+        ActivityLogger::log('Purchase Order Generated', 'Purchase', 'Purchase order ' . $order->po_number . ' was generated from quotation ' . $quotation->quotation_code . '.');
+
+        return redirect()->route('quotations.purchase-details', $quotation->id)
+            ->with('success', 'Purchase order generated. You can now record payments directly.');
+    }
+
+    public function updatePurchaseDiscounts(Request $request, PurchasePaymentAllocationService $paymentAllocations, $id)
+    {
+        $user = $request->user();
+        abort_unless($user && ($user->hasPermission('purchase', 'edit') || $user->hasPermission('purchase', 'approve')), 403);
+
+        $validated = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.discount_percent' => ['required', 'numeric', 'min:0', 'max:100', 'regex:/^\d+(\.\d{1,2})?$/'],
+        ]);
+        $quotation = Quotation::findOrFail($id);
+        abort_unless($quotation->status === 'approved', 404);
+
+        $order = DB::transaction(function () use ($quotation, $validated, $paymentAllocations) {
+            $lockedQuotation = Quotation::lockForUpdate()->findOrFail($quotation->id);
+            $order = PurchaseOrder::where('quotation_id', $lockedQuotation->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+            if ($order->status !== 'draft'
+                || $order->goodsReceipts()->exists()
+                || $order->supplierBills()->exists()) {
+                throw ValidationException::withMessages([
+                    'purchase_order' => 'Discounts can only be changed on a draft purchase order before goods receipts or supplier bills are linked.',
+                ]);
+            }
+
+            $items = $order->items()->lockForUpdate()->get()->keyBy('id');
+            $submittedIds = array_map('strval', array_keys($validated['items']));
+            $existingIds = $items->keys()->map(function ($key) {
+                return (string) $key;
+            })->all();
+            sort($submittedIds);
+            sort($existingIds);
+            if ($submittedIds !== $existingIds) {
+                throw ValidationException::withMessages([
+                    'items' => 'Submit a discount value for every purchase-order item.',
+                ]);
+            }
+
+            $subtotalMinor = $discountMinor = $cgstMinor = $sgstMinor = 0;
+            foreach ($items as $itemId => $item) {
+                $discountPercentMinor = Money::toMinor($validated['items'][$itemId]['discount_percent']);
+                $basicMinor = Money::multiply(
+                    Money::toMinor($item->quantity),
+                    Money::toMinor($item->purchase_rate)
+                );
+                $lineDiscountMinor = Money::percentOf($basicMinor, $discountPercentMinor);
+                $taxableMinor = $basicMinor - $lineDiscountMinor;
+                $lineCgstMinor = Money::percentOf($taxableMinor, Money::toMinor($item->cgst_rate));
+                $lineSgstMinor = Money::percentOf($taxableMinor, Money::toMinor($item->sgst_rate));
+                $item->update([
+                    'discount_percent' => Money::fromMinor($discountPercentMinor),
+                    'cgst_amount' => Money::fromMinor($lineCgstMinor),
+                    'sgst_amount' => Money::fromMinor($lineSgstMinor),
+                    'total_amount' => Money::fromMinor($taxableMinor + $lineCgstMinor + $lineSgstMinor),
+                ]);
+                $subtotalMinor += $basicMinor;
+                $discountMinor += $lineDiscountMinor;
+                $cgstMinor += $lineCgstMinor;
+                $sgstMinor += $lineSgstMinor;
+            }
+
+            $grandTotalMinor = $subtotalMinor - $discountMinor + $cgstMinor + $sgstMinor;
+            if ($grandTotalMinor < $paymentAllocations->committedMinorForOrder($order->id)) {
+                throw ValidationException::withMessages([
+                    'items' => 'The updated purchase payable cannot be less than payments already recorded or reserved.',
+                ]);
+            }
+
+            $order->update([
+                'subtotal' => Money::fromMinor($subtotalMinor),
+                'discount_amount' => Money::fromMinor($discountMinor),
+                'tax_amount' => Money::fromMinor($cgstMinor + $sgstMinor),
+                'cgst_total' => Money::fromMinor($cgstMinor),
+                'sgst_total' => Money::fromMinor($sgstMinor),
+                'grand_total' => Money::fromMinor($grandTotalMinor),
+            ]);
+            ProcurementAuditLog::recordIfAvailable($order, 'po_discounts_updated', $order->status, $order->status, null, [
+                'discount_amount' => Money::fromMinor($discountMinor),
+                'grand_total' => Money::fromMinor($grandTotalMinor),
+            ]);
+
+            return $order;
+        });
+
+        ActivityLogger::log('Purchase Discounts Updated', 'Purchase', 'Discounts were updated on purchase order ' . $order->po_number . '.');
+
+        return redirect()->route('quotations.purchase-details', $quotation->id)
+            ->with('success', 'Discounts and purchase totals updated.');
+    }
+
+    public function storePurchaseInstallment(Request $request, $id, PurchasePaymentAllocationService $paymentAllocations)
+    {
+        $validated = $request->validate([
+            'due_date' => 'required|date',
+            'planned_amount' => ['required', 'numeric', 'min:0.01', 'regex:/^\d+(\.\d{1,2})?$/'],
+            'submission_token' => 'required|uuid',
+        ]);
+        $quotation = Quotation::findOrFail($id);
+        abort_unless($quotation->status === 'approved', 404);
+
+        $installment = DB::transaction(function () use ($quotation, $validated, $paymentAllocations) {
+            $lockedQuotation = Quotation::lockForUpdate()->findOrFail($quotation->id);
+            $order = $lockedQuotation->purchaseOrder;
+            if (!$order) {
+                throw ValidationException::withMessages(['purchase_order' => 'Generate the purchase order before creating an installment plan.']);
+            }
+            $order = PurchaseOrder::lockForUpdate()->findOrFail($order->id);
+            if ($order->status === 'cancelled') {
+                throw ValidationException::withMessages(['purchase_order' => 'A cancelled purchase order cannot have a payment plan.']);
+            }
+            if (PurchasePaymentInstallment::where('submission_token', $validated['submission_token'])->exists()) {
+                return null;
+            }
+
+            $activePlanMinor = 0;
+            foreach (PurchasePaymentInstallment::where('purchase_order_id', $order->id)
+                ->whereNull('cancelled_at')
+                ->lockForUpdate()
+                ->get() as $existing) {
+                $activePlanMinor += Money::toMinor($existing->planned_amount);
+            }
+            $amountMinor = Money::toMinor($validated['planned_amount']);
+            $eligibleMinor = max(0, Money::toMinor($order->grand_total) - $paymentAllocations->committedMinorForOrder($order->id));
+            if ($activePlanMinor + $amountMinor > $eligibleMinor) {
+                throw ValidationException::withMessages([
+                    'planned_amount' => 'The installment plan cannot exceed the eligible purchase outstanding amount of ₹' . number_format(Money::fromMinor($eligibleMinor), 2) . '.',
+                ]);
+            }
+
+            $installmentNumber = (int) PurchasePaymentInstallment::where('purchase_order_id', $order->id)->max('installment_number') + 1;
+            $installment = PurchasePaymentInstallment::create([
+                'purchase_order_id' => $order->id,
+                'installment_number' => $installmentNumber,
+                'due_date' => $validated['due_date'],
+                'planned_amount' => Money::fromMinor($amountMinor),
+                'submission_token' => $validated['submission_token'],
+            ]);
+            ProcurementAuditLog::recordIfAvailable($order, 'po_installment_scheduled', null, null, null, [
+                'installment_id' => $installment->id,
+                'installment_number' => $installment->installment_number,
+                'due_date' => $installment->due_date->toDateString(),
+                'planned_amount' => $installment->planned_amount,
+            ]);
+
+            return $installment;
+        });
+        if ($installment) {
+            ActivityLogger::log('Purchase Installment Scheduled', 'Purchase', 'Installment ' . $installment->installment_number . ' was scheduled for purchase order ' . $installment->purchase_order_id . '.');
+        }
+
+        return redirect()->route('quotations.purchase-details', $quotation->id)
+            ->with('success', 'Installment added to the payment plan.');
+    }
+
+    public function cancelPurchaseInstallment($id, $installmentId)
+    {
+        $quotation = Quotation::findOrFail($id);
+        abort_unless($quotation->status === 'approved', 404);
+
+        $cancelled = DB::transaction(function () use ($quotation, $installmentId) {
+            $lockedQuotation = Quotation::lockForUpdate()->findOrFail($quotation->id);
+            $order = $lockedQuotation->purchaseOrder;
+            if (!$order) {
+                throw ValidationException::withMessages(['installment' => 'No purchase order exists for this quotation.']);
+            }
+            PurchaseOrder::lockForUpdate()->findOrFail($order->id);
+            $installment = PurchasePaymentInstallment::where('purchase_order_id', $order->id)
+                ->lockForUpdate()
+                ->findOrFail($installmentId);
+            if ($installment->cancelled_at) {
+                return false;
+            }
+            if ($installment->payments()->where('status', 'paid')->exists()) {
+                throw ValidationException::withMessages(['installment' => 'An installment with recorded payments cannot be cancelled.']);
+            }
+
+            $installment->cancelled_at = now();
+            $installment->save();
+            ProcurementAuditLog::recordIfAvailable($order, 'po_installment_cancelled', null, null, null, [
+                'installment_id' => $installment->id,
+                'installment_number' => $installment->installment_number,
+                'planned_amount' => $installment->planned_amount,
+            ]);
+
+            return true;
+        });
+        if ($cancelled) {
+            ActivityLogger::log('Purchase Installment Cancelled', 'Purchase', 'Installment ' . $installmentId . ' was cancelled for purchase order ' . $quotation->purchase_order_id . '.');
+        }
+
+        return redirect()->route('quotations.purchase-details', $quotation->id)
+            ->with('success', 'Installment cancelled.');
     }
 
     public function savePurchasePayment(Request $request, PurchasePaymentAllocationService $paymentAllocations, $id)
@@ -171,17 +447,32 @@ class QuotationController extends Controller
         $quotation = Quotation::with(['items.product', 'request'])->findOrFail($id);
         abort_unless($quotation->status === 'approved', 404);
 
+        $inputMode = $request->input('payment_input_mode', 'amount');
+        $request->merge(['payment_input_mode' => $inputMode]);
         $validated = $request->validate([
             'payment_date' => 'required|date',
-            'amount' => 'required|numeric|min:0.01',
-            'payment_method' => ['required', Rule::in(PurchasePayment::METHODS)],
+            'payment_input_mode' => ['required', Rule::in(['amount', 'percentage'])],
+            'amount' => $inputMode === 'amount'
+                ? ['required', 'numeric', 'min:0.01', 'regex:/^\d+(\.\d{1,2})?$/']
+                : ['nullable'],
+            'payment_percentage' => $inputMode === 'percentage'
+                ? ['required', 'numeric', 'min:0.01', 'max:100', 'regex:/^\d+(\.\d{1,2})?$/']
+                : ['nullable'],
+            'payment_method' => ['nullable', Rule::in(PurchasePayment::METHODS)],
             'reference_number' => 'nullable|string|max:100',
             'remarks' => 'nullable|string|max:2000',
             'submission_token' => 'required|uuid',
+            'installment_id' => 'nullable|integer',
             'items' => $quotation->purchase_order_id ? 'nullable|array' : 'required|array',
             'items.*.purchase_rate' => $quotation->purchase_order_id ? 'nullable|numeric|min:0.01' : 'required|numeric|min:0.01',
-            'items.*.discount_percent' => 'nullable|numeric|min:0|max:100',
+            'items.*.discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100', 'regex:/^\d+(\.\d{1,2})?$/'],
         ]);
+        if (!empty($validated['installment_id'])
+            && \Carbon\Carbon::parse($validated['payment_date'])->startOfDay()->gt(\Carbon\Carbon::today())) {
+            throw ValidationException::withMessages([
+                'payment_date' => 'An actual installment payment date cannot be in the future.',
+            ]);
+        }
 
         $purchaseOrder = DB::transaction(function () use ($quotation, $validated, $paymentAllocations) {
             $lockedQuotation = Quotation::with('items')->lockForUpdate()->findOrFail($quotation->id);
@@ -207,18 +498,47 @@ class QuotationController extends Controller
                 ]);
             }
 
-            $amount = Money::toMinor($validated['amount']);
+            $amount = $validated['payment_input_mode'] === 'percentage'
+                ? Money::percentOf($remaining, Money::toMinor($validated['payment_percentage']))
+                : Money::toMinor($validated['amount']);
+            if ($amount <= 0) {
+                throw ValidationException::withMessages([
+                    $validated['payment_input_mode'] === 'percentage' ? 'payment_percentage' : 'amount'
+                        => 'The calculated payment amount must be greater than zero.',
+                ]);
+            }
+            $installment = null;
+            $installmentRemaining = $remaining;
+            if (!empty($validated['installment_id'])) {
+                $installment = PurchasePaymentInstallment::where('purchase_order_id', $order->id)
+                    ->lockForUpdate()
+                    ->findOrFail($validated['installment_id']);
+                if ($installment->cancelled_at) {
+                    throw ValidationException::withMessages(['installment_id' => 'A cancelled installment cannot receive a payment.']);
+                }
+                $installmentPaid = Money::toMinor(PurchasePayment::where('installment_id', $installment->id)
+                    ->where('status', 'paid')
+                    ->sum('amount'));
+                $installmentRemaining = max(0, Money::toMinor($installment->planned_amount) - $installmentPaid);
+                if ($amount > $installmentRemaining) {
+                    throw ValidationException::withMessages([
+                        'amount' => 'Payment amount cannot exceed this installment\'s remaining amount of ₹' . number_format(Money::fromMinor($installmentRemaining), 2) . '.',
+                    ]);
+                }
+            }
             if ($amount > $remaining) {
                 throw ValidationException::withMessages([
-                    'amount' => 'Payment amount cannot be greater than the remaining payable amount of ₹' . number_format(Money::fromMinor($remaining), 2) . '.',
+                    $validated['payment_input_mode'] === 'percentage' ? 'payment_percentage' : 'amount'
+                        => 'Payment amount cannot be greater than the eligible outstanding amount of ₹' . number_format(Money::fromMinor($remaining), 2) . '.',
                 ]);
             }
 
             PurchasePayment::create([
                 'purchase_order_id' => $order->id,
+                'installment_id' => $installment ? $installment->id : null,
                 'payment_date' => $validated['payment_date'],
                 'amount' => Money::fromMinor($amount),
-                'payment_method' => $validated['payment_method'],
+                'payment_method' => $validated['payment_method'] ?? 'Other',
                 'reference_number' => $validated['reference_number'] ?? null,
                 'remarks' => $validated['remarks'] ?? null,
                 'status' => 'paid',
@@ -484,7 +804,7 @@ class QuotationController extends Controller
         }
 
         return redirect()->route('quotations.purchase-details', $quotation->id)
-            ->with('success', 'Review negotiated purchase details and record the first payment to generate the purchase order.');
+            ->with('success', 'Review the negotiated purchase details and generate the purchase order when ready.');
     }
 
     private function createPurchaseOrderFromNegotiatedQuotation(Quotation $quotation, array $items)

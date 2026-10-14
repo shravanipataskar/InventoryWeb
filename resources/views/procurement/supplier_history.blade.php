@@ -6,7 +6,7 @@
 @section('content')
     <div class="page-heading">
         <div><span class="section-kicker">SUPPLIERS / PURCHASE &amp; PAYMENT HISTORY</span><h1>{{ $supplier->name }}</h1><p>{{ $supplier->supplier_code }}{{ $supplier->gst_number ? ' · GSTIN ' . $supplier->gst_number : '' }}</p></div>
-        <a class="button button-light" href="{{ route('supplier-bills.index', ['supplier_id' => $supplier->id]) }}">Bills for this supplier</a>
+        <a class="button button-light" href="{{ route('supplier-bills.index', ['supplier_id' => $supplier->id]) }}">Payment history for this supplier</a>
     </div>
 
     <div class="stats-grid">

@@ -18,6 +18,7 @@ class PurchasePayment extends Model
 
     protected $fillable = [
         'purchase_order_id',
+        'installment_id',
         'payment_date',
         'amount',
         'payment_method',
@@ -31,6 +32,11 @@ class PurchasePayment extends Model
     public function purchaseOrder()
     {
         return $this->belongsTo(PurchaseOrder::class);
+    }
+
+    public function installment()
+    {
+        return $this->belongsTo(PurchasePaymentInstallment::class, 'installment_id');
     }
 
     public function enteredBy()

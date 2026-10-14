@@ -163,6 +163,11 @@ class SupplierPaymentController extends Controller
 
     public function show($id)
     {
+        abort_unless(
+            Auth::user()->hasPermission('payments', 'view')
+                || Auth::user()->hasPermission('bills', 'view'),
+            403
+        );
         $payment = SupplierPayment::with(['supplier', 'allocations.bill', 'requester', 'approver', 'completer'])->findOrFail($id);
         $history = ProcurementAuditLog::forEntity($payment)->get();
 

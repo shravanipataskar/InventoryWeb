@@ -7,6 +7,7 @@ use App\GoodsReceipt;
 use App\ProcurementAuditLog;
 use App\Product;
 use App\PurchaseOrder;
+use App\PurchasePayment;
 use App\Quotation;
 use App\QuotationRequest;
 use App\Role;
@@ -15,6 +16,7 @@ use App\SupplierBill;
 use App\SupplierPayment;
 use App\Unit;
 use App\User;
+use Carbon\Carbon;
 use App\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\UploadedFile;
@@ -137,7 +139,7 @@ class SupplierBillPaymentWorkflowTest extends TestCase
             ->assertOk()
             ->assertSee('Purchase Details')
             ->assertSee('Bank &amp; Payment Details', false)
-            ->assertSee('Add Payment Entry');
+            ->assertSee('Record Payment');
 
         $firstToken = (string) Str::uuid();
         $initialPayment = [
@@ -178,7 +180,7 @@ class SupplierBillPaymentWorkflowTest extends TestCase
             'payment_method' => 'UPI',
             'submission_token' => (string) Str::uuid(),
         ])->assertSessionHasErrors([
-            'amount' => 'Payment amount cannot be greater than the remaining payable amount of ₹596.80.',
+            'amount' => 'Payment amount cannot be greater than the eligible outstanding amount of ₹596.80.',
         ]);
         $this->assertSame(1, DB::table('purchase_payments')->where('purchase_order_id', $order->id)->count());
 
@@ -201,8 +203,9 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         $this->get(route('quotations.purchase-details', $quotation->id))
             ->assertOk()
             ->assertSee('Payment Completed')
-            ->assertSee('Fully Paid')
-            ->assertSee('TXN-FIRST');
+            ->assertSee('Paid')
+            ->assertDontSee('TXN-FIRST')
+            ->assertSee('PP-');
 
         $this->post(route('quotations.purchase-payments.store', $quotation->id), [
             'payment_date' => now()->toDateString(),
@@ -211,6 +214,370 @@ class SupplierBillPaymentWorkflowTest extends TestCase
             'submission_token' => (string) Str::uuid(),
         ])->assertSessionHasErrors('amount');
         $this->assertSame(3, DB::table('purchase_payments')->where('purchase_order_id', $order->id)->count());
+    }
+
+    public function test_direct_partial_payments_accept_amount_or_percentage_without_an_installment_plan()
+    {
+        list($quotation) = $this->approvedQuotation();
+        $items = [];
+        foreach ($quotation->items as $item) {
+            $items[$item->id] = ['purchase_rate' => 100, 'discount_percent' => 0];
+        }
+        $this->actingAs($this->owner)
+            ->post(route('quotations.purchase-orders.generate', $quotation->id), ['items' => $items])
+            ->assertRedirect(route('quotations.purchase-details', $quotation->id));
+        $order = PurchaseOrder::where('quotation_id', $quotation->id)->firstOrFail();
+        $order->update(['grand_total' => 100000]);
+
+        $staff = User::create([
+            'name' => 'Payment Restricted User',
+            'email' => Str::uuid() . '@example.test',
+            'password' => Hash::make('test-password'),
+            'role' => 'STAFF',
+        ]);
+        $this->actingAs($staff)
+            ->post(route('quotations.purchase-payments.store', $quotation->id), [
+                'payment_date' => now()->toDateString(),
+                'amount' => 20000,
+                'payment_input_mode' => 'amount',
+                'submission_token' => (string) Str::uuid(),
+            ])->assertForbidden();
+
+        $this->actingAs($this->owner)->get(route('quotations.purchase-details', $quotation->id))
+            ->assertOk()
+            ->assertSee('Payment Amount (₹)')
+            ->assertSee('Payment Percentage (%)')
+            ->assertSee('Payment History');
+
+        $this->post(route('quotations.purchase-payments.store', $quotation->id), [
+            'payment_date' => now()->toDateString(),
+            'payment_input_mode' => 'percentage',
+            'payment_percentage' => '20.00',
+            'amount' => '999999.99',
+            'submission_token' => (string) Str::uuid(),
+        ])->assertRedirect();
+        $this->post(route('quotations.purchase-payments.store', $quotation->id), [
+            'payment_date' => now()->toDateString(),
+            'payment_input_mode' => 'amount',
+            'amount' => '30000.00',
+            'payment_percentage' => '99.99',
+            'submission_token' => (string) Str::uuid(),
+        ])->assertRedirect();
+        $this->post(route('quotations.purchase-payments.store', $quotation->id), [
+            'payment_date' => now()->toDateString(),
+            'payment_input_mode' => 'percentage',
+            'payment_percentage' => '100.00',
+            'submission_token' => (string) Str::uuid(),
+        ])->assertRedirect();
+
+        $payments = DB::table('purchase_payments')
+            ->where('purchase_order_id', $order->id)
+            ->orderBy('id')
+            ->get();
+        $this->assertSame(['20000.00', '30000.00', '50000.00'], $payments->pluck('amount')->all());
+        $this->assertSame(0, $order->installments()->count());
+        $this->assertSame(100000.0, (float) $payments->sum('amount'));
+        $this->get(route('quotations.purchase-details', $quotation->id))
+            ->assertOk()
+            ->assertSee('₹100,000.00')
+            ->assertSee('100.00%')
+            ->assertSee('Paid')
+            ->assertSee('20.00%')
+            ->assertSee('30.00%')
+            ->assertSee('50.00%')
+            ->assertSee('PP-' . str_pad($payments->first()->id, 8, '0', STR_PAD_LEFT));
+    }
+
+    public function test_payment_percentage_is_based_on_current_eligible_outstanding_balance()
+    {
+        list($quotation) = $this->approvedQuotation();
+        $items = [];
+        foreach ($quotation->items as $item) {
+            $items[$item->id] = ['purchase_rate' => 100, 'discount_percent' => 0];
+        }
+        $this->actingAs($this->owner)
+            ->post(route('quotations.purchase-orders.generate', $quotation->id), ['items' => $items])
+            ->assertRedirect();
+        $order = PurchaseOrder::where('quotation_id', $quotation->id)->firstOrFail();
+        $order->update(['grand_total' => 1235000]);
+
+        $this->get(route('quotations.purchase-details', $quotation->id))
+            ->assertOk()
+            ->assertSee('eligible outstanding balance')
+            ->assertSee('₹1,235,000.00')
+            ->assertSee('Calculated against eligible outstanding balance')
+            ->assertDontSee('Based on final payable');
+        $this->withSession(['_old_input' => [
+            'payment_input_mode' => 'percentage',
+            'payment_percentage' => '50',
+        ]])->get(route('quotations.purchase-details', $quotation->id))
+            ->assertOk()
+            ->assertSee('value="617500.00"', false);
+        $this->post(route('quotations.purchase-payments.store', $quotation->id), [
+            'payment_date' => now()->toDateString(),
+            'payment_input_mode' => 'percentage',
+            'payment_percentage' => '20.00',
+            'submission_token' => (string) Str::uuid(),
+        ])->assertRedirect();
+        $this->assertSame(247000.0, (float) DB::table('purchase_payments')
+            ->where('purchase_order_id', $order->id)
+            ->sum('amount'));
+        $this->get(route('quotations.purchase-details', $quotation->id))
+            ->assertOk()
+            ->assertSee('₹988,000.00')
+            ->assertSee('20.00%');
+
+        $this->post(route('quotations.purchase-payments.store', $quotation->id), [
+            'payment_date' => now()->toDateString(),
+            'payment_input_mode' => 'amount',
+            'amount' => '247000.00',
+            'submission_token' => (string) Str::uuid(),
+        ])->assertRedirect();
+        $this->assertSame(494000.0, (float) DB::table('purchase_payments')
+            ->where('purchase_order_id', $order->id)
+            ->sum('amount'));
+        $this->get(route('quotations.purchase-details', $quotation->id))
+            ->assertOk()
+            ->assertSee('₹741,000.00')
+            ->assertSee('40.00%');
+    }
+
+    public function test_purchase_discounts_are_editable_persisted_and_recalculate_tax_and_payable()
+    {
+        list($quotation) = $this->approvedQuotation();
+        $items = [];
+        foreach ($quotation->items as $item) {
+            $items[$item->id] = ['purchase_rate' => 30000, 'discount_percent' => 0];
+        }
+
+        $this->actingAs($this->owner)
+            ->post(route('quotations.purchase-orders.generate', $quotation->id), ['items' => $items])
+            ->assertRedirect(route('quotations.purchase-details', $quotation->id));
+        $order = PurchaseOrder::where('quotation_id', $quotation->id)->with('items')->firstOrFail();
+        $this->assertSame(354000.0, (float) $order->grand_total);
+
+        $purchaseItem = $order->items->first();
+        $this->get(route('quotations.purchase-details', $quotation->id))
+            ->assertOk()
+            ->assertSee('name="items[' . $purchaseItem->id . '][discount_percent]"', false)
+            ->assertDontSee('Payment Plan / Installment Schedule')
+            ->assertDontSee('Add Installment');
+
+        $staff = User::create([
+            'name' => 'Discount Restricted User',
+            'email' => Str::uuid() . '@example.test',
+            'password' => Hash::make('test-password'),
+            'role' => 'STAFF',
+        ]);
+        $this->actingAs($staff)->put(route('quotations.purchase-discounts.update', $quotation->id), [
+            'items' => [$purchaseItem->id => ['discount_percent' => 10]],
+        ])->assertForbidden();
+
+        $this->actingAs($this->owner)->put(route('quotations.purchase-discounts.update', $quotation->id), [
+            'items' => [$purchaseItem->id => ['discount_percent' => '100.01']],
+        ])->assertSessionHasErrors('items.' . $purchaseItem->id . '.discount_percent');
+
+        $this->actingAs($this->officer)->get(route('quotations.purchase-details', $quotation->id))
+            ->assertOk()
+            ->assertSee('name="items[' . $purchaseItem->id . '][discount_percent]"', false);
+        $this->put(route('quotations.purchase-discounts.update', $quotation->id), [
+            'items' => [$purchaseItem->id => ['discount_percent' => '5.50']],
+        ])->assertRedirect(route('quotations.purchase-details', $quotation->id));
+        $this->assertSame(334530.0, (float) $order->fresh()->grand_total);
+
+        $this->actingAs($this->owner);
+        $this->put(route('quotations.purchase-discounts.update', $quotation->id), [
+            'items' => [$purchaseItem->id => ['discount_percent' => '10.00']],
+        ])->assertRedirect(route('quotations.purchase-details', $quotation->id));
+
+        $order->refresh();
+        $purchaseItem->refresh();
+        $this->assertSame(30000.0, (float) $purchaseItem->purchase_rate);
+        $this->assertSame(10.0, (float) $purchaseItem->discount_percent);
+        $this->assertSame(318600.0, (float) $purchaseItem->total_amount);
+        $this->assertSame(24300.0, (float) $purchaseItem->cgst_amount);
+        $this->assertSame(24300.0, (float) $purchaseItem->sgst_amount);
+        $this->assertSame(300000.0, (float) $order->subtotal);
+        $this->assertSame(30000.0, (float) $order->discount_amount);
+        $this->assertSame(48600.0, (float) $order->tax_amount);
+        $this->assertSame(318600.0, (float) $order->grand_total);
+
+        $this->get(route('quotations.purchase-details', $quotation->id))
+            ->assertOk()
+            ->assertSee('10.00')
+            ->assertSee('₹318,600.00')
+            ->assertDontSee('Payment Plan / Installment Schedule');
+
+        $this->put(route('quotations.purchase-discounts.update', $quotation->id), [
+            'items' => [$purchaseItem->id => ['discount_percent' => '0.00']],
+        ])->assertRedirect();
+        $this->assertSame(354000.0, (float) $order->fresh()->grand_total);
+        $this->put(route('quotations.purchase-discounts.update', $quotation->id), [
+            'items' => [$purchaseItem->id => ['discount_percent' => '10.00']],
+        ])->assertRedirect();
+        $this->assertSame(318600.0, (float) $order->fresh()->grand_total);
+
+        $this->post(route('quotations.purchase-payments.store', $quotation->id), [
+            'payment_date' => now()->toDateString(),
+            'payment_input_mode' => 'amount',
+            'amount' => '100000.00',
+            'submission_token' => (string) Str::uuid(),
+        ])->assertRedirect();
+        $this->put(route('quotations.purchase-discounts.update', $quotation->id), [
+            'items' => [$purchaseItem->id => ['discount_percent' => '100.00']],
+        ])->assertSessionHasErrors('items');
+        $this->assertSame(318600.0, (float) $order->fresh()->grand_total);
+    }
+
+    public function test_installment_plan_tracks_partial_and_completed_payments_separately_from_purchase_balance()
+    {
+        Carbon::setTestNow(Carbon::parse('2026-10-14 12:00:00'));
+        try {
+            list($quotation) = $this->approvedQuotation(null, false);
+            $this->actingAs($this->owner)->post(route('quotations.approve', $quotation->id))->assertSessionHasNoErrors();
+            $quotation = $quotation->fresh('items');
+            $items = [];
+            foreach ($quotation->items as $item) {
+                $items[$item->id] = ['purchase_rate' => 100, 'discount_percent' => 0];
+            }
+
+            $this->actingAs($this->owner)
+                ->post(route('quotations.purchase-orders.generate', $quotation->id), ['items' => $items])
+                ->assertRedirect(route('quotations.purchase-details', $quotation->id));
+            $order = PurchaseOrder::where('quotation_id', $quotation->id)->firstOrFail();
+            $order->grand_total = 1300000;
+            $order->save();
+
+            $unprivileged = User::create([
+                'name' => 'Unprivileged User',
+                'email' => Str::uuid() . '@example.test',
+                'password' => Hash::make('test-password'),
+                'role' => 'STAFF',
+            ]);
+            $this->actingAs($unprivileged)
+                ->post(route('quotations.purchase-installments.store', $quotation->id), [
+                    'due_date' => '2026-10-15',
+                    'planned_amount' => 20000,
+                    'submission_token' => (string) Str::uuid(),
+                ])->assertForbidden();
+
+            $firstInstallmentToken = (string) Str::uuid();
+            $this->actingAs($this->owner)->post(route('quotations.purchase-installments.store', $quotation->id), [
+                'due_date' => '2026-10-15',
+                'planned_amount' => 20000,
+                'submission_token' => $firstInstallmentToken,
+            ])->assertRedirect();
+            $this->post(route('quotations.purchase-installments.store', $quotation->id), [
+                'due_date' => '2026-10-16',
+                'planned_amount' => 20000,
+                'submission_token' => (string) Str::uuid(),
+            ])->assertRedirect();
+            $this->post(route('quotations.purchase-installments.store', $quotation->id), [
+                'due_date' => '2026-10-15',
+                'planned_amount' => 20000,
+                'submission_token' => $firstInstallmentToken,
+            ])->assertRedirect();
+            $this->assertSame(2, $order->installments()->count());
+            $this->post(route('quotations.purchase-installments.store', $quotation->id), [
+                'due_date' => '2026-10-17',
+                'planned_amount' => 1260000.01,
+                'submission_token' => (string) Str::uuid(),
+            ])->assertSessionHasErrors('planned_amount');
+            $this->post(route('quotations.purchase-installments.store', $quotation->id), [
+                'due_date' => '2026-10-17',
+                'planned_amount' => 1000,
+                'submission_token' => (string) Str::uuid(),
+            ])->assertRedirect();
+            $cancelledInstallment = $order->installments()->where('installment_number', 3)->firstOrFail();
+            $this->delete(route('quotations.purchase-installments.cancel', [$quotation->id, $cancelledInstallment->id]))
+                ->assertRedirect();
+            $this->assertSame('Cancelled', $cancelledInstallment->fresh()->status());
+
+            $installments = $order->installments()->with('payments')->get();
+            $first = $installments->first();
+            $second = $installments->where('installment_number', 2)->first();
+            $this->assertSame('Scheduled', $first->status());
+            $this->assertSame('Scheduled', $second->status());
+            Carbon::setTestNow(Carbon::parse('2026-10-15 12:00:00'));
+            $this->assertSame('Due', $first->status());
+            $this->assertSame('Scheduled', $second->status());
+            Carbon::setTestNow(Carbon::parse('2026-10-16 12:00:00'));
+            $this->assertSame('Overdue', $first->status());
+            $this->assertSame('Due', $second->status());
+            Carbon::setTestNow(Carbon::parse('2026-10-14 12:00:00'));
+
+            $this->get(route('quotations.purchase-details', $quotation->id))
+                ->assertOk()
+                ->assertDontSee('Payment Plan / Installment Schedule')
+                ->assertDontSee('Add Installment');
+
+            $this->post(route('quotations.purchase-payments.store', $quotation->id), [
+                'installment_id' => $first->id,
+                'payment_date' => '2026-10-15',
+                'amount' => 20000,
+                'submission_token' => (string) Str::uuid(),
+            ])->assertSessionHasErrors('payment_date');
+
+            $this->post(route('quotations.purchase-payments.store', $quotation->id), [
+                'installment_id' => $first->id,
+                'payment_date' => '2026-10-14',
+                'amount' => 20000,
+                'submission_token' => (string) Str::uuid(),
+            ])->assertRedirect();
+
+            $first->refresh()->load('payments');
+            $second->refresh()->load('payments');
+            $this->assertSame('Paid', $first->status());
+            $this->assertSame('Scheduled', $second->status());
+            $this->get(route('quotations.purchase-details', $quotation->id))
+                ->assertOk()
+                ->assertDontSee('Payment completion:')
+                ->assertSee('₹20,000.00')
+                ->assertSee('₹1,280,000.00')
+                ->assertSee('1.54%')
+                ->assertSee('14 Oct 2026');
+            $this->post(route('quotations.purchase-payments.store', $quotation->id), [
+                'installment_id' => $first->id,
+                'payment_date' => '2026-10-14',
+                'amount' => 0.01,
+                'submission_token' => (string) Str::uuid(),
+            ])->assertSessionHasErrors('amount');
+
+            $this->post(route('quotations.purchase-payments.store', $quotation->id), [
+                'installment_id' => $second->id,
+                'payment_date' => '2026-10-14',
+                'amount' => 10000,
+                'submission_token' => (string) Str::uuid(),
+            ])->assertRedirect();
+            $second->refresh()->load('payments');
+            $this->assertSame('Partially Paid', $second->status());
+            $this->get(route('quotations.purchase-details', $quotation->id))
+                ->assertOk()
+                ->assertDontSee('Payment completion:');
+
+            $this->post(route('quotations.purchase-payments.store', $quotation->id), [
+                'installment_id' => $second->id,
+                'payment_date' => '2026-10-14',
+                'amount' => 10000,
+                'submission_token' => (string) Str::uuid(),
+            ])->assertRedirect();
+            $first->refresh()->load('payments');
+            $second->refresh()->load('payments');
+            $this->assertSame('Paid', $first->status());
+            $this->assertSame('Paid', $second->status());
+            $this->assertSame(40000.0, (float) DB::table('purchase_payments')->where('purchase_order_id', $order->id)->sum('amount'));
+
+            $this->get(route('quotations.purchase-details', $quotation->id))
+                ->assertOk()
+                ->assertSee('₹1,260,000.00')
+                ->assertSee('₹40,000.00')
+                ->assertSee('₹0.00')
+                ->assertSee('3.08%')
+                ->assertSee('Paid')
+                ->assertDontSee('Payment Plan / Installment Schedule');
+        } finally {
+            Carbon::setTestNow();
+        }
     }
 
     public function test_approval_confirmation_approves_one_supplier_without_creating_a_purchase_order()
@@ -469,6 +836,119 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         $this->assertSame('under_verification', $bill->fresh()->status);
     }
 
+    public function test_payment_history_aggregates_transactions_and_filters_bill_statuses()
+    {
+        $bill = $this->approvedBill();
+        $bill->update([
+            'paid_amount' => 200,
+            'status' => SupplierBill::STATUS_PARTIALLY_PAID,
+            'due_date' => now()->subDay()->toDateString(),
+        ]);
+        $unpaidBill = SupplierBill::create([
+            'bill_number' => 'BILL-HISTORY-' . strtoupper(Str::random(8)),
+            'submission_token' => (string) Str::uuid(),
+            'supplier_id' => $bill->supplier_id,
+            'purchase_order_id' => $bill->purchase_order_id,
+            'invoice_number' => 'HISTORY-' . strtoupper(Str::random(8)),
+            'duplicate_key' => SupplierBill::duplicateKey($bill->supplier_id, 'HISTORY-' . Str::random(8)),
+            'invoice_date' => now()->toDateString(),
+            'due_date' => now()->subDay()->toDateString(),
+            'subtotal' => 500,
+            'discount_amount' => 0,
+            'tax_amount' => 0,
+            'total_amount' => 500,
+            'invoice_total' => 500,
+            'paid_amount' => 0,
+            'status' => SupplierBill::STATUS_APPROVED,
+            'created_by' => $this->officer->id,
+        ]);
+
+        $pending = $this->requestPayment($bill, '100.00');
+        $this->actingAs($this->owner)
+            ->get(route('supplier-bills.index', ['filter' => 'pending_approval']))
+            ->assertOk()
+            ->assertSee($pending->payment_number)
+            ->assertSee('Pending Approval');
+        $this->actingAs($this->owner)
+            ->get(route('supplier-bills.index', ['filter' => 'pending_approval', 'search' => 'no-matching-payment']))
+            ->assertOk()
+            ->assertSee('No payment history found');
+
+        $this->actingAs($this->owner)
+            ->get(route('supplier-bills.index', ['filter' => 'unpaid']))
+            ->assertOk()
+            ->assertSee($unpaidBill->bill_number)
+            ->assertDontSee($pending->payment_number);
+
+        $this->actingAs($this->owner)
+            ->get(route('supplier-bills.index', ['filter' => 'overdue']))
+            ->assertOk()
+            ->assertSee($bill->bill_number)
+            ->assertSee($unpaidBill->bill_number);
+
+        $this->approveAndComplete($pending, 'HISTORY-REF-1');
+        $this->actingAs($this->owner)
+            ->get(route('supplier-bills.index', [
+                'filter' => 'partially_paid',
+                'search' => $bill->supplier->name,
+                'supplier_id' => $bill->supplier_id,
+                'from_date' => now()->toDateString(),
+                'to_date' => now()->toDateString(),
+            ]))
+            ->assertOk()
+            ->assertSee($pending->payment_number)
+            ->assertSee('₹1,180.00')
+            ->assertSee('25.42%');
+        $confirmedPaid = \App\Support\Money::fromMinor(
+            \App\Support\Money::toMinor(DB::table('purchase_payments')->where('status', 'paid')->sum('amount'))
+            + \App\Support\Money::toMinor(DB::table('supplier_payments')->where('status', SupplierPayment::STATUS_COMPLETED)->sum('amount'))
+        );
+        $billOutstandingMinor = SupplierBill::whereIn('status', SupplierBill::PAYABLE_STATUSES)->get()
+            ->sum(function ($payableBill) {
+                return max(0, $payableBill->outstandingMinor());
+            });
+        $paymentAllocations = app(\App\Services\PurchasePaymentAllocationService::class);
+        $unbilledOutstandingMinor = PurchaseOrder::where('status', '<>', 'cancelled')
+            ->whereDoesntHave('supplierBills')
+            ->get()
+            ->sum(function ($unbilledOrder) use ($paymentAllocations) {
+                return max(0, \App\Support\Money::toMinor($unbilledOrder->grand_total)
+                    - $paymentAllocations->paidMinorForOrder($unbilledOrder->id));
+            });
+        $dashboard = $this->actingAs($this->owner)->get(route('supplier-bills.index'))->assertOk();
+        $dashboard->assertSee('₹' . number_format((float) $confirmedPaid, 2))
+            ->assertSee('₹' . number_format((float) \App\Support\Money::fromMinor($billOutstandingMinor + $unbilledOutstandingMinor), 2));
+        $purchasePayment = PurchasePayment::where('purchase_order_id', $bill->purchase_order_id)->firstOrFail();
+        $this->assertSame(
+            1,
+            substr_count($dashboard->getContent(), 'PP-' . str_pad($purchasePayment->id, 8, '0', STR_PAD_LEFT))
+        );
+        $this->get(route('payment-history.purchase-payments.show', $purchasePayment->id))
+            ->assertOk()
+            ->assertSee('Purchase Payment Details')
+            ->assertSee('Related Purchase Payment History');
+
+        $nextPayment = $this->requestPayment($bill, '880.00');
+        $this->approveAndComplete($nextPayment, 'HISTORY-REF-2');
+        $this->actingAs($this->owner)
+            ->get(route('supplier-bills.index', ['filter' => 'paid']))
+            ->assertOk()
+            ->assertSee($nextPayment->payment_number)
+            ->assertSee('₹1,180.00');
+
+        $export = $this->actingAs($this->owner)
+            ->get(route('supplier-bills.index', ['filter' => 'all', 'export' => 'csv']))
+            ->assertOk()
+            ->assertHeader('content-type', 'text/csv; charset=UTF-8')
+            ->assertHeader('content-disposition');
+        ob_start();
+        $export->baseResponse->sendContent();
+        $csv = ob_get_clean();
+        $this->assertStringContainsString('Payment Voucher No.', $csv);
+        $this->assertStringContainsString($pending->payment_number, $csv);
+        $this->assertSame(1, substr_count($csv, 'PP-' . str_pad($purchasePayment->id, 8, '0', STR_PAD_LEFT)));
+    }
+
     public function test_role_permissions_are_enforced_on_new_endpoints()
     {
         $bill = $this->approvedBill();
@@ -489,6 +969,18 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         $this->get(route('supplier-payments.create', ['supplier_id' => $bill->supplier_id]))->assertOk()->assertSee($bill->bill_number);
         $this->get(route('procurement.approvals'))->assertForbidden();
         $this->post(route('supplier-payments.approve', $payment->id))->assertForbidden();
+
+        $unprivileged = User::create([
+            'name' => 'Payment History No Permission',
+            'email' => Str::uuid() . '@example.test',
+            'password' => Hash::make('test-password'),
+            'role' => 'UNPRIVILEGED',
+        ]);
+        $purchasePayment = PurchasePayment::where('purchase_order_id', $bill->purchase_order_id)->firstOrFail();
+        $this->actingAs($unprivileged)->get(route('supplier-bills.index'))->assertForbidden();
+        $this->get(route('supplier-bills.show', $bill->id))->assertForbidden();
+        $this->get(route('supplier-payments.show', $payment->id))->assertForbidden();
+        $this->get(route('payment-history.purchase-payments.show', $purchasePayment->id))->assertForbidden();
         $this->post(route('supplier-payments.reverse', $payment->id), ['reason' => 'x'])->assertForbidden();
         $this->post(route('supplier-bills.reject', $bill->id), ['reason' => 'x'])->assertForbidden();
         $this->post(route('supplier-bills.cancel', $bill->id), ['reason' => 'x'])->assertForbidden();

@@ -75,6 +75,11 @@ class PurchaseOrder extends Model
         return $this->hasMany(PurchasePayment::class);
     }
 
+    public function installments()
+    {
+        return $this->hasMany(PurchasePaymentInstallment::class)->orderBy('installment_number');
+    }
+
     public function creator()
     {
         return $this->belongsTo(User::class, 'created_by');

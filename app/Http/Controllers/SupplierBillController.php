@@ -7,7 +7,6 @@ use App\PurchaseOrder;
 use App\Services\PurchasePaymentAllocationService;
 use App\Services\SupplierBillService;
 use App\Services\SupplierPaymentService;
-use App\Supplier;
 use App\SupplierBill;
 use App\Support\ActivityLogger;
 use App\Support\Money;
@@ -34,46 +33,6 @@ class SupplierBillController extends Controller
         $this->bills = $bills;
         $this->payments = $payments;
         $this->purchasePayments = $purchasePayments;
-    }
-
-    public function index(Request $request)
-    {
-        $filter = $request->query('filter');
-        $query = SupplierBill::with(['supplier', 'purchaseOrder'])->orderByDesc('id');
-
-        if ($filter === 'outstanding') {
-            $query->whereIn('status', SupplierBill::PAYABLE_STATUSES);
-        } elseif ($filter === 'overdue') {
-            $query->overdue();
-        } elseif ($filter && $filter !== 'all') {
-            $query->where('status', $filter);
-        }
-        if ($request->filled('supplier_id')) {
-            $query->where('supplier_id', (int) $request->query('supplier_id'));
-        }
-        if ($request->filled('search')) {
-            $search = $request->query('search');
-            $query->where(function ($inner) use ($search) {
-                $inner->where('invoice_number', 'like', '%' . $search . '%')
-                    ->orWhere('bill_number', 'like', '%' . $search . '%');
-            });
-        }
-
-        $bills = $query->paginate(20)->appends($request->query());
-        $payable = SupplierBill::whereIn('status', SupplierBill::PAYABLE_STATUSES)->get(['total_amount', 'paid_amount', 'due_date', 'status']);
-        $summary = [
-            'outstanding' => Money::fromMinor($payable->sum(function ($bill) {
-                return $bill->outstandingMinor();
-            })),
-            'overdue' => Money::fromMinor($payable->filter->isOverdue()->sum(function ($bill) {
-                return $bill->outstandingMinor();
-            })),
-            'overdue_count' => $payable->filter->isOverdue()->count(),
-            'awaiting' => SupplierBill::whereIn('status', SupplierBill::EDITABLE_STATUSES)->count(),
-        ];
-        $suppliers = Supplier::orderBy('name')->get(['id', 'name']);
-
-        return view('supplier_bills.index', compact('bills', 'summary', 'suppliers', 'filter'));
     }
 
     public function create($purchaseOrderId)
@@ -180,6 +139,11 @@ class SupplierBillController extends Controller
 
     public function show($id)
     {
+        abort_unless(
+            Auth::user()->hasPermission('bills', 'view')
+                || Auth::user()->hasPermission('payments', 'view'),
+            403
+        );
         $bill = SupplierBill::with([
             'supplier', 'purchaseOrder.quotation', 'items.product.unit', 'items.purchaseOrderItem',
             'allocations.payment', 'purchasePaymentAllocations.purchasePayment', 'creator', 'approver',

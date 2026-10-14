@@ -302,8 +302,8 @@
                         @if ($can('goods_receipts'))<a class="nav-link {{ request()->routeIs('goods-receipts.*') ? 'is-active' : '' }}" href="{{ route('goods-receipts.index') }}">
                             <svg><use href="#icon-check"></use></svg><span>Goods Received</span>
                         </a>@endif
-                        @if ($can('bills'))<a class="nav-link {{ request()->routeIs('supplier-bills.*') ? 'is-active' : '' }}" href="{{ route('supplier-bills.index') }}">
-                            <svg><use href="#icon-layers"></use></svg><span>Supplier Bills</span>
+                        @if ($can('payments') || $can('bills'))<a class="nav-link {{ request()->routeIs('supplier-bills.index') ? 'is-active' : '' }}" href="{{ route('supplier-bills.index') }}">
+                            <svg><use href="#icon-tray-out"></use></svg><span>Payment History</span>
                         </a>@endif
                         @if ($can('payments'))<a class="nav-link {{ request()->routeIs('supplier-payments.*') ? 'is-active' : '' }}" href="{{ route('supplier-payments.index') }}">
                             <svg><use href="#icon-tray-out"></use></svg><span>Payments</span>

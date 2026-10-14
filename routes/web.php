@@ -265,6 +265,10 @@ Route::middleware('auth')->group(function () {
     Route::post('/quotations/{quotation}/reject', 'QuotationController@reject')->middleware('permission:quotations.reject')->name('quotations.reject');
     Route::post('/quotations/{quotation}/generate-purchase', 'QuotationController@generatePurchase')->middleware('permission:quotations.approve')->name('quotations.generate-purchase');
     Route::get('/quotations/{quotation}/purchase-details', 'QuotationController@purchaseDetails')->middleware('permission:quotations.view')->name('quotations.purchase-details');
+    Route::post('/quotations/{quotation}/purchase-details/purchase-order', 'QuotationController@createPurchaseOrder')->middleware('permission:purchase.approve')->name('quotations.purchase-orders.generate');
+    Route::put('/quotations/{quotation}/purchase-details/discounts', 'QuotationController@updatePurchaseDiscounts')->name('quotations.purchase-discounts.update');
+    Route::post('/quotations/{quotation}/purchase-details/installments', 'QuotationController@storePurchaseInstallment')->middleware('permission:purchase.approve')->name('quotations.purchase-installments.store');
+    Route::delete('/quotations/{quotation}/purchase-details/installments/{installment}', 'QuotationController@cancelPurchaseInstallment')->middleware('permission:purchase.approve')->name('quotations.purchase-installments.cancel');
     Route::post('/quotations/{quotation}/purchase-details/payments', 'QuotationController@savePurchasePayment')->middleware('permission:purchase.approve')->name('quotations.purchase-payments.store');
     Route::get('/quotations/{quotationRequest}/rejected', 'QuotationController@rejected')->middleware('permission:quotations.approve')->name('quotations.rejected');
     Route::get('/quotations/{quotation}', 'QuotationController@show')->middleware('permission:quotations.view')->name('quotations.show');
@@ -435,10 +439,10 @@ Route::middleware('auth')->group(function () {
     |--------------------------------------------------------------------------
     */
 
-    Route::get('supplier-bills', 'SupplierBillController@index')->middleware('permission:bills.view')->name('supplier-bills.index');
+    Route::get('supplier-bills', 'PaymentHistoryController@index')->name('supplier-bills.index');
     Route::get('purchase-orders/{purchaseOrder}/bills/create', 'SupplierBillController@create')->middleware('permission:bills.create')->name('supplier-bills.create');
     Route::post('purchase-orders/{purchaseOrder}/bills', 'SupplierBillController@store')->middleware('permission:bills.create')->name('supplier-bills.store');
-    Route::get('supplier-bills/{bill}', 'SupplierBillController@show')->where('bill', '[0-9]+')->middleware('permission:bills.view')->name('supplier-bills.show');
+    Route::get('supplier-bills/{bill}', 'SupplierBillController@show')->where('bill', '[0-9]+')->name('supplier-bills.show');
     Route::get('supplier-bills/{bill}/edit', 'SupplierBillController@edit')->middleware('permission:bills.edit')->name('supplier-bills.edit');
     Route::put('supplier-bills/{bill}', 'SupplierBillController@update')->middleware('permission:bills.edit')->name('supplier-bills.update');
     Route::get('supplier-bills/{bill}/attachment', 'SupplierBillController@attachment')->middleware('permission:bills.view')->name('supplier-bills.attachment');
@@ -450,7 +454,8 @@ Route::middleware('auth')->group(function () {
     Route::get('supplier-payments', 'SupplierPaymentController@index')->middleware('permission:payments.view')->name('supplier-payments.index');
     Route::get('supplier-payments/create', 'SupplierPaymentController@create')->middleware('permission:payments.create')->name('supplier-payments.create');
     Route::post('supplier-payments', 'SupplierPaymentController@store')->middleware('permission:payments.create')->name('supplier-payments.store');
-    Route::get('supplier-payments/{payment}', 'SupplierPaymentController@show')->where('payment', '[0-9]+')->middleware('permission:payments.view')->name('supplier-payments.show');
+    Route::get('supplier-payments/{payment}', 'SupplierPaymentController@show')->where('payment', '[0-9]+')->name('supplier-payments.show');
+    Route::get('payment-history/purchase-payments/{payment}', 'PaymentHistoryController@showPurchasePayment')->where('payment', '[0-9]+')->name('payment-history.purchase-payments.show');
     Route::get('supplier-payments/{payment}/proof', 'SupplierPaymentController@proof')->middleware('permission:payments.view')->name('supplier-payments.proof');
     Route::post('supplier-payments/{payment}/approve', 'SupplierPaymentController@approve')->middleware('permission:payments.approve')->name('supplier-payments.approve');
     Route::post('supplier-payments/{payment}/reject', 'SupplierPaymentController@reject')->middleware('permission:payments.reject')->name('supplier-payments.reject');

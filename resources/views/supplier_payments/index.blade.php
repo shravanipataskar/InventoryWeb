@@ -1,14 +1,14 @@
 @extends('layouts.app')
 
-@section('title', 'Supplier Payments')
-@section('topbar-title', 'Supplier payments')
+@section('title', 'Payment Requests')
+@section('topbar-title', 'Payment requests')
 
 @section('content')
     <div class="page-heading">
         <div>
             <span class="section-kicker">PURCHASING / PAYABLES</span>
-            <h1>Payment Requests &amp; History</h1>
-            <p>Payments are made outside the system (bank, UPI, cheque, cash) and recorded here after approval.</p>
+            <h1>Payment Requests</h1>
+            <p>Review payment requests, approvals, and completion status for supplier bills.</p>
         </div>
         @if (auth()->user()->hasPermission('payments', 'create'))
             <a class="button button-primary" href="{{ route('supplier-payments.create') }}"><span class="button-plus">+</span> New Payment Request</a>
