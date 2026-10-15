@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
@@ -50,7 +51,6 @@ class AuthController extends Controller
         ]);
     }
 
-
     /*
     |--------------------------------------------------------------------------
     | Landing Page
@@ -59,13 +59,23 @@ class AuthController extends Controller
 
     public function showIndex()
     {
-        if (Auth::check()) {
-            return redirect()->route('dashboard');
+        try {
+            if (Auth::check()) {
+                return redirect()->route('dashboard');
+            }
+
+            return view('auth.index');
+        } catch (\Throwable $e) {
+            Log::error('Failed to load landing page.', [
+                'exception' => $e,
+            ]);
+
+            return back()->with(
+                'error',
+                'Unable to load the page. Please try again.'
+            );
         }
-
-        return view('auth.index');
     }
-
 
     /*
     |--------------------------------------------------------------------------
@@ -75,9 +85,19 @@ class AuthController extends Controller
 
     public function showLogin()
     {
-        return view('auth.login');
-    }
+        try {
+            return view('auth.login');
+        } catch (\Throwable $e) {
+            Log::error('Failed to load login page.', [
+                'exception' => $e,
+            ]);
 
+            return back()->with(
+                'error',
+                'Unable to load the login page. Please try again.'
+            );
+        }
+    }
 
     public function login(Request $request)
     {
@@ -93,27 +113,129 @@ class AuthController extends Controller
             ],
         ]);
 
-        $user = User::where(
-            'email',
-            $credentials['email']
-        )->first();
+        try {
+            $user = User::where(
+                'email',
+                $credentials['email']
+            )->first();
 
-        /*
-        |--------------------------------------------------------------------------
-        | Check credentials
-        |--------------------------------------------------------------------------
-        */
+            /*
+            |--------------------------------------------------------------------------
+            | Check credentials
+            |--------------------------------------------------------------------------
+            */
 
-        if (
-            !$user ||
-            !Hash::check(
-                $credentials['password'],
-                $user->password
-            )
-        ) {
+            if (
+                !$user ||
+                !Hash::check(
+                    $credentials['password'],
+                    $user->password
+                )
+            ) {
+                return back()
+                    ->withErrors([
+                        'email' => 'The email or password you entered is incorrect.',
+                    ])
+                    ->withInput(
+                        $request->only(
+                            'email',
+                            'remember'
+                        )
+                    );
+            }
+
+            if (Schema::hasColumn('users', 'is_active') && !$user->is_active) {
+                return back()
+                    ->withErrors([
+                        'email' => 'This account is inactive. Contact your system administrator.',
+                    ])
+                    ->withInput($request->only('email', 'remember'));
+            }
+
+            $remember = $request->boolean('remember');
+
+            Auth::login($user, $remember);
+
+            $request->session()->regenerate();
+
+            /*
+            |--------------------------------------------------------------------------
+            | Update Login Details and Activity Log
+            |--------------------------------------------------------------------------
+            */
+
+            DB::beginTransaction();
+
+            try {
+                if (Schema::hasColumn('users', 'last_login_at')) {
+                    DB::table('users')
+                        ->where('id', $user->id)
+                        ->update([
+                            'last_login_at' => now(),
+                            'updated_at' => now(),
+                        ]);
+                }
+
+                ActivityLogger::log(
+                    'Signed in',
+                    'Account',
+                    'User signed in.',
+                    $user
+                );
+
+                DB::commit();
+            } catch (\Throwable $e) {
+                DB::rollBack();
+
+                Log::error('Failed to record login activity.', [
+                    'user_id' => $user->id,
+                    'exception' => $e,
+                ]);
+
+                Auth::logout();
+
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+
+                return back()
+                    ->withErrors([
+                        'email' => 'Unable to complete sign in. Please try again.',
+                    ])
+                    ->withInput(
+                        $request->only(
+                            'email',
+                            'remember'
+                        )
+                    );
+            }
+
+            return redirect()
+                ->intended(
+                    route('dashboard')
+                )
+                ->with(
+                    'success',
+                    'Welcome back! You are signed in.'
+                );
+        } catch (\Throwable $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            Log::error('Login failed due to an unexpected exception.', [
+                'email' => $request->input('email'),
+                'exception' => $e,
+            ]);
+
+            if (Auth::check()) {
+                Auth::logout();
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+            }
+
             return back()
                 ->withErrors([
-                    'email' => 'The email or password you entered is incorrect.',
+                    'email' => 'Unable to complete sign in. Please try again.',
                 ])
                 ->withInput(
                     $request->only(
@@ -122,37 +244,7 @@ class AuthController extends Controller
                     )
                 );
         }
-
-        if (Schema::hasColumn('users', 'is_active') && !$user->is_active) {
-            return back()
-                ->withErrors([
-                    'email' => 'This account is inactive. Contact your system administrator.',
-                ])
-                ->withInput($request->only('email', 'remember'));
-        }
-
-        $remember = $request->boolean('remember');
-
-        Auth::login($user, $remember);
-
-        $request->session()->regenerate();
-        if (Schema::hasColumn('users', 'last_login_at')) {
-            DB::table('users')
-                ->where('id', $user->id)
-                ->update(['last_login_at' => now(), 'updated_at' => now()]);
-        }
-        ActivityLogger::log('Signed in', 'Account', 'User signed in.', $user);
-
-        return redirect()
-            ->intended(
-                route('dashboard')
-            )
-            ->with(
-                'success',
-                'Welcome back! You are signed in.'
-            );
     }
-
 
     /*
     |--------------------------------------------------------------------------
@@ -162,11 +254,21 @@ class AuthController extends Controller
 
     public function showForgotPassword()
     {
-        return view(
-            'auth.forgot-password'
-        );
-    }
+        try {
+            return view(
+                'auth.forgot-password'
+            );
+        } catch (\Throwable $e) {
+            Log::error('Failed to load forgot password page.', [
+                'exception' => $e,
+            ]);
 
+            return back()->with(
+                'error',
+                'Unable to load the page. Please try again.'
+            );
+        }
+    }
 
     public function sendResetLink(Request $request)
     {
@@ -177,26 +279,38 @@ class AuthController extends Controller
             ],
         ]);
 
-        $status = Password::sendResetLink(
-            $request->only('email')
-        );
-
-        if (
-            $status === Password::RESET_LINK_SENT
-        ) {
-            return back()->with(
-                'status',
-                'If an account exists for this email, a password reset link has been sent.'
+        try {
+            $status = Password::sendResetLink(
+                $request->only('email')
             );
+
+            if (
+                $status === Password::RESET_LINK_SENT
+            ) {
+                return back()->with(
+                    'status',
+                    'If an account exists for this email, a password reset link has been sent.'
+                );
+            }
+
+            return back()
+                ->withErrors([
+                    'email' => __($status),
+                ])
+                ->withInput();
+        } catch (\Throwable $e) {
+            Log::error('Failed to send password reset link.', [
+                'email' => $request->input('email'),
+                'exception' => $e,
+            ]);
+
+            return back()
+                ->withErrors([
+                    'email' => 'Unable to process your request. Please try again later.',
+                ])
+                ->withInput();
         }
-
-        return back()
-            ->withErrors([
-                'email' => __($status),
-            ])
-            ->withInput();
     }
-
 
     /*
     |--------------------------------------------------------------------------
@@ -208,19 +322,29 @@ class AuthController extends Controller
         Request $request,
         $token = null
     ) {
-        return view(
-            'auth.reset-password',
-            [
-                'token' => $token,
+        try {
+            return view(
+                'auth.reset-password',
+                [
+                    'token' => $token,
 
-                'email' => $request->query(
-                    'email',
-                    ''
-                ),
-            ]
-        );
+                    'email' => $request->query(
+                        'email',
+                        ''
+                    ),
+                ]
+            );
+        } catch (\Throwable $e) {
+            Log::error('Failed to load reset password page.', [
+                'exception' => $e,
+            ]);
+
+            return back()->with(
+                'error',
+                'Unable to load the page. Please try again.'
+            );
+        }
     }
-
 
     public function resetPassword(
         Request $request
@@ -243,45 +367,68 @@ class AuthController extends Controller
             ],
         ]);
 
-        $status = Password::reset(
-            $data,
-            function (
-                User $user,
-                $password
+        try {
+            DB::beginTransaction();
+
+            $status = Password::reset(
+                $data,
+                function (
+                    User $user,
+                    $password
+                ) {
+                    $user->forceFill([
+                        'password' => Hash::make(
+                            $password
+                        ),
+
+                        'remember_token' => Str::random(
+                            60
+                        ),
+                    ])->save();
+                }
+            );
+
+            if (
+                $status === Password::PASSWORD_RESET
             ) {
+                DB::commit();
 
-                $user->forceFill([
-                    'password' => Hash::make(
-                        $password
-                    ),
-
-                    'remember_token' => Str::random(
-                        60
-                    ),
-                ])->save();
+                return redirect()
+                    ->route('login')
+                    ->with(
+                        'status',
+                        'Your password has been reset successfully. You can now sign in.'
+                    );
             }
-        );
 
-        if (
-            $status === Password::PASSWORD_RESET
-        ) {
-            return redirect()
-                ->route('login')
-                ->with(
-                    'status',
-                    'Your password has been reset successfully. You can now sign in.'
+            DB::rollBack();
+
+            return back()
+                ->withErrors([
+                    'email' => __($status),
+                ])
+                ->withInput(
+                    $request->only('email')
+                );
+        } catch (\Throwable $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            Log::error('Password reset failed.', [
+                'email' => $request->input('email'),
+                'exception' => $e,
+            ]);
+
+            return back()
+                ->withErrors([
+                    'email' => 'Unable to reset your password. Please try again.',
+                ])
+                ->withInput(
+                    $request->only('email')
                 );
         }
-
-        return back()
-            ->withErrors([
-                'email' => __($status),
-            ])
-            ->withInput(
-                $request->only('email')
-            );
     }
-
 
     /*
     |--------------------------------------------------------------------------
@@ -291,16 +438,27 @@ class AuthController extends Controller
 
     public function showProfile()
     {
-        $user = Auth::user()->load('roles');
+        try {
+            $user = Auth::user()->load('roles');
 
-        return view(
-            'profile.show',
-            [
-                'user' => $user,
-            ]
-        );
+            return view(
+                'profile.show',
+                [
+                    'user' => $user,
+                ]
+            );
+        } catch (\Throwable $e) {
+            Log::error('Failed to load user profile.', [
+                'user_id' => Auth::id(),
+                'exception' => $e,
+            ]);
+
+            return back()->with(
+                'error',
+                'Unable to load your profile. Please try again.'
+            );
+        }
     }
-
 
     /*
     |--------------------------------------------------------------------------
@@ -328,20 +486,43 @@ class AuthController extends Controller
             ],
         ]);
 
-        $user->name = $data['name'];
+        try {
+            DB::beginTransaction();
 
-        $user->email = $data['email'];
+            $user->name = $data['name'];
 
-        $user->save();
+            $user->email = $data['email'];
 
-        return redirect()
-            ->route('profile.show')
-            ->with(
-                'success',
-                'Your profile has been updated successfully.'
-            );
+            $user->save();
+
+            DB::commit();
+
+            return redirect()
+                ->route('profile.show')
+                ->with(
+                    'success',
+                    'Your profile has been updated successfully.'
+                );
+        } catch (\Throwable $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            Log::error('Failed to update user profile.', [
+                'user_id' => $user->id,
+                'exception' => $e,
+            ]);
+
+            return back()
+                ->with(
+                    'error',
+                    'Unable to update your profile. Please try again.'
+                )
+                ->withInput(
+                    $request->only('name', 'email')
+                );
+        }
     }
-
 
     /*
     |--------------------------------------------------------------------------
@@ -351,11 +532,22 @@ class AuthController extends Controller
 
     public function showChangePassword()
     {
-        return view(
-            'profile.change-password'
-        );
-    }
+        try {
+            return view(
+                'profile.change-password'
+            );
+        } catch (\Throwable $e) {
+            Log::error('Failed to load change password page.', [
+                'user_id' => Auth::id(),
+                'exception' => $e,
+            ]);
 
+            return back()->with(
+                'error',
+                'Unable to load the page. Please try again.'
+            );
+        }
+    }
 
     /*
     |--------------------------------------------------------------------------
@@ -388,43 +580,62 @@ class AuthController extends Controller
         |--------------------------------------------------------------------------
         */
 
-        if (
-            !Hash::check(
-                $data['current_password'],
-                $user->password
-            )
-        ) {
-            return back()
-                ->withErrors([
-                    'current_password' =>
-                        'Your current password is incorrect.',
-                ]);
-        }
+        try {
+            if (
+                !Hash::check(
+                    $data['current_password'],
+                    $user->password
+                )
+            ) {
+                return back()
+                    ->withErrors([
+                        'current_password' =>
+                            'Your current password is incorrect.',
+                    ]);
+            }
 
-        /*
-        |--------------------------------------------------------------------------
-        | Save New Password
-        |--------------------------------------------------------------------------
-        */
+            /*
+            |--------------------------------------------------------------------------
+            | Save New Password
+            |--------------------------------------------------------------------------
+            */
 
-        $user->password = Hash::make(
-            $data['password']
-        );
+            DB::beginTransaction();
 
-        $user->remember_token = Str::random(
-            60
-        );
-
-        $user->save();
-
-        return redirect()
-            ->route('profile.show')
-            ->with(
-                'success',
-                'Your password has been changed successfully.'
+            $user->password = Hash::make(
+                $data['password']
             );
-    }
 
+            $user->remember_token = Str::random(
+                60
+            );
+
+            $user->save();
+
+            DB::commit();
+
+            return redirect()
+                ->route('profile.show')
+                ->with(
+                    'success',
+                    'Your password has been changed successfully.'
+                );
+        } catch (\Throwable $e) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            Log::error('Failed to update user password.', [
+                'user_id' => $user->id,
+                'exception' => $e,
+            ]);
+
+            return back()->with(
+                'error',
+                'Unable to change your password. Please try again.'
+            );
+        }
+    }
 
     /*
     |--------------------------------------------------------------------------
@@ -435,18 +646,42 @@ class AuthController extends Controller
     public function logout(
         Request $request
     ) {
-        ActivityLogger::log('Signed out', 'Account', 'User signed out.');
-        Auth::logout();
+        try {
+            try {
+                ActivityLogger::log(
+                    'Signed out',
+                    'Account',
+                    'User signed out.'
+                );
+            } catch (\Throwable $e) {
+                Log::error('Failed to record logout activity.', [
+                    'user_id' => Auth::id(),
+                    'exception' => $e,
+                ]);
+            }
 
-        $request->session()->invalidate();
+            Auth::logout();
 
-        $request->session()->regenerateToken();
+            $request->session()->invalidate();
 
-        return redirect()
-            ->route('landing')
-            ->with(
-                'status',
-                'You have been signed out successfully.'
+            $request->session()->regenerateToken();
+
+            return redirect()
+                ->route('landing')
+                ->with(
+                    'status',
+                    'You have been signed out successfully.'
+                );
+        } catch (\Throwable $e) {
+            Log::error('Logout failed.', [
+                'user_id' => Auth::id(),
+                'exception' => $e,
+            ]);
+
+            return back()->with(
+                'error',
+                'Unable to complete logout. Please try again.'
             );
+        }
     }
 }

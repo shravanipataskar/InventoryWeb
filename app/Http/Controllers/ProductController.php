@@ -9,79 +9,104 @@ use App\Hall;
 use App\StockInward;
 use App\StockOutward;
 use App\Unit;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class ProductController extends Controller
 {
     public function index(Request $request)
     {
-        $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
-        $query = Product::select('products.*')
-            ->with(['category', 'unit', 'hall', 'rack', 'shelf'])
-            ->where('is_active', $listingStatus === 'active');
+        try {
+            $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
+            $query = Product::select('products.*')
+                ->with(['category', 'unit', 'hall', 'rack', 'shelf'])
+                ->where('is_active', $listingStatus === 'active');
 
-        if ($request->filled('category_id')) {
-            $request->validate([
-                'category_id' => 'integer|exists:categories,id',
+            if ($request->filled('category_id')) {
+                $request->validate([
+                    'category_id' => 'integer|exists:categories,id',
+                ]);
+                $query->where('category_id', $request->input('category_id'));
+            }
+
+            if ($request->filled('company_id')) {
+                $request->validate([
+                    'company_id' => 'integer|exists:companies,id',
+                ]);
+                $query->where('company_id', $request->input('company_id'));
+            }
+
+            $products = $query->with('company')
+                ->selectSub(
+                    StockInward::select('purchase_price')
+                        ->whereColumn('stock_inwards.product_id', 'products.id')
+                        ->where('is_active', true)
+                        ->orderByDesc('inward_date')
+                        ->orderByDesc('id')
+                        ->limit(1),
+                    'latest_inward_purchase_price'
+                )
+                ->selectSub(
+                    StockOutward::select('selling_price')
+                        ->whereColumn('stock_outwards.product_id', 'products.id')
+                        ->where('is_active', true)
+                        ->orderByDesc('outward_date')
+                        ->orderByDesc('id')
+                        ->limit(1),
+                    'latest_outward_selling_price'
+                )
+                ->orderBy('id', 'desc')
+                ->get();
+
+            $units = Unit::where('is_active', 1)
+                ->orderBy('name')
+                ->get();
+
+            return view('products.index', compact('products', 'units', 'listingStatus'));
+        } catch (Throwable $exception) {
+            Log::error('Failed to load products.', [
+                'operation' => 'product.index',
+                'exception' => get_class($exception),
+                'message' => $exception->getMessage(),
             ]);
-            $query->where('category_id', $request->input('category_id'));
+
+            throw $exception;
         }
-
-        if ($request->filled('company_id')) {
-            $request->validate([
-                'company_id' => 'integer|exists:companies,id',
-            ]);
-            $query->where('company_id', $request->input('company_id'));
-        }
-
-        $products = $query->with('company')
-            ->selectSub(
-                StockInward::select('purchase_price')
-                    ->whereColumn('stock_inwards.product_id', 'products.id')
-                    ->where('is_active', true)
-                    ->orderByDesc('inward_date')
-                    ->orderByDesc('id')
-                    ->limit(1),
-                'latest_inward_purchase_price'
-            )
-            ->selectSub(
-                StockOutward::select('selling_price')
-                    ->whereColumn('stock_outwards.product_id', 'products.id')
-                    ->where('is_active', true)
-                    ->orderByDesc('outward_date')
-                    ->orderByDesc('id')
-                    ->limit(1),
-                'latest_outward_selling_price'
-            )
-            ->orderBy('id', 'desc')
-            ->get();
-        $units = Unit::where('is_active', 1)
-            ->orderBy('name')
-            ->get();
-
-        return view('products.index', compact('products', 'units', 'listingStatus'));
     }
 
     public function create()
     {
-        $categories = Category::where('is_active', 1)
-            ->orderBy('name')
-            ->get();
+        try {
+            $categories = Category::where('is_active', 1)
+                ->orderBy('name')
+                ->get();
 
-        $halls = Hall::where('is_active', 1)
-            ->orderBy('name')
-            ->get();
+            $halls = Hall::where('is_active', 1)
+                ->orderBy('name')
+                ->get();
 
-        $units = Unit::where('is_active', 1)
-            ->orderBy('name')
-            ->get();
-        $companies = Company::where('is_active', 1)->orderBy('name')->get();
-        return view('products.create', compact('categories', 'halls', 'units', 'companies'));
+            $units = Unit::where('is_active', 1)
+                ->orderBy('name')
+                ->get();
+
+            $companies = Company::where('is_active', 1)->orderBy('name')->get();
+
+            return view('products.create', compact('categories', 'halls', 'units', 'companies'));
+        } catch (Throwable $exception) {
+            Log::error('Failed to load the product creation page.', [
+                'operation' => 'product.create',
+                'exception' => get_class($exception),
+                'message' => $exception->getMessage(),
+            ]);
+
+            throw $exception;
+        }
     }
 
     public function store(Request $request)
@@ -105,14 +130,19 @@ class ProductController extends Controller
         $productCode = $this->generateProductCode();
         $barcode = $this->generateBarcode();
         $imagePath = null;
+
         if ($request->hasFile('image')) {
             $imagePath = $request->file('image')->store('products', 'public');
+
             if (!$imagePath) {
                 throw new \RuntimeException('The product image could not be saved.');
             }
         }
 
         try {
+            // This transaction ensures the product record is saved completely or its database changes are rolled back.
+            DB::beginTransaction();
+
             Product::create([
                 'product_code' => $productCode,
                 'name' => $request->name,
@@ -132,8 +162,24 @@ class ProductController extends Controller
                 'description' => $request->description,
                 'is_active' => 1,
             ]);
-        } catch (\Throwable $exception) {
-            $this->discardProductImage($imagePath, 'Unable to remove product image after a failed product save.');
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            $this->discardProductImage(
+                $imagePath,
+                'Unable to remove product image after a failed product save.'
+            );
+
+            Log::error('Failed to create a product.', [
+                'operation' => 'product.store',
+                'exception' => get_class($exception),
+                'message' => $exception->getMessage(),
+            ]);
+
             throw $exception;
         }
 
@@ -144,39 +190,62 @@ class ProductController extends Controller
 
     public function edit($id)
     {
-        $product = Product::with(['hall', 'rack', 'shelf'])->findOrFail($id);
+        try {
+            $product = Product::with(['hall', 'rack', 'shelf'])->findOrFail($id);
 
-        $categories = Category::where('is_active', 1)
-            ->orderBy('name')
-            ->get();
+            $categories = Category::where('is_active', 1)
+                ->orderBy('name')
+                ->get();
 
-        $halls = Hall::where('is_active', 1)
-            ->orWhere('id', optional($product->hall)->id)
-            ->orderBy('name')
-            ->get();
+            $halls = Hall::where('is_active', 1)
+                ->orWhere('id', optional($product->hall)->id)
+                ->orderBy('name')
+                ->get();
 
-        $units = Unit::where('is_active', 1)
-            ->orderBy('name')
-            ->get();
-        $companies = Company::where('is_active', 1)
-            ->orWhere('id', $product->company_id)
-            ->orderBy('name')
-            ->get();
+            $units = Unit::where('is_active', 1)
+                ->orderBy('name')
+                ->get();
 
-        return view('products.edit', compact(
-            'product',
-            'categories',
-            'halls',
-            'units',
-            'companies'
-        ));
+            $companies = Company::where('is_active', 1)
+                ->orWhere('id', $product->company_id)
+                ->orderBy('name')
+                ->get();
+
+            return view('products.edit', compact(
+                'product',
+                'categories',
+                'halls',
+                'units',
+                'companies'
+            ));
+        } catch (Throwable $exception) {
+            Log::error('Failed to load the product edit page.', [
+                'operation' => 'product.edit',
+                'product_id' => $id,
+                'exception' => get_class($exception),
+                'message' => $exception->getMessage(),
+            ]);
+
+            throw $exception;
+        }
     }
 
     public function show($id)
     {
-        $product = Product::with(['category', 'unit', 'hall', 'rack', 'shelf'])->findOrFail($id);
+        try {
+            $product = Product::with(['category', 'unit', 'hall', 'rack', 'shelf'])->findOrFail($id);
 
-        return view('products.show', compact('product'));
+            return view('products.show', compact('product'));
+        } catch (Throwable $exception) {
+            Log::error('Failed to load product details.', [
+                'operation' => 'product.show',
+                'product_id' => $id,
+                'exception' => get_class($exception),
+                'message' => $exception->getMessage(),
+            ]);
+
+            throw $exception;
+        }
     }
 
     public function update(Request $request, $id)
@@ -204,11 +273,15 @@ class ProductController extends Controller
         $newImage = $request->hasFile('image')
             ? $request->file('image')->store('products', 'public')
             : null;
+
         if ($request->hasFile('image') && !$newImage) {
             throw new \RuntimeException('The product image could not be saved.');
         }
 
         try {
+            // This transaction ensures the product changes are committed together or rolled back if the update fails.
+            DB::beginTransaction();
+
             $product->update([
                 'name' => $request->name,
                 'hall_id' => $request->hall_id,
@@ -225,12 +298,26 @@ class ProductController extends Controller
                 'track_serial' => $request->boolean('track_serial'),
                 'description' => $request->description,
             ]);
-        } catch (\Throwable $exception) {
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
             $this->discardProductImage(
                 $newImage,
                 'Unable to remove replacement product image after a failed product update.',
                 $product->id
             );
+
+            Log::error('Failed to update a product.', [
+                'operation' => 'product.update',
+                'product_id' => $product->id,
+                'exception' => get_class($exception),
+                'message' => $exception->getMessage(),
+            ]);
+
             throw $exception;
         }
 
@@ -251,8 +338,29 @@ class ProductController extends Controller
         ]);
 
         $product = Product::findOrFail($id);
-        $product->is_active = $validated['is_active'];
-        $product->save();
+
+        try {
+            // This transaction ensures the product's active status is saved or rolled back if saving fails.
+            DB::beginTransaction();
+
+            $product->is_active = $validated['is_active'];
+            $product->save();
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            Log::error('Failed to change product status.', [
+                'operation' => 'product.status',
+                'product_id' => $id,
+                'exception' => get_class($exception),
+                'message' => $exception->getMessage(),
+            ]);
+
+            throw $exception;
+        }
 
         return redirect()
             ->route('products.index', ['status' => $validated['listing_status']])
@@ -264,8 +372,29 @@ class ProductController extends Controller
     public function destroy($id)
     {
         $product = Product::findOrFail($id);
-        $product->is_active = false;
-        $product->save();
+
+        try {
+            // This transaction ensures product deactivation is saved or rolled back if saving fails.
+            DB::beginTransaction();
+
+            $product->is_active = false;
+            $product->save();
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+
+            Log::error('Failed to deactivate a product.', [
+                'operation' => 'product.destroy',
+                'product_id' => $id,
+                'exception' => get_class($exception),
+                'message' => $exception->getMessage(),
+            ]);
+
+            throw $exception;
+        }
 
         return redirect()
             ->route('products.index')
@@ -287,7 +416,7 @@ class ProductController extends Controller
                     'image_path' => $path,
                 ]));
             }
-        } catch (\Throwable $cleanupException) {
+        } catch (Throwable $cleanupException) {
             Log::error($message, array_filter([
                 'operation' => 'product_image.cleanup',
                 'product_id' => $productId,
@@ -310,14 +439,17 @@ class ProductController extends Controller
     {
         do {
             $digits = '';
+
             for ($index = 0; $index < 12; $index++) {
                 $digits .= (string) random_int(0, 9);
             }
 
             $sum = 0;
+
             for ($index = 0; $index < 12; $index++) {
                 $sum += ((int) $digits[$index]) * ($index % 2 === 0 ? 1 : 3);
             }
+
             $barcode = $digits . ((10 - ($sum % 10)) % 10);
         } while (Product::where('barcode', $barcode)->exists());
 
