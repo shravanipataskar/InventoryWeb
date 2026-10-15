@@ -92,6 +92,7 @@ class PaymentHistoryController extends Controller
             'from_date' => 'nullable|date',
             'to_date' => 'nullable|date|after_or_equal:from_date',
             'page' => 'nullable|integer|min:1',
+            'per_page' => ['nullable', Rule::in([10, 20, 50])],
             'export' => ['nullable', Rule::in(['csv'])],
         ]);
         $filter = $filters['filter'] ?? 'all';
@@ -101,9 +102,13 @@ class PaymentHistoryController extends Controller
             return $this->export($rows);
         }
 
+        $countFilters = $filters;
+        unset($countFilters['filter'], $countFilters['page'], $countFilters['export']);
+        $statusCounts = $this->statusCounts($countFilters);
+
         $records = $rows->orderByDesc('filter_date')
             ->orderByDesc('source_id')
-            ->paginate(20)
+            ->paginate((int) ($filters['per_page'] ?? 20))
             ->appends($request->except('page', 'export'));
         $records->getCollection()->transform(function ($row) {
             $billTotal = (float) $row->bill_total;
@@ -115,16 +120,16 @@ class PaymentHistoryController extends Controller
         });
         $suppliers = Supplier::orderBy('name')->get(['id', 'name']);
         $summary = $this->summary();
+        $summary['partially_paid'] = $statusCounts['partially_paid'];
+        $summary['overdue'] = $statusCounts['overdue'];
 
-        return view('payment_history.index', compact('records', 'suppliers', 'summary', 'filter'));
+        return view('payment_history.index', compact('records', 'suppliers', 'summary', 'filter', 'statusCounts'));
     }
 
     private function filteredRows(array $filters, $filter)
     {
         $transactions = $this->purchasePaymentRows()->unionAll($this->supplierPaymentRows());
-        if (in_array($filter, ['unpaid', 'overdue'], true)) {
-            $transactions->unionAll($this->unpaidBillRows($filter));
-        }
+        $transactions->unionAll($this->unpaidBillRows($filter));
 
         $computedRows = DB::query()->fromSub($transactions, 'history')->select('history.*')
             ->selectRaw('CASE WHEN allocated_bill_count > 0 THEN activity_total ELSE COALESCE(order_total, 0) END AS bill_total')
@@ -191,9 +196,12 @@ class PaymentHistoryController extends Controller
         } elseif ($filter === 'partially_paid') {
             $rows->whereIn('payment_status', ['paid', SupplierPayment::STATUS_COMPLETED])
                 ->where('bill_paid', '>', 0)
-                ->where('bill_outstanding', '>', 0);
+                ->where('bill_outstanding', '>', 0)
+                ->where('is_overdue', 0);
         } elseif ($filter === 'unpaid') {
-            $rows->where('source_type', 'bill')->where('bill_paid', '=', 0);
+            $rows->where('source_type', 'bill')
+                ->where('bill_paid', '=', 0)
+                ->where('is_overdue', 0);
         } elseif ($filter === 'overdue') {
             $rows->where(function ($query) {
                 $query->where(function ($inner) {
@@ -210,6 +218,43 @@ class PaymentHistoryController extends Controller
         }
 
         return $rows;
+    }
+
+    private function statusCounts(array $filters)
+    {
+        $rows = $this->filteredRows($filters, 'all');
+        $counts = DB::query()->fromSub($rows, 'counted')
+            ->selectRaw('COUNT(*) AS all_count')
+            ->selectRaw(
+                'COALESCE(SUM(CASE WHEN payment_status IN (?, ?) AND bill_total > 0 AND bill_paid >= bill_total THEN 1 ELSE 0 END), 0) AS paid_count',
+                ['paid', SupplierPayment::STATUS_COMPLETED]
+            )
+            ->selectRaw(
+                'COALESCE(SUM(CASE WHEN source_type = ? AND bill_paid = 0 AND is_overdue = 0 THEN 1 ELSE 0 END), 0) AS unpaid_count',
+                ['bill']
+            )
+            ->selectRaw(
+                'COALESCE(SUM(CASE WHEN payment_status IN (?, ?) AND bill_paid > 0 AND bill_outstanding > 0 AND is_overdue = 0 THEN 1 ELSE 0 END), 0) AS partially_paid_count',
+                ['paid', SupplierPayment::STATUS_COMPLETED]
+            )
+            ->selectRaw(
+                'COALESCE(SUM(CASE WHEN (payment_status IN (?, ?) AND is_overdue = 1) OR (source_type = ? AND is_overdue = 1) THEN 1 ELSE 0 END), 0) AS overdue_count',
+                ['paid', SupplierPayment::STATUS_COMPLETED, 'bill']
+            )
+            ->selectRaw(
+                'COALESCE(SUM(CASE WHEN source_type = ? AND payment_status = ? THEN 1 ELSE 0 END), 0) AS pending_approval_count',
+                ['supplier_payment', SupplierPayment::STATUS_PENDING]
+            )
+            ->first();
+
+        return [
+            'all' => (int) $counts->all_count,
+            'paid' => (int) $counts->paid_count,
+            'unpaid' => (int) $counts->unpaid_count,
+            'partially_paid' => (int) $counts->partially_paid_count,
+            'overdue' => (int) $counts->overdue_count,
+            'pending_approval' => (int) $counts->pending_approval_count,
+        ];
     }
 
     private function purchasePaymentRows()
@@ -469,10 +514,6 @@ class PaymentHistoryController extends Controller
         return [
             'paid' => Money::fromMinor(Money::toMinor($purchasePaid) + Money::toMinor($supplierPaid)),
             'outstanding' => Money::fromMinor(Money::toMinor($billOutstanding) + Money::toMinor($unbilledOrders)),
-            'partially_paid' => SupplierBill::where('status', SupplierBill::STATUS_PARTIALLY_PAID)
-                ->where('paid_amount', '>', 0)->whereColumn('paid_amount', '<', 'total_amount')->count(),
-            'overdue' => SupplierBill::overdue()
-                ->whereColumn('paid_amount', '<', 'total_amount')->count(),
         ];
     }
 

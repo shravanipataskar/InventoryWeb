@@ -15,7 +15,7 @@
             <h1>{{ $stockInward->inward_number ?: 'Legacy Stock Inward #' . $stockInward->id }}</h1>
             <p>{{ $stockInward->isGoodsReceiptGenerated() ? 'Automatically posted from Goods Received.' : 'Historical stock inward record.' }}</p>
         </div>
-        <a class="button button-light" href="{{ route('stock-inwards.index') }}">Back to Stock Inward</a>
+        <a class="button button-light" href="{{ route('stock-inwards.index', request()->query()) }}">Back to Stock Inward</a>
     </div>
 
     <section class="panel listing-panel">

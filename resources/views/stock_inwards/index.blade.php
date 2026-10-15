@@ -11,8 +11,12 @@
             <p>Posted goods receipts appear here automatically as the stock ledger record.</p>
         </div>
         <div class="stock-inward-heading-actions">
-            <a class="button button-light" href="{{ route('goods-receipts.index') }}"><span aria-hidden="true">▣</span> Goods Received</a>
-            <a class="button button-primary" href="{{ route('quotations.index') }}"><span aria-hidden="true">＋</span> New Quotation</a>
+            @if (auth()->user()->hasPermission('goods_receipts', 'view'))
+                <a class="button button-light" href="{{ route('goods-receipts.index') }}"><span aria-hidden="true">▣</span> Goods Received</a>
+            @endif
+            @if (auth()->user()->hasPermission('purchase', 'view') && auth()->user()->hasPermission('goods_receipts', 'create'))
+                <a class="button button-primary" href="{{ route('purchase-orders.index') }}"><span aria-hidden="true">＋</span> New Inward</a>
+            @endif
         </div>
     </div>
 
@@ -38,7 +42,7 @@
         </article>
         <article class="stock-inward-summary-card">
             <span class="stock-inward-summary-icon inward-icon-pink" aria-hidden="true">◷</span>
-            <div><span>Total Tax Amount</span><strong>₹{{ number_format((float) $totals->tax_amount, 2) }}</strong><small>SGST + CGST</small></div>
+            <div><span>Total Tax Amount</span><strong>₹{{ number_format((float) $totals->tax_amount, 2) }}</strong><small>GST recorded for inward entries</small></div>
         </article>
     </div>
 
@@ -58,6 +62,7 @@
                         <option value="all" {{ ($filters['record_status'] ?? 'all') === 'all' ? 'selected' : '' }}>All Status</option>
                         <option value="posted" {{ ($filters['record_status'] ?? '') === 'posted' ? 'selected' : '' }}>Posted</option>
                         <option value="active" {{ ($filters['record_status'] ?? '') === 'active' ? 'selected' : '' }}>Active</option>
+                        <option value="inactive" {{ ($filters['record_status'] ?? '') === 'inactive' ? 'selected' : '' }}>Inactive</option>
                     </select>
                 </label>
             </div>
@@ -134,7 +139,7 @@
                             <td><span class="stock-inward-status {{ $stock->isGoodsReceiptGenerated() ? 'is-posted' : ($stock->is_active ? 'is-active' : 'is-inactive') }}">{{ $stock->isGoodsReceiptGenerated() ? 'Posted' : ($stock->is_active ? 'Active' : 'Inactive') }}</span></td>
                             <td>
                                 <div class="stock-inward-actions">
-                                    <a class="stock-inward-view-button" href="{{ route('stock-inwards.show', $stock->id) }}"><span aria-hidden="true">◉</span> View</a>
+                                    <a class="stock-inward-view-button" href="{{ route('stock-inwards.show', array_merge([$stock->id], request()->query())) }}" data-stock-inward-view aria-haspopup="dialog"><span aria-hidden="true">◉</span> View</a>
                                     <details class="stock-inward-action-menu">
                                         <summary aria-label="More actions for {{ $stock->inward_number ?: 'stock inward ' . $stock->id }}">⋮</summary>
                                         <div>
@@ -243,7 +248,153 @@
         .stock-inward-filter-errors{margin-bottom:12px}
         .stock-inward-filter-errors ul{margin:0;padding-left:20px}
         .sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+        .stock-inward-modal[hidden]{display:none}
+        body.stock-inward-modal-open{overflow:hidden}
+        .stock-inward-modal{position:fixed;inset:0;z-index:1000;padding:24px;display:flex;align-items:center;justify-content:center;background:rgba(13,34,48,.58)}
+        .stock-inward-modal-body{width:min(1180px,100%);max-height:calc(100vh - 48px);overflow:auto;border-radius:17px;background:#fff;box-shadow:0 24px 70px rgba(8,28,42,.3)}
+        .stock-inward-modal-card{color:#20394d}
+        .stock-inward-modal-header{position:sticky;top:0;z-index:2;padding:22px 26px;display:flex;align-items:flex-start;justify-content:space-between;gap:20px;border-bottom:1px solid #e7edf3;background:#fff}
+        .stock-inward-modal-kicker{color:#078b91;font-size:10px;font-weight:800;letter-spacing:.09em}
+        .stock-inward-modal-header h2{margin:5px 0;color:#16384d;font-size:22px}
+        .stock-inward-modal-header p{margin:0;color:#75879a;font-size:12px}
+        .stock-inward-modal-close{width:36px;height:36px;flex:none;border:1px solid #e3eaf0;border-radius:10px;background:#fff;color:#536b7e;font-size:24px;line-height:1;cursor:pointer}
+        .stock-inward-modal-close:hover{background:#f1f8fa;color:#087f83}
+        .stock-inward-modal-content{padding:6px 26px 24px}
+        .stock-inward-detail-section{padding:20px 0;border-bottom:1px solid #eaf0f4}
+        .stock-inward-detail-section:last-child{border-bottom:0}
+        .stock-inward-detail-heading{display:flex;align-items:center;gap:11px;margin-bottom:14px}
+        .stock-inward-detail-heading>span{width:30px;height:30px;display:grid;place-items:center;border-radius:9px;background:#e9f6f7;color:#078b91;font-size:10px;font-weight:800}
+        .stock-inward-detail-heading h3{margin:0;color:#203d52;font-size:15px}
+        .stock-inward-detail-heading p{margin:3px 0 0;color:#8392a1;font-size:10px}
+        .stock-inward-info-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px}
+        .stock-inward-info-grid>div,.stock-inward-financial-grid>div{min-width:0;padding:12px;border:1px solid #e8eef3;border-radius:10px;background:#fbfdfe}
+        .stock-inward-info-grid small,.stock-inward-financial-grid small,.stock-inward-quantity-cards small{display:block;margin-bottom:6px;color:#8392a1;font-size:10px}
+        .stock-inward-info-grid strong,.stock-inward-financial-grid strong{display:block;overflow-wrap:anywhere;color:#29465c;font-size:11px}
+        .stock-inward-info-wide{grid-column:span 2}
+        .stock-inward-modal-status{display:inline-flex;padding:4px 9px;border-radius:20px;background:#e6f4ff;color:#2373a6;font-size:10px}
+        .stock-inward-modal-status.inactive{background:#fff2e5;color:#bd6b20}
+        .stock-inward-modal-table-wrap{overflow:auto;border:1px solid #e8eef3;border-radius:10px}
+        .stock-inward-modal-table{width:100%;min-width:1300px;border-collapse:collapse}
+        .stock-inward-modal-table th{padding:10px 9px;background:#f4f8fb;color:#718397;text-align:left;font-size:9px;white-space:nowrap}
+        .stock-inward-modal-table td{padding:10px 9px;border-top:1px solid #edf1f4;color:#3c556a;font-size:10px;white-space:nowrap}
+        .stock-inward-modal-product-image,.stock-inward-modal-product-fallback{width:34px;height:34px;display:grid;place-items:center;border-radius:8px;object-fit:cover;background:#edf5ff;color:#3d72c8;font-size:15px}
+        .stock-inward-quantity-groups{display:grid;gap:12px}
+        .stock-inward-unit-group{padding:12px;border:1px solid #e8eef3;border-radius:11px;background:#fbfdfe}
+        .stock-inward-unit-label{display:inline-block;margin-bottom:10px;color:#078b91;font-size:11px}
+        .stock-inward-quantity-cards{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
+        .stock-inward-quantity-cards>div{padding:10px;border-radius:8px;background:#fff}
+        .stock-inward-quantity-cards strong{color:#28485f;font-size:15px}
+        .stock-inward-financial-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+        .stock-inward-grand-total-card{border-color:#b9e2de!important;background:#effaf8!important}
+        .stock-inward-grand-total-card strong{color:#087f83!important;font-size:15px!important}
+        .stock-inward-document-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+        .stock-inward-document-grid article{min-width:0;padding:12px;display:flex;align-items:center;gap:10px;border:1px solid #e8eef3;border-radius:10px;background:#fbfdfe}
+        .stock-inward-document-icon{width:38px;height:38px;flex:none;display:grid;place-items:center;border-radius:10px;background:#eaf6f8;color:#087f83;font-size:10px;font-weight:800}
+        .stock-inward-document-grid article>div{min-width:0;flex:1}
+        .stock-inward-document-grid small,.stock-inward-document-grid strong{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .stock-inward-document-grid small{margin-bottom:4px;color:#8593a1;font-size:9px}
+        .stock-inward-document-grid strong{color:#2a485e;font-size:11px}
+        .stock-inward-document-grid a{padding:6px 9px;border:1px solid #d6e7ec;border-radius:7px;color:#087f83;text-decoration:none;font-size:10px;font-weight:700}
+        .stock-inward-timeline{margin:0;padding:0 0 0 13px;list-style:none}
+        .stock-inward-timeline li{position:relative;padding:0 0 16px 22px;border-left:1px solid #cce4e7}
+        .stock-inward-timeline li:last-child{padding-bottom:0;border-left-color:transparent}
+        .stock-inward-timeline-dot{position:absolute;left:-6px;top:2px;width:11px;height:11px;border:2px solid #fff;border-radius:50%;background:#078b91;box-shadow:0 0 0 1px #078b91}
+        .stock-inward-timeline li strong,.stock-inward-timeline li small{display:block}
+        .stock-inward-timeline li strong{color:#29485e;font-size:11px}
+        .stock-inward-timeline li small{margin-top:3px;color:#8694a2;font-size:10px}
+        .stock-inward-timeline li p,.stock-inward-no-timeline{margin:6px 0 0;color:#687e91;font-size:10px}
+        .stock-inward-modal-error{padding:28px;color:#5f7284;text-align:center}
+        .stock-inward-modal-error a{margin-left:5px;color:#087f83;font-weight:700}
+        .stock-inward-modal-footer{padding:16px 26px;display:flex;justify-content:flex-end;gap:9px;border-top:1px solid #e7edf3;background:#fbfdfe}
+        .stock-inward-modal-footer .button{min-width:82px;justify-content:center}
+        @media print{body.stock-inward-printing *{visibility:hidden!important}body.stock-inward-printing .stock-inward-modal,body.stock-inward-printing .stock-inward-modal *{visibility:visible!important}body.stock-inward-printing .stock-inward-modal{position:absolute;inset:0;padding:0;display:block!important;background:#fff}body.stock-inward-printing .stock-inward-modal-body{width:100%;max-height:none;overflow:visible;border-radius:0;box-shadow:none}body.stock-inward-printing .stock-inward-modal-header{position:static}body.stock-inward-printing .stock-inward-modal-close,body.stock-inward-printing .stock-inward-modal-footer{display:none!important}.stock-inward-modal-table-wrap{overflow:visible!important}.stock-inward-modal-table{min-width:0!important;font-size:8px!important}}
         @media(max-width:1100px){.stock-inward-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.stock-inward-filter-row{flex-wrap:wrap}.stock-inward-search{flex-basis:100%}.stock-inward-status-select{flex:1}.stock-inward-select{min-width:150px}}
-        @media(max-width:650px){.stock-inward-heading{align-items:flex-start;flex-direction:column}.stock-inward-heading h1{font-size:24px}.stock-inward-heading-actions{width:100%}.stock-inward-heading-actions .button{flex:1;justify-content:center}.stock-inward-summary{grid-template-columns:1fr 1fr;gap:8px}.stock-inward-summary-card{padding:10px;gap:8px}.stock-inward-summary-icon{width:34px;height:34px;font-size:19px}.stock-inward-summary-card strong{font-size:15px}.stock-inward-date{flex:1}.stock-inward-filter-row-secondary>.stock-inward-select{flex-basis:100%}.stock-inward-status-tabs{margin-left:0}.stock-inward-table-footer{align-items:flex-start;flex-direction:column}}
+        @media(max-width:650px){.stock-inward-heading{align-items:flex-start;flex-direction:column}.stock-inward-heading h1{font-size:24px}.stock-inward-heading-actions{width:100%}.stock-inward-heading-actions .button{flex:1;justify-content:center}.stock-inward-summary{grid-template-columns:1fr 1fr;gap:8px}.stock-inward-summary-card{padding:10px;gap:8px}.stock-inward-summary-icon{width:34px;height:34px;font-size:19px}.stock-inward-summary-card strong{font-size:15px}.stock-inward-date{flex:1}.stock-inward-filter-row-secondary>.stock-inward-select{flex-basis:100%}.stock-inward-status-tabs{margin-left:0}.stock-inward-table-footer{align-items:flex-start;flex-direction:column}.stock-inward-modal{padding:8px}.stock-inward-modal-body{max-height:calc(100vh - 16px);border-radius:12px}.stock-inward-modal-header{padding:17px}.stock-inward-modal-header h2{font-size:18px}.stock-inward-modal-content{padding:0 17px 15px}.stock-inward-info-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.stock-inward-document-grid{grid-template-columns:1fr}.stock-inward-financial-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.stock-inward-quantity-cards{grid-template-columns:repeat(2,minmax(0,1fr))}}
     </style>
+
+    <div class="stock-inward-modal" data-stock-inward-modal hidden>
+        <div class="stock-inward-modal-body" role="dialog" aria-modal="true" aria-labelledby="stock-inward-modal-title" tabindex="-1">
+            <div data-stock-inward-modal-content></div>
+        </div>
+    </div>
+@endsection
+
+@section('scripts')
+    <script>
+        (function () {
+            var modal = document.querySelector('[data-stock-inward-modal]');
+            var content = document.querySelector('[data-stock-inward-modal-content]');
+            var lastTrigger = null;
+
+            if (!modal || !content) {
+                return;
+            }
+
+            function closeModal() {
+                modal.hidden = true;
+                document.body.classList.remove('stock-inward-modal-open');
+                if (lastTrigger) {
+                    lastTrigger.focus();
+                }
+            }
+
+            document.addEventListener('click', function (event) {
+                var trigger = event.target.closest('[data-stock-inward-view]');
+                if (trigger) {
+                    event.preventDefault();
+                    lastTrigger = trigger;
+                    modal.hidden = false;
+                    document.body.classList.add('stock-inward-modal-open');
+                    content.textContent = 'Loading stock inward details…';
+
+                    fetch(trigger.href, {
+                        credentials: 'same-origin',
+                        headers: {
+                            'Accept': 'text/html',
+                            'X-Requested-With': 'XMLHttpRequest'
+                        }
+                    }).then(function (response) {
+                        if (!response.ok) {
+                            throw new Error('Unable to load stock inward details.');
+                        }
+                        return response.text();
+                    }).then(function (html) {
+                        content.innerHTML = html;
+                        modal.querySelector('.stock-inward-modal-body').focus();
+                    }).catch(function () {
+                        var message = document.createElement('div');
+                        var link = document.createElement('a');
+                        message.className = 'stock-inward-modal-error';
+                        message.appendChild(document.createTextNode('Details could not be loaded. Open the full detail page'));
+                        link.href = trigger.href;
+                        link.textContent = 'here';
+                        message.appendChild(link);
+                        content.textContent = '';
+                        content.appendChild(message);
+                    });
+                    return;
+                }
+
+                if (event.target.closest('[data-stock-inward-print]')) {
+                    document.body.classList.add('stock-inward-printing');
+                    window.print();
+                    return;
+                }
+
+                if (event.target.closest('[data-stock-inward-close]') || event.target === modal) {
+                    closeModal();
+                }
+            });
+
+            window.addEventListener('afterprint', function () {
+                document.body.classList.remove('stock-inward-printing');
+            });
+
+            document.addEventListener('keydown', function (event) {
+                if (event.key === 'Escape' && !modal.hidden) {
+                    closeModal();
+                }
+            });
+        }());
+    </script>
 @endsection

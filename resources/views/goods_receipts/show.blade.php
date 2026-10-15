@@ -5,9 +5,12 @@
 
 @section('content')
     <div class="page-heading">
-        <div><span class="section-kicker">GOODS RECEIVED / {{ $goodsReceipt->grn_number }}</span><h1>{{ $goodsReceipt->grn_number }}</h1><p>Posted {{ \Carbon\Carbon::parse($goodsReceipt->received_date)->format('d M Y') }} into {{ optional($goodsReceipt->store)->name ?: '—' }}</p></div>
+        <div><span class="section-kicker">GOODS RECEIVED / {{ $goodsReceipt->grn_number }}</span><h1>{{ $goodsReceipt->grn_number }}</h1><p>{{ $goodsReceipt->status === 'draft' ? 'Draft · stock has not been updated' : 'Posted' }} · {{ \Carbon\Carbon::parse($goodsReceipt->received_date)->format('d M Y') }} · {{ optional($goodsReceipt->store)->name ?: '—' }}</p></div>
         <div class="page-heading-actions">
-            @if (auth()->user()->hasPermission('bills', 'create') && $goodsReceipt->purchaseOrder->status !== 'cancelled')
+            @if ($goodsReceipt->status === 'draft' && auth()->user()->hasPermission('goods_receipts', 'create'))
+                <a class="button button-primary" href="{{ route('goods-receipts.create', $goodsReceipt->purchase_order_id) }}?draft_id={{ $goodsReceipt->id }}">Edit Draft / Post Inward</a>
+            @endif
+            @if ($goodsReceipt->status === 'posted' && auth()->user()->hasPermission('bills', 'create') && $goodsReceipt->purchaseOrder->status !== 'cancelled')
                 <a class="button button-primary" href="{{ route('supplier-bills.create', $goodsReceipt->purchase_order_id) }}">Create Purchase Bill</a>
             @endif
             <a class="button button-light" href="{{ route('purchase-orders.show', $goodsReceipt->purchase_order_id) }}">View Purchase Order</a>
@@ -15,6 +18,7 @@
         </div>
     </div>
     @if (session('success'))<div class="inventory-notice notice-in" role="status"><span class="notice-symbol">✓</span><span>{{ session('success') }}</span></div>@endif
+    @if ($goodsReceipt->status === 'draft')<div class="inventory-notice notice-out" role="status"><span class="notice-symbol">!</span><span>This receipt is a draft. No stock has been posted to inventory.</span></div>@endif
     <section class="panel listing-panel">
         <div class="table-wrap"><table class="data-table listing-table">
             <thead><tr><th>CATEGORY</th><th>PRODUCT / SKU</th><th>UNIT</th><th>ORDERED</th><th>RECEIVED</th><th>REJECTED</th><th>ACCEPTED / INWARD</th><th>RATE</th><th>VALUE</th></tr></thead>

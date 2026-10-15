@@ -9,6 +9,7 @@ use App\ProcurementAuditLog;
 use App\PurchaseOrder;
 use App\StockInward;
 use App\Supplier;
+use App\SupplierBill;
 use App\Unit;
 use App\User;
 use App\Http\Middleware\VerifyCsrfToken;
@@ -49,6 +50,74 @@ class GoodsReceiptPostingTest extends TestCase
             ->assertSee('Audit History')
             ->assertSee($supplier->name)
             ->assertSee($product->name);
+    }
+
+    public function test_purchase_order_print_view_uses_selected_order_and_masks_supplier_bank_account()
+    {
+        list($user, $supplier, $product, $store, $purchaseOrder) = $this->makePurchase();
+        $this->actingAs($user);
+        $supplier->bank_name = 'Example Bank';
+        $supplier->account_holder_name = 'Goods Receipt Supplier';
+        $supplier->account_number = '1234567890123456';
+        $supplier->ifsc_code = 'EXAM0001234';
+        $supplier->branch_name = 'Pune';
+        $supplier->save();
+
+        $purchaseOrder->status = 'partially_received';
+        $purchaseOrder->subtotal = 275000;
+        $purchaseOrder->discount_amount = 27500;
+        $purchaseOrder->tax_amount = 44550;
+        $purchaseOrder->cgst_total = 22275;
+        $purchaseOrder->sgst_total = 22275;
+        $purchaseOrder->grand_total = 292050;
+        $purchaseOrder->notes = 'Deliver during business hours.';
+        $purchaseOrder->save();
+        $orderItem = $purchaseOrder->items()->firstOrFail();
+        $orderItem->discount_percent = 10;
+        $orderItem->tax_percent = 18;
+        $orderItem->cgst_rate = 9;
+        $orderItem->cgst_amount = 22275;
+        $orderItem->sgst_rate = 9;
+        $orderItem->sgst_amount = 22275;
+        $orderItem->save();
+        DB::table('system_settings')->updateOrInsert(
+            ['key' => 'business_address'],
+            ['value' => '42 Example Street, Pune', 'created_at' => now(), 'updated_at' => now()]
+        );
+
+        $this->get(route('purchase-orders.print', $purchaseOrder->id))
+            ->assertOk()
+            ->assertSee('PURCHASE ORDER')
+            ->assertSee($purchaseOrder->po_number)
+            ->assertSee($product->name)
+            ->assertSee('42 Example Street, Pune')
+            ->assertSee('Example Bank')
+            ->assertSee('••••••••••••3456')
+            ->assertDontSee('1234567890123456')
+            ->assertSee('₹275,000.00')
+            ->assertSee('₹27,500.00')
+            ->assertSee('₹44,550.00')
+            ->assertSee('₹292,050.00')
+            ->assertSee('Partially Received')
+            ->assertSee('Terms &amp; Conditions', false)
+            ->assertSee('Print / Save PDF')
+            ->assertDontSee('Dashboard')
+            ->assertDontSee('Payment History')
+            ->assertDontSee('Authorized By')
+            ->assertDontSee('Supplier Acceptance');
+
+        $supplier->account_number = null;
+        $supplier->save();
+        $this->get(route('purchase-orders.print', $purchaseOrder->id))
+            ->assertOk()
+            ->assertSee('Account Number')
+            ->assertSee('—');
+
+        $purchaseOrder->status = 'received';
+        $purchaseOrder->save();
+        $this->get(route('purchase-orders.print', $purchaseOrder->id))
+            ->assertOk()
+            ->assertSee('Fully Received');
     }
 
     public function test_posting_goods_received_creates_one_inward_and_updates_stock_once()
@@ -103,6 +172,9 @@ class GoodsReceiptPostingTest extends TestCase
             ->assertSee('Rejected: 1.00');
         $this->get(route('stock-inwards.index'))
             ->assertOk()
+            ->assertSee('New Inward')
+            ->assertDontSee('New Quotation')
+            ->assertSee(route('purchase-orders.index'), false)
             ->assertSee($inward->inward_number)
             ->assertSee($receipt->grn_number)
             ->assertSee($purchaseOrder->po_number)
@@ -120,6 +192,208 @@ class GoodsReceiptPostingTest extends TestCase
             ->assertSee($product->name)
             ->assertSee('14.00')
             ->assertSee('₹770,000.00');
+    }
+
+    public function test_goods_receipt_draft_does_not_change_stock_and_can_be_posted_once()
+    {
+        list($user, $supplier, $product, $store, $purchaseOrder) = $this->makePurchase();
+        $this->actingAs($user);
+        $token = (string) Str::uuid();
+        $initialInwardMovements = DB::table('stock_transactions')
+            ->where('reference_type', 'stock_inward')
+            ->count();
+        $payload = $this->receiptPayload($store, $purchaseOrder, $token);
+        $payload['action'] = 'draft';
+
+        $this->post(route('goods-receipts.store', $purchaseOrder->id), $payload)
+            ->assertRedirect();
+
+        $receipt = GoodsReceipt::where('submission_token', $token)->firstOrFail();
+        $this->assertSame('draft', $receipt->status);
+        $this->assertSame(10.0, (float) $product->fresh()->current_stock);
+        $this->assertSame(0.0, (float) $purchaseOrder->items()->value('received_quantity'));
+        $this->assertSame(0, StockInward::where('goods_receipt_item_id', $receipt->items()->value('id'))->count());
+        $this->assertSame(
+            $initialInwardMovements,
+            DB::table('stock_transactions')->where('reference_type', 'stock_inward')->count()
+        );
+
+        $this->get(route('goods-receipts.index'))
+            ->assertOk()
+            ->assertSee('Edit Draft');
+        $this->get(route('goods-receipts.create', [
+            'purchaseOrder' => $purchaseOrder->id,
+            'draft_id' => $receipt->id,
+        ]))
+            ->assertOk()
+            ->assertSee('Save as Draft')
+            ->assertSee('Post Inward');
+
+        $payload['action'] = 'post';
+        $this->post(route('goods-receipts.store', $purchaseOrder->id), $payload)
+            ->assertRedirect();
+
+        $receipt->refresh();
+        $this->assertSame('posted', $receipt->status);
+        $this->assertSame(14.0, (float) $product->fresh()->current_stock);
+        $this->assertSame(5.0, (float) $purchaseOrder->items()->value('received_quantity'));
+        $this->assertSame(1, StockInward::where('goods_receipt_item_id', $receipt->items()->value('id'))->count());
+        $this->assertSame(
+            $initialInwardMovements + 1,
+            DB::table('stock_transactions')->where('reference_type', 'stock_inward')->count()
+        );
+
+        $this->post(route('goods-receipts.store', $purchaseOrder->id), $payload)
+            ->assertRedirect();
+        $this->assertSame(14.0, (float) $product->fresh()->current_stock);
+        $this->assertSame(1, StockInward::where('goods_receipt_item_id', $receipt->items()->value('id'))->count());
+    }
+
+    public function test_posted_inward_uses_purchase_order_discount_and_gst_rates()
+    {
+        list($user, $supplier, $product, $store, $purchaseOrder) = $this->makePurchase();
+        $this->actingAs($user);
+        $orderItem = $purchaseOrder->items()->firstOrFail();
+        $orderItem->discount_percent = 10;
+        $orderItem->tax_percent = 18;
+        $orderItem->cgst_rate = 9;
+        $orderItem->sgst_rate = 9;
+        $orderItem->save();
+
+        $payload = $this->receiptPayload($store, $purchaseOrder, (string) Str::uuid());
+        $this->post(route('goods-receipts.store', $purchaseOrder->id), $payload)->assertRedirect();
+
+        $receipt = GoodsReceipt::where('purchase_order_id', $purchaseOrder->id)->firstOrFail();
+        $inward = StockInward::where('goods_receipt_item_id', $receipt->items()->value('id'))->firstOrFail();
+        $this->assertSame(220000.0, (float) $inward->subtotal);
+        $this->assertSame(198000.0, (float) $inward->total_amount);
+        $this->assertSame(17820.0, (float) $inward->cgst_amount);
+        $this->assertSame(17820.0, (float) $inward->sgst_amount);
+        $this->assertSame(35640.0, (float) $inward->tax_total);
+        $this->assertSame(233640.0, (float) $inward->grand_total);
+
+        $this->withHeaders(['X-Requested-With' => 'XMLHttpRequest'])
+            ->get(route('stock-inwards.show', $inward->id))
+            ->assertOk()
+            ->assertSee('₹22,000.00')
+            ->assertSee('CGST Amount (₹)')
+            ->assertSee('₹17,820.00')
+            ->assertSee('₹35,640.00');
+    }
+
+    public function test_legacy_inward_tax_uses_po_rates_and_matching_supplier_bill_invoice_date()
+    {
+        list($user, $supplier, $product, $store, $purchaseOrder) = $this->makePurchase();
+        $this->actingAs($user);
+        $orderItem = $purchaseOrder->items()->firstOrFail();
+        $orderItem->discount_percent = 10;
+        $orderItem->tax_percent = 18;
+        $orderItem->cgst_rate = 9;
+        $orderItem->sgst_rate = 9;
+        $orderItem->save();
+
+        $payload = $this->receiptPayload($store, $purchaseOrder, (string) Str::uuid());
+        $this->post(route('goods-receipts.store', $purchaseOrder->id), $payload)->assertRedirect();
+        $receipt = GoodsReceipt::where('purchase_order_id', $purchaseOrder->id)->firstOrFail();
+        $inward = StockInward::where('goods_receipt_item_id', $receipt->items()->value('id'))->firstOrFail();
+        $inward->forceFill([
+            'cgst_amount' => 0,
+            'sgst_amount' => 0,
+            'tax_total' => 0,
+        ])->save();
+
+        SupplierBill::create([
+            'bill_number' => 'BILL-' . strtoupper(Str::random(8)),
+            'submission_token' => (string) Str::uuid(),
+            'supplier_id' => $supplier->id,
+            'purchase_order_id' => $purchaseOrder->id,
+            'invoice_number' => $receipt->invoice_number,
+            'duplicate_key' => SupplierBill::duplicateKey($supplier->id, $receipt->invoice_number),
+            'invoice_date' => '2026-10-01',
+            'subtotal' => 198000,
+            'discount_amount' => 22000,
+            'tax_amount' => 35640,
+            'total_amount' => 233640,
+            'invoice_total' => 233640,
+            'created_by' => $user->id,
+        ]);
+
+        $this->withHeaders(['X-Requested-With' => 'XMLHttpRequest'])
+            ->get(route('stock-inwards.show', $inward->id))
+            ->assertOk()
+            ->assertSee('₹17,820.00')
+            ->assertSee('₹35,640.00')
+            ->assertSee('CGST Amount (₹)')
+            ->assertSee('SGST Amount (₹)')
+            ->assertSee('IGST Amount (₹)')
+            ->assertSee('Supplier Invoice Date')
+            ->assertSee('01 Oct 2026');
+    }
+
+    public function test_stock_inward_details_modal_displays_all_actual_lines_for_the_receipt()
+    {
+        list($user, $supplier, $product, $store, $purchaseOrder) = $this->makePurchase();
+        $this->actingAs($user);
+        $secondProduct = Product::create([
+            'product_code' => 'GRN-' . strtoupper(Str::random(8)),
+            'name' => 'Second Goods Receipt Test Product',
+            'category_id' => $product->category_id,
+            'unit_id' => $product->unit_id,
+            'purchase_price' => 250,
+            'selling_price' => 300,
+            'minimum_stock' => 0,
+            'is_active' => true,
+        ]);
+        $secondOrderItem = $purchaseOrder->items()->create([
+            'product_id' => $secondProduct->id,
+            'unit_id' => $secondProduct->unit_id,
+            'quantity' => 3,
+            'received_quantity' => 0,
+            'purchase_rate' => 250,
+            'discount_percent' => 0,
+            'tax_percent' => 0,
+            'total_amount' => 750,
+        ]);
+        $payload = $this->receiptPayload($store, $purchaseOrder, (string) Str::uuid());
+        $payload['items'][] = [
+            'purchase_order_item_id' => $secondOrderItem->id,
+            'received_quantity' => 3,
+            'rejected_quantity' => 0,
+        ];
+        $this->post(route('goods-receipts.store', $purchaseOrder->id), $payload)->assertRedirect();
+
+        $receipt = GoodsReceipt::where('purchase_order_id', $purchaseOrder->id)->firstOrFail();
+        $inward = StockInward::whereHas('goodsReceiptItem', function ($query) use ($receipt) {
+            $query->where('goods_receipt_id', $receipt->id);
+        })->firstOrFail();
+        $this->get(route('stock-inwards.index', ['supplier_id' => $supplier->id]))
+            ->assertOk()
+            ->assertSee('New Inward')
+            ->assertDontSee('New Quotation')
+            ->assertSee(route('purchase-orders.index'), false)
+            ->assertSee('Total Quantity In')
+            ->assertSee('8.00');
+        $this->withHeaders(['X-Requested-With' => 'XMLHttpRequest'])
+            ->get(route('stock-inwards.show', $inward->id))
+            ->assertOk()
+            ->assertSee('View Stock Inward Details')
+            ->assertSee('Inward Information')
+            ->assertSee('Items Received')
+            ->assertSee($product->name)
+            ->assertSee($secondProduct->name)
+            ->assertSee($secondProduct->product_code)
+            ->assertSee('Previously Received')
+            ->assertSee('Quantity Summary')
+            ->assertSee('Financial Summary')
+            ->assertSee('IGST Amount (₹)')
+            ->assertSee('Supplier Invoice Date')
+            ->assertSee('<div><small>Supplier Invoice Date</small><strong>—</strong></div>', false)
+            ->assertSee('<small>IGST Amount (₹)</small><strong>₹0.00</strong>', false)
+            ->assertSee('Related Documents')
+            ->assertSee('Stock Movement Timeline')
+            ->assertSee('data-stock-inward-print', false)
+            ->assertSee('data-stock-inward-close', false)
+            ->assertDontSee('Edit Inward');
     }
 
     public function test_replaying_a_receipt_post_with_the_same_token_does_not_post_stock_twice()
@@ -163,6 +437,16 @@ class GoodsReceiptPostingTest extends TestCase
         $this->assertSame(15.0, (float) $product->fresh()->current_stock);
         $this->assertSame(2, StockInward::where('product_id', $product->id)->count());
         $this->assertSame(2, GoodsReceipt::where('purchase_order_id', $purchaseOrder->id)->count());
+
+        $latestReceipt = GoodsReceipt::where('purchase_order_id', $purchaseOrder->id)->orderByDesc('id')->firstOrFail();
+        $latestInward = StockInward::whereHas('goodsReceiptItem', function ($query) use ($latestReceipt) {
+            $query->where('goods_receipt_id', $latestReceipt->id);
+        })->firstOrFail();
+        $this->withHeaders(['X-Requested-With' => 'XMLHttpRequest'])
+            ->get(route('stock-inwards.show', $latestInward->id))
+            ->assertOk()
+            ->assertSee('Previously Received')
+            ->assertSee('2.00');
     }
 
     public function test_purchase_order_route_creates_a_numbered_order_with_product_lines()

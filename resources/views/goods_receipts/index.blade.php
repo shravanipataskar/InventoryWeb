@@ -22,7 +22,13 @@
                     <td>{{ optional($receipt->store)->name ?: '—' }}</td>
                     <td>{{ $receipt->items_count }}</td>
                     <td>@include('components.status-badge', ['status' => ucfirst($receipt->status)])</td>
-                    <td><a class="button button-small button-light" href="{{ route('goods-receipts.show', $receipt->id) }}">View</a></td>
+                    <td>
+                        @if ($receipt->status === 'draft' && auth()->user()->hasPermission('goods_receipts', 'create'))
+                            <a class="button button-small button-light" href="{{ route('goods-receipts.create', $receipt->purchase_order_id) }}?draft_id={{ $receipt->id }}">Edit Draft</a>
+                        @else
+                            <a class="button button-small button-light" href="{{ route('goods-receipts.show', $receipt->id) }}">View</a>
+                        @endif
+                    </td>
                 </tr>
             @empty
                 <tr><td colspan="8">@include('components.empty-state', ['icon' => 'icon-tray-in', 'title' => 'No goods received yet', 'message' => 'Post a receipt from an open purchase order to automatically add accepted quantities to stock.'])</td></tr>

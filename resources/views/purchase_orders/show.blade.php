@@ -128,7 +128,7 @@
                 </div>
             </div>
             <div class="po-detail-actions">
-                <button class="button button-light" type="button" onclick="window.print()" title="Print the purchase order or save it as a PDF"><span aria-hidden="true">▣</span> Print PO / Save PDF</button>
+                <a class="button button-light" href="{{ route('purchase-orders.print', $purchaseOrder->id) }}" target="_blank" rel="noopener" title="Open a print-ready purchase order or save it as a PDF"><span aria-hidden="true">▣</span> Print PO / Save PDF</a>
                 @if ($purchaseOrder->quotation)<a class="button button-light" href="{{ route('quotations.show', $purchaseOrder->quotation->quotation_request_id) }}">Back to Quotations</a>@endif
                 @if ($purchaseOrder->quotation)<a class="button button-light" href="{{ route('quotations.purchase-details', $purchaseOrder->quotation_id) }}">Manage Payments</a>@endif
                 @if ($purchaseOrder->status === 'draft' && !$purchaseOrder->goodsReceipts->count() && !$purchaseOrder->payments->count() && (!$billingEnabled || !$purchaseOrder->supplierBills->count()) && auth()->user()->hasPermission('purchase', 'edit'))

@@ -258,6 +258,42 @@ class PurchaseOrderController extends Controller
         return view('purchase_orders.show', compact('purchaseOrder', 'history', 'billingEnabled', 'purchasePaid'));
     }
 
+    public function printOrder($id)
+    {
+        $purchaseOrder = PurchaseOrder::with([
+            'supplier',
+            'store',
+            'items.product.category',
+            'items.product.unit',
+            'quotation.request',
+        ])->findOrFail($id);
+
+        $settings = DB::table('system_settings')
+            ->whereIn('key', [
+                'business_address',
+                'purchase_order_terms',
+                'terms_conditions',
+            ])
+            ->pluck('value', 'key');
+
+        $terms = $settings->get('purchase_order_terms')
+            ?: $settings->get('terms_conditions');
+        $terms = $terms
+            ? preg_split('/\r\n|\r|\n/', trim($terms), -1, PREG_SPLIT_NO_EMPTY)
+            : [
+                'Goods must match the approved product specifications.',
+                'Delivery must be made to the specified location within the agreed period.',
+                'The supplier invoice must reference the Purchase Order number.',
+                'Shortages or quality issues must be reported promptly.',
+            ];
+
+        return view('purchase_orders.print', [
+            'purchaseOrder' => $purchaseOrder,
+            'companyAddress' => $settings->get('business_address'),
+            'terms' => $terms,
+        ]);
+    }
+
     public function release($id)
     {
         $order = DB::transaction(function () use ($id) {

@@ -18,8 +18,8 @@ class StockInwardController extends Controller
 {
     public function index(Request $request)
     {
-        $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
         $filters = $request->validate([
+            'status' => 'nullable|in:active,inactive',
             'search' => 'nullable|string|max:255',
             'date_from' => 'nullable|date',
             'date_to' => 'nullable|date|after_or_equal:date_from',
@@ -28,6 +28,7 @@ class StockInwardController extends Controller
             'store_id' => 'nullable|integer|exists:stores,id',
             'record_status' => 'nullable|in:all,posted,active,inactive',
         ]);
+        $listingStatus = $filters['status'] ?? 'active';
 
         $query = StockInward::query()
             ->where('is_active', $listingStatus === 'active')
@@ -79,7 +80,7 @@ class StockInwardController extends Controller
             });
 
         $totals = (clone $query)->selectRaw(
-            'COUNT(*) as inward_count, COALESCE(SUM(quantity), 0) as total_quantity, COALESCE(SUM(subtotal), 0) as purchase_value, COALESCE(SUM(tax_total), 0) as tax_amount'
+            'COUNT(*) as inward_count, COALESCE(SUM(CASE WHEN goods_receipt_item_id IS NOT NULL AND received_quantity > 0 THEN received_quantity ELSE quantity END), 0) as total_quantity, COALESCE(SUM(subtotal), 0) as purchase_value, COALESCE(SUM(tax_total), 0) as tax_amount'
         )->first();
 
         $stockInwards = $query->with([
@@ -108,7 +109,7 @@ class StockInwardController extends Controller
         ));
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
         $stockInward = StockInward::with([
             'product.category',
@@ -116,52 +117,231 @@ class StockInwardController extends Controller
             'supplier',
             'store',
             'creator',
-            'goodsReceiptItem.goodsReceipt.purchaseOrder',
+            'goodsReceiptItem.goodsReceipt.items.product.unit',
+            'goodsReceiptItem.goodsReceipt.items.purchaseOrderItem',
+            'goodsReceiptItem.goodsReceipt.items.stockInward',
+            'goodsReceiptItem.goodsReceipt.purchaseOrder.items.product.unit',
         ])->findOrFail($id);
+
+        $receiptItem = $stockInward->goodsReceiptItem;
+        $goodsReceipt = $receiptItem ? $receiptItem->goodsReceipt : null;
+        $purchaseOrder = $goodsReceipt ? $goodsReceipt->purchaseOrder : null;
+        $receiptItems = $goodsReceipt ? $goodsReceipt->items : collect();
+        $purchaseOrderItemIds = $receiptItems->pluck('purchase_order_item_id')->filter()->unique()->values();
+        $previouslyReceived = collect();
+
+        if ($goodsReceipt && $purchaseOrderItemIds->isNotEmpty()) {
+            $previouslyReceived = DB::table('goods_receipt_items as gri')
+                ->join('goods_receipts as gr', 'gr.id', '=', 'gri.goods_receipt_id')
+                ->whereIn('gri.purchase_order_item_id', $purchaseOrderItemIds)
+                ->where('gr.status', 'posted')
+                ->where(function ($query) use ($goodsReceipt) {
+                    $query->where('gr.received_date', '<', $goodsReceipt->received_date)
+                        ->orWhere(function ($sameDate) use ($goodsReceipt) {
+                            $sameDate->where('gr.received_date', $goodsReceipt->received_date)
+                                ->where('gr.id', '<', $goodsReceipt->id);
+                        });
+                })
+                ->groupBy('gri.purchase_order_item_id')
+                ->selectRaw('gri.purchase_order_item_id, SUM(gri.received_quantity) as received_quantity')
+                ->pluck('received_quantity', 'purchase_order_item_id');
+        }
+
+        if ($receiptItems->isEmpty()) {
+            $items = collect([[
+                'product' => $stockInward->product,
+                'ordered_quantity' => null,
+                'previously_received_quantity' => null,
+                'received_quantity' => $stockInward->received_quantity ?: $stockInward->quantity,
+                'accepted_quantity' => null,
+                'rejected_quantity' => $stockInward->rejected_quantity,
+                'unit' => optional($stockInward->product)->unit,
+                'purchase_rate' => $stockInward->purchase_price,
+                'subtotal' => $stockInward->subtotal,
+                'discount_amount' => null,
+                'tax_amount' => $stockInward->tax_total,
+                'grand_total' => $stockInward->grand_total,
+                'sgst_amount' => $stockInward->sgst_amount,
+                'cgst_amount' => $stockInward->cgst_amount,
+                'igst_amount' => null,
+            ]]);
+            $stockInwardIds = [$stockInward->id];
+        } else {
+            $items = $receiptItems->map(function ($item) use ($previouslyReceived) {
+                $inward = $item->stockInward;
+                $purchaseOrderItem = $item->purchaseOrderItem;
+                $purchaseRate = $inward
+                    ? $inward->purchase_price
+                    : ($purchaseOrderItem ? $purchaseOrderItem->purchase_rate : $item->purchase_rate);
+                $acceptedQuantity = $inward ? $inward->quantity : $item->accepted_quantity;
+                $grossAmount = round((float) $acceptedQuantity * (float) $purchaseRate, 2);
+                $storedTax = $inward ? (float) $inward->tax_total : 0;
+                $storedCgst = $inward ? (float) $inward->cgst_amount : 0;
+                $storedSgst = $inward ? (float) $inward->sgst_amount : 0;
+                $cgstRate = $purchaseOrderItem
+                    ? (float) $purchaseOrderItem->cgst_rate
+                    : ($inward ? (float) $inward->cgst_rate : 0);
+                $sgstRate = $purchaseOrderItem
+                    ? (float) $purchaseOrderItem->sgst_rate
+                    : ($inward ? (float) $inward->sgst_rate : 0);
+                $taxRate = $purchaseOrderItem
+                    ? (float) $purchaseOrderItem->tax_percent
+                    : 0;
+                $hasTaxRates = $cgstRate + $sgstRate > 0 || $taxRate > 0;
+
+                if ($inward && ($storedCgst != 0 || $storedSgst != 0)) {
+                    $cgstAmount = $storedCgst;
+                    $sgstAmount = $storedSgst;
+                    $taxAmount = $storedTax ?: round($cgstAmount + $sgstAmount, 2);
+                    $igstAmount = 0;
+                } elseif ($inward && $storedTax != 0 && !$hasTaxRates) {
+                    $cgstAmount = null;
+                    $sgstAmount = null;
+                    $taxAmount = $storedTax;
+                    $igstAmount = null;
+                } else {
+                    $discountRate = $purchaseOrderItem
+                        ? (float) $purchaseOrderItem->discount_percent
+                        : 0;
+                    $discountAmount = round($grossAmount * $discountRate / 100, 2);
+                    $taxableAmount = round($grossAmount - $discountAmount, 2);
+                    if ($cgstRate + $sgstRate <= 0 && $taxRate > 0) {
+                        $cgstRate = round($taxRate / 2, 2);
+                        $sgstRate = round($taxRate - $cgstRate, 2);
+                    }
+
+                    $cgstAmount = round($taxableAmount * $cgstRate / 100, 2);
+                    $sgstAmount = round($taxableAmount * $sgstRate / 100, 2);
+                    $derivedTax = round($cgstAmount + $sgstAmount, 2);
+                    $taxAmount = $storedTax ?: $derivedTax;
+                    if ($storedTax && abs($storedTax - $derivedTax) > 0.01) {
+                        $cgstAmount = null;
+                        $sgstAmount = null;
+                    }
+                    $igstAmount = $cgstAmount === null ? null : 0;
+                }
+
+                return [
+                    'product' => $item->product,
+                    'ordered_quantity' => $item->purchaseOrderItem
+                        ? $item->purchaseOrderItem->ordered_quantity
+                        : $item->ordered_quantity,
+                    'previously_received_quantity' => (float) ($previouslyReceived[$item->purchase_order_item_id] ?? 0),
+                    'received_quantity' => $item->received_quantity,
+                    'accepted_quantity' => $item->accepted_quantity,
+                    'rejected_quantity' => $item->rejected_quantity,
+                    'unit' => optional($item->product)->unit,
+                    'purchase_rate' => $purchaseRate,
+                    'subtotal' => $inward ? $inward->subtotal : null,
+                    'discount_amount' => $purchaseOrderItem
+                        ? round($grossAmount * (float) $purchaseOrderItem->discount_percent / 100, 2)
+                        : null,
+                    'tax_amount' => $inward ? $taxAmount : null,
+                    'grand_total' => $inward ? $inward->grand_total : null,
+                    'sgst_amount' => $inward ? $sgstAmount : null,
+                    'cgst_amount' => $inward ? $cgstAmount : null,
+                    'igst_amount' => $inward ? $igstAmount : null,
+                ];
+            });
+            $stockInwardIds = $receiptItems->map(function ($item) {
+                return optional($item->stockInward)->id;
+            })->filter()->values()->all();
+        }
+
+        $quantitySummary = $items->groupBy(function ($item) {
+            return $item['unit'] ? ($item['unit']->short_name ?: $item['unit']->name) : 'Unit unavailable';
+        })->map(function ($unitItems) {
+            return [
+                'ordered' => $unitItems->contains(function ($item) {
+                    return $item['ordered_quantity'] === null;
+                }) ? null : $unitItems->sum('ordered_quantity'),
+                'received' => $unitItems->sum('received_quantity'),
+                'accepted' => $unitItems->contains(function ($item) {
+                    return $item['accepted_quantity'] === null;
+                }) ? null : $unitItems->sum('accepted_quantity'),
+                'rejected' => $unitItems->sum('rejected_quantity'),
+            ];
+        });
+
+        $financialSummary = [
+            'subtotal' => $items->contains(function ($item) {
+                return $item['subtotal'] === null;
+            }) ? null : $items->sum('subtotal'),
+            'discount' => $items->contains(function ($item) {
+                return $item['discount_amount'] === null;
+            }) ? null : $items->sum('discount_amount'),
+            'tax' => $items->contains(function ($item) {
+                return $item['tax_amount'] === null;
+            }) ? null : $items->sum('tax_amount'),
+            'grand_total' => $items->contains(function ($item) {
+                return $item['grand_total'] === null;
+            }) ? null : $items->sum('grand_total'),
+            'cgst' => $items->contains(function ($item) {
+                return $item['cgst_amount'] === null;
+            }) ? null : $items->sum('cgst_amount'),
+            'sgst' => $items->contains(function ($item) {
+                return $item['sgst_amount'] === null;
+            }) ? null : $items->sum('sgst_amount'),
+            'igst' => $items->contains(function ($item) {
+                return $item['igst_amount'] === null;
+            }) ? null : $items->sum('igst_amount'),
+        ];
+
+        $supplierBill = null;
+        $invoiceNumber = $goodsReceipt && $goodsReceipt->invoice_number
+            ? $goodsReceipt->invoice_number
+            : $stockInward->invoice_number;
+        if ($goodsReceipt && $invoiceNumber) {
+            $supplierBill = \App\SupplierBill::where('purchase_order_id', $goodsReceipt->purchase_order_id)
+                ->where('supplier_id', $goodsReceipt->supplier_id)
+                ->where('invoice_number', $invoiceNumber)
+                ->first();
+            if ($supplierBill && $items->contains(function ($item) {
+                return $item['discount_amount'] === null;
+            })) {
+                $financialSummary['discount'] = $supplierBill->discount_amount;
+            }
+        }
+
+        $stockMovements = DB::table('stock_transactions')
+            ->where('reference_type', 'stock_inward')
+            ->whereIn('reference_id', $stockInwardIds ?: [$stockInward->id])
+            ->orderBy('transaction_date')
+            ->orderBy('id')
+            ->get();
+
+        if ($request->ajax()) {
+            return view('stock_inwards._details_modal', compact(
+                'stockInward',
+                'receiptItem',
+                'goodsReceipt',
+                'purchaseOrder',
+                'supplierBill',
+                'items',
+                'quantitySummary',
+                'financialSummary',
+                'stockMovements'
+            ));
+        }
 
         return view('stock_inwards.show', compact('stockInward'));
     }
 
     public function create()
     {
-        abort_unless(Auth::user()->role === 'admin', 403);
+        abort_unless(Auth::user()->isAdmin(), 403);
 
-        $categories = Category::orderBy('name')
-            ->get();
-
-        $products = Product::where('is_active', 1)
-            ->orderBy('name')
-            ->get();
-        $productOptions = $products->map(function ($product) {
-            return [
-                'id' => (string) $product->id,
-                'category_id' => (string) $product->category_id,
-                'label' => $product->name . ' (' . $product->product_code . ')',
-            ];
-        })->values();
-
-        $suppliers = Supplier::where('is_active', 1)
-            ->orderBy('name')
-            ->get();
-        $stores = DB::table('stores')
-            ->where('is_active', true)
-            ->orderBy('name')
-            ->get();
-
-        return view('stock_inwards.create', compact(
-            'categories',
-            'products',
-            'productOptions',
-            'suppliers',
-            'stores'
-        ));
+        return redirect()
+            ->route('purchase-orders.index')
+            ->with('success', 'Select a receivable purchase order to record goods through the GRN workflow.');
     }
 
     public function edit($id)
     {
         $stockInward = StockInward::with(['product.category', 'supplier'])->findOrFail($id);
         abort_if($stockInward->isGoodsReceiptGenerated(), 403, 'Posted Goods Received inward entries cannot be edited.');
-        abort_unless(Auth::user()->role === 'admin', 403);
+        abort_if($stockInward->is_active, 403, 'Posted inward entries must be corrected through an authorized stock adjustment.');
+        abort_unless(Auth::user()->isAdmin(), 403);
 
         $categories = Category::orderBy('name')->get();
         $products = Product::where('is_active', 1)
@@ -189,7 +369,7 @@ class StockInwardController extends Controller
 
     public function store(Request $request)
     {
-        abort_unless(Auth::user()->role === 'admin', 403);
+        abort(403, 'Stock inward is created by posting goods received against a purchase order.');
 
         $validated = $request->validate([
             'category_id' => 'required|exists:categories,id',
@@ -346,7 +526,8 @@ class StockInwardController extends Controller
     {
         $stockInward = StockInward::findOrFail($id);
         abort_if($stockInward->isGoodsReceiptGenerated(), 403, 'Posted Goods Received inward entries cannot be edited.');
-        abort_unless(Auth::user()->role === 'admin', 403);
+        abort_if($stockInward->is_active, 403, 'Posted inward entries must be corrected through an authorized stock adjustment.');
+        abort_unless(Auth::user()->isAdmin(), 403);
 
         $validated = $request->validate([
             'category_id' => 'required|exists:categories,id',
@@ -421,7 +602,7 @@ class StockInwardController extends Controller
 
     public function status(Request $request, $id)
     {
-        abort_unless(Auth::user()->role === 'admin', 403);
+        abort_unless(Auth::user()->isAdmin(), 403);
 
         $validated = $request->validate([
             'is_active' => 'required|boolean',

@@ -17,12 +17,13 @@
     <section class="form-card">
         <form action="{{ route('goods-receipts.store', $purchaseOrder->id) }}" method="POST">
             @csrf
-            <input type="hidden" name="submission_token" value="{{ (string) \Illuminate\Support\Str::uuid() }}">
+            <input type="hidden" name="submission_token" value="{{ old('submission_token', optional($draftReceipt)->submission_token ?: (string) \Illuminate\Support\Str::uuid()) }}">
+            @php($draftItems = $draftReceipt ? $draftReceipt->items->keyBy('purchase_order_item_id') : collect())
             <div class="form-section">
                 <div class="form-grid">
-                    <div class="field"><label for="store_id">Receive into location <span class="required-mark">*</span></label><select class="field-control" id="store_id" name="store_id" required><option value="">Select location</option>@foreach ($stores as $store)<option value="{{ $store->id }}" {{ old('store_id') == $store->id ? 'selected' : '' }}>{{ $store->name }}{{ $store->location ? ' · ' . $store->location : '' }}</option>@endforeach</select>@error('store_id')<small class="field-error">{{ $message }}</small>@enderror</div>
-                    <div class="field"><label for="received_date">Received date <span class="required-mark">*</span></label><input class="field-control" id="received_date" name="received_date" type="date" value="{{ old('received_date', date('Y-m-d')) }}" required>@error('received_date')<small class="field-error">{{ $message }}</small>@enderror</div>
-                    <div class="field"><label for="invoice_number">Supplier invoice/bill number</label><input class="field-control" id="invoice_number" name="invoice_number" type="text" maxlength="100" value="{{ old('invoice_number', optional($purchaseOrder->quotation)->supplier_invoice_number) }}"></div>
+                    <div class="field"><label for="store_id">Receive into location <span class="required-mark">*</span></label><select class="field-control" id="store_id" name="store_id" required><option value="">Select location</option>@foreach ($stores as $store)<option value="{{ $store->id }}" {{ (string) old('store_id', optional($draftReceipt)->store_id) === (string) $store->id ? 'selected' : '' }}>{{ $store->name }}{{ $store->location ? ' · ' . $store->location : '' }}</option>@endforeach</select>@error('store_id')<small class="field-error">{{ $message }}</small>@enderror</div>
+                    <div class="field"><label for="received_date">Received date <span class="required-mark">*</span></label><input class="field-control" id="received_date" name="received_date" type="date" value="{{ old('received_date', optional($draftReceipt)->received_date ?: date('Y-m-d')) }}" required>@error('received_date')<small class="field-error">{{ $message }}</small>@enderror</div>
+                    <div class="field"><label for="invoice_number">Supplier invoice/bill number</label><input class="field-control" id="invoice_number" name="invoice_number" type="text" maxlength="100" value="{{ old('invoice_number', optional($draftReceipt)->invoice_number ?: optional($purchaseOrder->quotation)->supplier_invoice_number) }}"></div>
                 </div>
             </div>
             <div class="form-section">
@@ -38,9 +39,9 @@
                                 <td>{{ number_format($item->ordered_quantity, 2) }}</td>
                                 <td>{{ number_format($item->received_quantity, 2) }}</td>
                                 <td>{{ number_format($remaining, 2) }}</td>
-                                <td><input class="field-control receipt-quantity" type="number" name="items[{{ $index }}][received_quantity]" min="0" max="{{ $remaining }}" step="0.01" value="{{ old('items.' . $index . '.received_quantity', 0) }}" data-remaining="{{ $remaining }}" required></td>
-                                <td><input class="field-control receipt-rejected" type="number" name="items[{{ $index }}][rejected_quantity]" min="0" max="{{ $remaining }}" step="0.01" value="{{ old('items.' . $index . '.rejected_quantity', 0) }}" required></td>
-                                <td><input class="field-control receipt-damaged" type="number" name="items[{{ $index }}][damaged_quantity]" min="0" max="{{ $remaining }}" step="0.01" value="{{ old('items.' . $index . '.damaged_quantity', 0) }}"></td>
+                                <td><input class="field-control receipt-quantity" type="number" name="items[{{ $index }}][received_quantity]" min="0" max="{{ $remaining }}" step="0.01" value="{{ old('items.' . $index . '.received_quantity', optional($draftItems->get($item->id))->received_quantity ?: 0) }}" data-remaining="{{ $remaining }}" required></td>
+                                <td><input class="field-control receipt-rejected" type="number" name="items[{{ $index }}][rejected_quantity]" min="0" max="{{ $remaining }}" step="0.01" value="{{ old('items.' . $index . '.rejected_quantity', max(0, (float) optional($draftItems->get($item->id))->rejected_quantity - (float) optional($draftItems->get($item->id))->damaged_quantity)) }}" required></td>
+                                <td><input class="field-control receipt-damaged" type="number" name="items[{{ $index }}][damaged_quantity]" min="0" max="{{ $remaining }}" step="0.01" value="{{ old('items.' . $index . '.damaged_quantity', optional($draftItems->get($item->id))->damaged_quantity ?: 0) }}"></td>
                                 <td class="receipt-accepted">0.00</td>
                                 <td>₹{{ number_format($item->purchase_rate, 2) }}</td>
                             </tr>
@@ -50,9 +51,13 @@
                 </div>
             </div>
             <div class="form-section">
-                <div class="field"><label for="remarks">Remarks</label><textarea class="field-control" id="remarks" name="remarks" rows="3" placeholder="Optional receiving notes">{{ old('remarks') }}</textarea></div>
+                <div class="field"><label for="remarks">Remarks</label><textarea class="field-control" id="remarks" name="remarks" rows="3" placeholder="Optional receiving notes">{{ old('remarks', optional($draftReceipt)->remarks) }}</textarea></div>
             </div>
-            <div class="form-actions"><a class="button button-light" href="{{ route('purchase-orders.show', $purchaseOrder->id) }}">Cancel</a><button class="button button-primary" type="submit" {{ !$stores->count() ? 'disabled' : '' }}>Confirm Goods Received</button></div>
+            <div class="form-actions">
+                <a class="button button-light" href="{{ route('purchase-orders.show', $purchaseOrder->id) }}">Cancel</a>
+                <button class="button button-light" type="submit" name="action" value="draft" {{ !$stores->count() ? 'disabled' : '' }}>Save as Draft</button>
+                <button class="button button-primary" type="submit" name="action" value="post" {{ !$stores->count() ? 'disabled' : '' }}>Post Inward</button>
+            </div>
         </form>
     </section>
     <script>

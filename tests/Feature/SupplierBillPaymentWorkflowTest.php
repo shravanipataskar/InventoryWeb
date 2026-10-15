@@ -842,7 +842,7 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         $bill->update([
             'paid_amount' => 200,
             'status' => SupplierBill::STATUS_PARTIALLY_PAID,
-            'due_date' => now()->subDay()->toDateString(),
+            'due_date' => now()->addDay()->toDateString(),
         ]);
         $unpaidBill = SupplierBill::create([
             'bill_number' => 'BILL-HISTORY-' . strtoupper(Str::random(8)),
@@ -877,13 +877,13 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         $this->actingAs($this->owner)
             ->get(route('supplier-bills.index', ['filter' => 'unpaid']))
             ->assertOk()
-            ->assertSee($unpaidBill->bill_number)
+            ->assertDontSee($unpaidBill->bill_number)
             ->assertDontSee($pending->payment_number);
 
         $this->actingAs($this->owner)
             ->get(route('supplier-bills.index', ['filter' => 'overdue']))
             ->assertOk()
-            ->assertSee($bill->bill_number)
+            ->assertDontSee($bill->bill_number)
             ->assertSee($unpaidBill->bill_number);
 
         $this->approveAndComplete($pending, 'HISTORY-REF-1');
@@ -894,11 +894,13 @@ class SupplierBillPaymentWorkflowTest extends TestCase
                 'supplier_id' => $bill->supplier_id,
                 'from_date' => now()->toDateString(),
                 'to_date' => now()->toDateString(),
+                'per_page' => 10,
             ]))
             ->assertOk()
             ->assertSee($pending->payment_number)
             ->assertSee('₹1,180.00')
-            ->assertSee('25.42%');
+            ->assertSee('25.42%')
+            ->assertSee('value="10" selected', false);
         $confirmedPaid = \App\Support\Money::fromMinor(
             \App\Support\Money::toMinor(DB::table('purchase_payments')->where('status', 'paid')->sum('amount'))
             + \App\Support\Money::toMinor(DB::table('supplier_payments')->where('status', SupplierPayment::STATUS_COMPLETED)->sum('amount'))
@@ -917,7 +919,10 @@ class SupplierBillPaymentWorkflowTest extends TestCase
             });
         $dashboard = $this->actingAs($this->owner)->get(route('supplier-bills.index'))->assertOk();
         $dashboard->assertSee('₹' . number_format((float) $confirmedPaid, 2))
-            ->assertSee('₹' . number_format((float) \App\Support\Money::fromMinor($billOutstandingMinor + $unbilledOutstandingMinor), 2));
+            ->assertSee('₹' . number_format((float) \App\Support\Money::fromMinor($billOutstandingMinor + $unbilledOutstandingMinor), 2))
+            ->assertSee('Total Payments')
+            ->assertSee('Pending Approval')
+            ->assertSee($unpaidBill->bill_number);
         $purchasePayment = PurchasePayment::where('purchase_order_id', $bill->purchase_order_id)->firstOrFail();
         $this->assertSame(
             1,

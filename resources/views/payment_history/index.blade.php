@@ -9,6 +9,22 @@
         .payment-history-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:18px}
         .payment-history-heading h1{margin:0;color:#172b3d;font-size:24px}
         .payment-history-heading p{margin:6px 0 0;color:#77879a;font-size:12px}
+        .payment-history-counts{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:12px;margin-bottom:16px}
+        .payment-history-count{min-width:0;padding:14px;border:1px solid #e7edf2;border-radius:12px;background:#fff;box-shadow:0 4px 16px rgba(22,46,67,.035)}
+        .payment-history-count .count-title{display:flex;align-items:center;gap:8px;color:#718096;font-size:11px;font-weight:600}
+        .payment-history-count .count-icon{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:#edf5f8;color:#08799b;font-size:16px;font-weight:700}
+        .payment-history-count strong{display:block;margin-top:10px;color:#183247;font-size:22px;font-weight:700}
+        .payment-history-count .count-note{margin-top:4px;color:#8a98a8;font-size:10px}
+        .payment-history-count.count-paid{border-top:3px solid #20a66a}
+        .payment-history-count.count-paid .count-icon{background:#e7f7ee;color:#16824f}
+        .payment-history-count.count-unpaid{border-top:3px solid #dc5962}
+        .payment-history-count.count-unpaid .count-icon{background:#ffeaec;color:#c9434d}
+        .payment-history-count.count-partial{border-top:3px solid #7544b5}
+        .payment-history-count.count-partial .count-icon{background:#f2eaff;color:#7544b5}
+        .payment-history-count.count-overdue{border-top:3px solid #ed922b}
+        .payment-history-count.count-overdue .count-icon{background:#fff3e2;color:#b86c12}
+        .payment-history-count.count-pending{border-top:3px solid #4389d7}
+        .payment-history-count.count-pending .count-icon{background:#eaf2ff;color:#326fc2}
         .payment-history-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-bottom:18px}
         .payment-history-kpi{min-width:0;padding:16px;border:1px solid #e7edf2;border-radius:12px;background:#fff;box-shadow:0 4px 16px rgba(22,46,67,.035)}
         .payment-history-kpi small{display:block;margin-bottom:9px;color:#77879a;font-size:11px}
@@ -24,7 +40,9 @@
         .payment-history-tab{display:inline-flex;align-items:center;gap:6px;white-space:nowrap;padding:8px 12px;border:1px solid #e5eaf0;border-radius:8px;color:#617185;background:#fff;text-decoration:none;font-size:11px;font-weight:600}
         .payment-history-tab:hover{border-color:#9bd3d4;color:#087f83}
         .payment-history-tab.is-active{border-color:#148f92;background:#eaf8f7;color:#087f83}
-        .payment-history-toolbar{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(150px,1fr) repeat(2,minmax(135px,.75fr)) auto auto;gap:9px;align-items:center;padding:14px 0}
+        .payment-history-tab-count{display:inline-flex;align-items:center;justify-content:center;min-width:19px;height:19px;padding:0 5px;border-radius:10px;background:#eef2f6;color:#64748b;font-size:9px;font-weight:700}
+        .payment-history-tab.is-active .payment-history-tab-count{background:#d2efed;color:#087f83}
+        .payment-history-toolbar{display:grid;grid-template-columns:minmax(220px,1.5fr) minmax(145px,1fr) repeat(2,minmax(130px,.75fr)) minmax(100px,.5fr) auto auto;gap:9px;align-items:center;padding:14px 0}
         .payment-history-toolbar .field-control,.payment-history-toolbar .filter-select{width:100%;min-height:38px}
         .payment-history-search{position:relative}
         .payment-history-search input{padding-left:34px}
@@ -54,9 +72,9 @@
         .payment-history-footer .pagination{margin:0}
         .payment-history-empty{padding:30px 14px;text-align:center;color:#8391a1;font-size:11px}
         .payment-history-empty strong{display:block;margin-bottom:5px;color:#324b65;font-size:13px}
-        @media(max-width:1000px){.payment-history-toolbar{grid-template-columns:repeat(3,minmax(0,1fr))}.payment-history-search{grid-column:span 2}}
-        @media(max-width:700px){.payment-history-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-history-toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-history-search{grid-column:span 2}.payment-history-heading{flex-direction:column}}
-        @media(max-width:430px){.payment-history-kpis{gap:8px}.payment-history-kpi{padding:12px}.payment-history-kpi strong{font-size:17px}.payment-history-toolbar{grid-template-columns:1fr}.payment-history-search{grid-column:auto}.payment-history-footer{align-items:flex-start;flex-direction:column}}
+        @media(max-width:1100px){.payment-history-counts{grid-template-columns:repeat(3,minmax(0,1fr))}.payment-history-toolbar{grid-template-columns:repeat(3,minmax(0,1fr))}.payment-history-search{grid-column:span 2}}
+        @media(max-width:700px){.payment-history-counts,.payment-history-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-history-toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}.payment-history-search{grid-column:span 2}.payment-history-heading{flex-direction:column}}
+        @media(max-width:430px){.payment-history-counts,.payment-history-kpis{gap:8px}.payment-history-count,.payment-history-kpi{padding:12px}.payment-history-count strong,.payment-history-kpi strong{font-size:17px}.payment-history-toolbar{grid-template-columns:1fr}.payment-history-search{grid-column:auto}.payment-history-footer{align-items:flex-start;flex-direction:column}}
     </style>
 
     <main class="payment-history-page">
@@ -75,7 +93,40 @@
             <div class="form-alert" role="alert">{{ $errors->first() }}</div>
         @endif
 
-        <section class="payment-history-kpis" aria-label="Payment summary">
+        <section class="payment-history-counts" aria-label="Payment record counts">
+            <article class="payment-history-count">
+                <div class="count-title"><span class="count-icon" aria-hidden="true">▤</span>Total Payments</div>
+                <strong>{{ number_format($statusCounts['all']) }}</strong>
+                <div class="count-note">All payment history entries</div>
+            </article>
+            <article class="payment-history-count count-paid">
+                <div class="count-title"><span class="count-icon" aria-hidden="true">✓</span>Paid</div>
+                <strong>{{ number_format($statusCounts['paid']) }}</strong>
+                <div class="count-note">Fully settled records</div>
+            </article>
+            <article class="payment-history-count count-unpaid">
+                <div class="count-title"><span class="count-icon" aria-hidden="true">×</span>Unpaid</div>
+                <strong>{{ number_format($statusCounts['unpaid']) }}</strong>
+                <div class="count-note">No confirmed payment</div>
+            </article>
+            <article class="payment-history-count count-partial">
+                <div class="count-title"><span class="count-icon" aria-hidden="true">◒</span>Partially Paid</div>
+                <strong>{{ number_format($statusCounts['partially_paid']) }}</strong>
+                <div class="count-note">Open balance remains</div>
+            </article>
+            <article class="payment-history-count count-overdue">
+                <div class="count-title"><span class="count-icon" aria-hidden="true">!</span>Overdue</div>
+                <strong>{{ number_format($statusCounts['overdue']) }}</strong>
+                <div class="count-note">Past due with a balance</div>
+            </article>
+            <article class="payment-history-count count-pending">
+                <div class="count-title"><span class="count-icon" aria-hidden="true">◷</span>Pending Approval</div>
+                <strong>{{ number_format($statusCounts['pending_approval']) }}</strong>
+                <div class="count-note">Awaiting payment approval</div>
+            </article>
+        </section>
+
+        <section class="payment-history-kpis" aria-label="Financial summary">
             <article class="payment-history-kpi kpi-paid">
                 <small>Total Paid</small>
                 <strong>₹{{ number_format((float) $summary['paid'], 2) }}</strong>
@@ -111,13 +162,13 @@
                     ] as $key => $label)
                         <a class="payment-history-tab {{ $filter === $key ? 'is-active' : '' }}"
                            href="{{ route('supplier-bills.index', array_merge(request()->except('page', 'filter', 'export'), ['filter' => $key])) }}"
-                           {{ $filter === $key ? 'aria-current=page' : '' }}>{{ $label }}</a>
+                           {{ $filter === $key ? 'aria-current=page' : '' }}>{{ $label }} <span class="payment-history-tab-count">{{ number_format($statusCounts[$key]) }}</span></a>
                     @endforeach
                 </nav>
                 <div class="payment-history-toolbar">
                     <label class="payment-history-search">
                         <span aria-hidden="true">⌕</span>
-                        <input class="field-control" type="search" name="search" value="{{ request('search') }}" placeholder="Voucher, supplier, PO or bill..." aria-label="Search payment history">
+                        <input class="field-control" type="search" name="search" value="{{ request('search') }}" placeholder="Search by payment voucher, supplier, PO or bill..." aria-label="Search payment history">
                     </label>
                     <select class="filter-select" name="supplier_id" aria-label="Filter by supplier">
                         <option value="">All suppliers</option>
@@ -127,6 +178,11 @@
                     </select>
                     <input class="field-control" type="date" name="from_date" value="{{ request('from_date') }}" aria-label="From date">
                     <input class="field-control" type="date" name="to_date" value="{{ request('to_date') }}" aria-label="To date">
+                    <select class="field-control" name="per_page" aria-label="Records per page">
+                        @foreach ([10, 20, 50] as $pageSize)
+                            <option value="{{ $pageSize }}" {{ (int) request('per_page', 20) === $pageSize ? 'selected' : '' }}>{{ $pageSize }} per page</option>
+                        @endforeach
+                    </select>
                     <input type="hidden" name="filter" value="{{ $filter }}">
                     <button class="button button-primary button-small" type="submit">Apply Filters</button>
                     <button class="button button-light button-small" type="submit" name="export" value="csv">Export CSV</button>

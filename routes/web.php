@@ -404,6 +404,9 @@ Route::middleware('auth')->group(function () {
     Route::resource('purchase-orders', 'PurchaseOrderController')
         ->only(['index', 'create', 'store', 'show'])
         ->middleware('permission:purchase.view');
+    Route::get('purchase-orders/{purchaseOrder}/print', 'PurchaseOrderController@printOrder')
+        ->middleware('permission:purchase.view')
+        ->name('purchase-orders.print');
     Route::get('purchase-orders/{purchaseOrder}/edit', 'PurchaseOrderController@edit')
         ->middleware('permission:purchase.edit')
         ->name('purchase-orders.edit');
@@ -416,6 +419,7 @@ Route::middleware('auth')->group(function () {
     Route::get('quotations/{quotation}/bill-copy', 'QuotationController@billCopy')
         ->name('quotations.bill-copy');
     Route::get('purchase-orders/{purchaseOrder}/receive', 'GoodsReceiptController@create')
+        ->middleware('permission:goods_receipts.create')
         ->name('goods-receipts.create');
     Route::post('purchase-orders/{purchaseOrder}/receive', 'GoodsReceiptController@store')
         ->middleware('permission:goods_receipts.create')
