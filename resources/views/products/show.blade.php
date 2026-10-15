@@ -16,7 +16,7 @@
             <div class="form-card-heading"><span class="form-section-icon"><svg><use href="#icon-box"></use></svg></span><div><h2>Product Information</h2><p>Product identity, image, category, and storage location.</p></div></div>
             <div class="product-details-hero">
                 @if ($product->image && Storage::disk('public')->exists($product->image))
-                    <img class="product-details-image" src="{{ Storage::disk('public')->url($product->image) }}" alt="{{ $product->name }}">
+                    <img class="product-details-image" src="{{ asset('storage/' . $product->image) }}" alt="{{ $product->name }}">
                 @else
                     <span class="product-details-image-placeholder" aria-label="No product image">{{ strtoupper(substr($product->name, 0, 1)) }}</span>
                 @endif

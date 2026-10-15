@@ -77,7 +77,7 @@ class ProductImageTest extends TestCase
         $this->get(route('products.index'))
             ->assertOk()
             ->assertSee('product-thumbnail')
-            ->assertSee('/storage/' . $product->image, false)
+            ->assertSee('src="' . asset('storage/' . $product->image) . '"', false)
             ->assertSee('product-thumbnail-placeholder')
             ->assertSee(route('products.show', $product->id), false);
         $this->get(route('products.show', $product->id))
@@ -86,7 +86,7 @@ class ProductImageTest extends TestCase
             ->assertSee($product->product_code)
             ->assertSee('Current Stock')
             ->assertSee('Back to Products')
-            ->assertSee('/storage/' . $product->image, false);
+            ->assertSee('src="' . asset('storage/' . $product->image) . '"', false);
         $this->get(route('products.show', $productWithoutImage->id))
             ->assertOk()
             ->assertSee('product-details-image-placeholder');

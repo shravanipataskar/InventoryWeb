@@ -33,7 +33,7 @@
                         <td class="muted-cell">{{ $loop->iteration }}</td>
                         <td>
                             @if ($product->image && Storage::disk('public')->exists($product->image))
-                                <img class="product-thumbnail" src="{{ Storage::disk('public')->url($product->image) }}" alt="{{ $product->name }}">
+                                <img class="product-thumbnail" src="{{ asset('storage/' . $product->image) }}" alt="{{ $product->name }}">
                             @else
                                 <span class="product-thumbnail-placeholder" aria-label="No product image">{{ strtoupper(substr($product->name, 0, 1)) }}</span>
                             @endif
