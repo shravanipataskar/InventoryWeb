@@ -631,6 +631,83 @@ button {
     grid-template-columns: minmax(0, 1.7fr) minmax(260px, .9fr);
 }
 
+.reorder-panel {
+    display: flex;
+    flex-direction: column;
+}
+
+.reorder-panel-icon {
+    color: #c4870e;
+    background: #fff3d6;
+}
+
+.reorder-list {
+    flex: 1;
+}
+
+.reorder-row {
+    display: flex;
+    min-height: 55px;
+    align-items: center;
+    gap: 10px;
+    padding: 9px 19px;
+    border-top: 1px solid #f0f3f5;
+}
+
+.reorder-indicator {
+    width: 8px;
+    height: 8px;
+    flex: 0 0 8px;
+    border-radius: 50%;
+    background: #e6a129;
+}
+
+.reorder-indicator.is-out {
+    background: #df5151;
+}
+
+.reorder-product,
+.reorder-stock {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.reorder-product {
+    flex: 1;
+}
+
+.reorder-product strong,
+.reorder-stock strong {
+    overflow: hidden;
+    color: $ink;
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.reorder-product span,
+.reorder-stock span {
+    color: #99a5ab;
+    font-size: 9px;
+}
+
+.reorder-stock {
+    align-items: flex-end;
+    text-align: right;
+}
+
+.reorder-stock strong {
+    color: #bc7b0a;
+}
+
+.reorder-panel .panel-bottom-link {
+    margin: 0 19px;
+    padding: 12px 0;
+    border-top: 1px solid #edf1f3;
+}
+
 .dashboard-grid-activity {
     grid-template-columns: repeat(2, minmax(0, 1fr));
 }

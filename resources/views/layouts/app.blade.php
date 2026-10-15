@@ -510,6 +510,7 @@
                 ================================================== --}}
                 <div class="topbar-right">
 
+                    @include('components.reorder-notification')
                     @yield('topbar-actions')
 
                     {{-- Date --}}
