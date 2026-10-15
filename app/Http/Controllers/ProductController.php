@@ -133,11 +133,7 @@ class ProductController extends Controller
                 'is_active' => 1,
             ]);
         } catch (\Throwable $exception) {
-            if ($imagePath && !Storage::disk('public')->delete($imagePath)) {
-                Log::warning('Unable to remove product image after a failed product save.', [
-                    'image_path' => $imagePath,
-                ]);
-            }
+            $this->discardProductImage($imagePath, 'Unable to remove product image after a failed product save.');
             throw $exception;
         }
 
@@ -230,22 +226,16 @@ class ProductController extends Controller
                 'description' => $request->description,
             ]);
         } catch (\Throwable $exception) {
-            if ($newImage && !Storage::disk('public')->delete($newImage)) {
-                Log::warning('Unable to remove replacement product image after a failed product update.', [
-                    'product_id' => $product->id,
-                    'image_path' => $newImage,
-                ]);
-            }
+            $this->discardProductImage(
+                $newImage,
+                'Unable to remove replacement product image after a failed product update.',
+                $product->id
+            );
             throw $exception;
         }
 
         if ($oldImage && ($newImage || $request->boolean('remove_image'))) {
-            if (!Storage::disk('public')->delete($oldImage)) {
-                \Illuminate\Support\Facades\Log::warning('Unable to remove replaced product image.', [
-                    'product_id' => $product->id,
-                    'image_path' => $oldImage,
-                ]);
-            }
+            $this->discardProductImage($oldImage, 'Unable to remove replaced product image.', $product->id);
         }
 
         return redirect()
@@ -280,6 +270,31 @@ class ProductController extends Controller
         return redirect()
             ->route('products.index')
             ->with('success', 'Product deactivated successfully. The record is retained.');
+    }
+
+    private function discardProductImage($path, $message, $productId = null)
+    {
+        if (!$path) {
+            return;
+        }
+
+        try {
+            if (Storage::disk('public')->exists($path)
+                && !Storage::disk('public')->delete($path)) {
+                Log::error($message, array_filter([
+                    'operation' => 'product_image.cleanup',
+                    'product_id' => $productId,
+                    'image_path' => $path,
+                ]));
+            }
+        } catch (\Throwable $cleanupException) {
+            Log::error($message, array_filter([
+                'operation' => 'product_image.cleanup',
+                'product_id' => $productId,
+                'image_path' => $path,
+                'exception' => get_class($cleanupException),
+            ]));
+        }
     }
 
     private function generateProductCode()

@@ -10,7 +10,10 @@ use App\StockOutward;
 use App\Supplier;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use RuntimeException;
+use Throwable;
 
 class CompanyController extends Controller
 {
@@ -242,16 +245,21 @@ class CompanyController extends Controller
         ]);
 
         $file = $data['document'];
-        $path = $file->store('company-documents/' . $company->id);
+        $path = $file->store('company-documents/' . $company->id, 'local');
         if (!$path) {
-            throw new \RuntimeException('The company document could not be saved.');
+            throw new RuntimeException('The company document could not be saved.');
         }
 
-        $company->documents()->create([
-            'file_name' => $file->getClientOriginalName(),
-            'storage_path' => $path,
-            'file_size' => $file->getSize(),
-        ]);
+        try {
+            $company->documents()->create([
+                'file_name' => $file->getClientOriginalName(),
+                'storage_path' => $path,
+                'file_size' => $file->getSize(),
+            ]);
+        } catch (Throwable $exception) {
+            $this->deleteCompanyDocument($path);
+            throw $exception;
+        }
 
         return redirect()
             ->route('companies.show', ['company' => $company->id, 'tab' => 'documents'])
@@ -278,15 +286,30 @@ class CompanyController extends Controller
         $document = CompanyDocument::where('company_id', $companyId)
             ->findOrFail($documentId);
 
-        if (Storage::disk('local')->exists($document->storage_path)
-            && !Storage::disk('local')->delete($document->storage_path)) {
-            throw new \RuntimeException('The company document could not be deleted from storage.');
-        }
-
         $document->delete();
+        $this->deleteCompanyDocument($document->storage_path);
 
         return redirect()
             ->route('companies.show', ['company' => $companyId, 'tab' => 'documents'])
             ->with('success', 'Company document deleted successfully.');
+    }
+
+    private function deleteCompanyDocument($path)
+    {
+        try {
+            if ($path && Storage::disk('local')->exists($path)
+                && !Storage::disk('local')->delete($path)) {
+                Log::error('Unable to remove a company document from storage.', [
+                    'operation' => 'company_document.cleanup',
+                    'document_path' => $path,
+                ]);
+            }
+        } catch (Throwable $cleanupException) {
+            Log::error('Unable to remove a company document from storage.', [
+                'operation' => 'company_document.cleanup',
+                'document_path' => $path,
+                'exception' => get_class($cleanupException),
+            ]);
+        }
     }
 }

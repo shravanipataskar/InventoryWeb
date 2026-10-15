@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Customer;
 use App\StockOutward;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -71,7 +72,7 @@ class CustomerController extends Controller
         try {
             $customer = Customer::create($uploadedDocuments);
         } catch (Throwable $exception) {
-            $this->deleteStoredDocuments($uploadedDocuments);
+            $this->deleteStoredDocuments($this->documentPaths($uploadedDocuments));
             throw $exception;
         }
 
@@ -128,7 +129,7 @@ class CustomerController extends Controller
         try {
             $customer->update($uploadedDocuments);
         } catch (Throwable $exception) {
-            $this->deleteStoredDocuments($uploadedDocuments);
+            $this->deleteStoredDocuments($this->documentPaths($uploadedDocuments));
             throw $exception;
         }
 
@@ -242,11 +243,34 @@ class CustomerController extends Controller
     private function deleteStoredDocuments(array $paths)
     {
         foreach ($paths as $path) {
-            if ($path && Storage::disk('local')->exists($path)
-                && !Storage::disk('local')->delete($path)) {
-                throw new RuntimeException('A customer document could not be removed from storage.');
+            if (!$path) {
+                continue;
+            }
+
+            try {
+                if (Storage::disk('local')->exists($path)
+                    && !Storage::disk('local')->delete($path)) {
+                    Log::error('Unable to remove a customer document during cleanup.', [
+                        'operation' => 'customer_document.cleanup',
+                        'document_path' => $path,
+                    ]);
+                }
+            } catch (Throwable $cleanupException) {
+                Log::error('Unable to remove a customer document during cleanup.', [
+                    'operation' => 'customer_document.cleanup',
+                    'document_path' => $path,
+                    'exception' => get_class($cleanupException),
+                ]);
             }
         }
+    }
+
+    private function documentPaths(array $attributes)
+    {
+        return array_filter([
+            $attributes['aadhaar_card'] ?? null,
+            $attributes['pan_card'] ?? null,
+        ]);
     }
 
     private function generateCustomerCode()

@@ -6,8 +6,12 @@ use App\PurchaseOrder;
 use App\Services\PurchasePaymentAllocationService;
 use App\Supplier;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
 use Illuminate\Support\Facades\Storage;
+use Throwable;
+use RuntimeException;
 
 class SupplierController extends Controller
 {
@@ -58,9 +62,17 @@ class SupplierController extends Controller
         $this->validateActiveDuplicate($validated);
 
         $validated = $this->storeDocuments($request, $validated);
-        Supplier::create(array_merge($validated, [
-            'is_active' => 1,
-        ]));
+        $newDocuments = array_intersect_key($validated, array_flip(['aadhaar_card', 'pan_card']));
+        try {
+            DB::transaction(function () use ($validated) {
+                Supplier::create(array_merge($validated, [
+                    'is_active' => 1,
+                ]));
+            });
+        } catch (Throwable $exception) {
+            $this->deleteDocuments($newDocuments);
+            throw $exception;
+        }
 
         return redirect()
             ->route('suppliers.index')
@@ -112,10 +124,19 @@ class SupplierController extends Controller
                 $oldDocuments[] = $supplier->{$document};
             }
         }
-        $supplier->update($this->storeDocuments($request, $validated));
+        $validated = $this->storeDocuments($request, $validated);
+        $newDocuments = array_intersect_key($validated, array_flip(['aadhaar_card', 'pan_card']));
+        try {
+            DB::transaction(function () use ($supplier, $validated) {
+                $supplier->update($validated);
+            });
+        } catch (Throwable $exception) {
+            $this->deleteDocuments($newDocuments);
+            throw $exception;
+        }
         foreach ($oldDocuments as $oldDocument) {
-            if ($oldDocument && Storage::disk('local')->exists($oldDocument)) {
-                Storage::disk('local')->delete($oldDocument);
+            if ($oldDocument) {
+                $this->deleteDocuments([$oldDocument]);
             }
         }
 
@@ -226,12 +247,44 @@ class SupplierController extends Controller
 
     private function storeDocuments(Request $request, array $validated)
     {
-        foreach (['aadhaar_card', 'pan_card'] as $document) {
-            if ($request->hasFile($document)) {
-                $validated[$document] = $request->file($document)->store('supplier-documents', 'local');
+        $storedPaths = [];
+        try {
+            foreach (['aadhaar_card', 'pan_card'] as $document) {
+                if ($request->hasFile($document)) {
+                    $path = $request->file($document)->store('supplier-documents', 'local');
+                    if (!$path) {
+                        throw new RuntimeException('The supplier document could not be stored.');
+                    }
+                    $validated[$document] = $path;
+                    $storedPaths[] = $path;
+                }
             }
+        } catch (Throwable $exception) {
+            $this->deleteDocuments($storedPaths);
+            throw $exception;
         }
 
         return $validated;
+    }
+
+    private function deleteDocuments(array $paths)
+    {
+        foreach ($paths as $path) {
+            try {
+                if ($path && Storage::disk('local')->exists($path)
+                    && !Storage::disk('local')->delete($path)) {
+                    Log::error('Unable to remove a supplier document during cleanup.', [
+                        'operation' => 'supplier_document.cleanup',
+                        'document_path' => $path,
+                    ]);
+                }
+            } catch (Throwable $cleanupException) {
+                Log::error('Unable to remove a supplier document during cleanup.', [
+                    'operation' => 'supplier_document.cleanup',
+                    'document_path' => $path,
+                    'exception' => get_class($cleanupException),
+                ]);
+            }
+        }
     }
 }

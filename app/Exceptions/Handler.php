@@ -24,6 +24,11 @@ class Handler extends ExceptionHandler
     protected $dontFlash = [
         'password',
         'password_confirmation',
+        'current_password',
+        'token',
+        'account_number',
+        'account_reference',
+        'proof',
     ];
 
     /**

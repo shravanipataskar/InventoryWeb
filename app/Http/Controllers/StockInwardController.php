@@ -556,7 +556,12 @@ class StockInwardController extends Controller
         $newTaxTotal = round($newSgstAmount + $newCgstAmount, 2);
         $newGrandTotal = round($newSubtotal + $newTaxTotal, 2);
 
-        DB::transaction(function () use ($stockInward, $validated, $originalQuantity, $newQuantity, $newPurchasePrice, $newSgstRate, $newCgstRate, $newSubtotal, $newSgstAmount, $newCgstAmount, $newTaxTotal, $newGrandTotal) {
+        DB::transaction(function () use ($id, $validated, $newQuantity, $newPurchasePrice, $newSgstRate, $newCgstRate, $newSubtotal, $newSgstAmount, $newCgstAmount, $newTaxTotal, $newGrandTotal) {
+            $stockInward = StockInward::lockForUpdate()->findOrFail($id);
+            abort_if($stockInward->isGoodsReceiptGenerated(), 403, 'Posted Goods Received inward entries cannot be edited.');
+            abort_if($stockInward->is_active, 403, 'Posted inward entries must be corrected through an authorized stock adjustment.');
+
+            $originalQuantity = (float) $stockInward->quantity;
             $oldProductId = $stockInward->product_id;
             $newProductId = (int) $validated['product_id'];
 

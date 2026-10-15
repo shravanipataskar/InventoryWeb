@@ -8,6 +8,7 @@ use App\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -162,6 +163,32 @@ class CustomerDocumentsTest extends TestCase
         ])->assertSessionHasErrors('pan_card');
 
         $this->assertDatabaseMissing('customers', ['name' => $name]);
+    }
+
+    public function test_customer_database_failure_removes_uploaded_documents_without_treating_other_fields_as_paths()
+    {
+        Storage::fake('local');
+        $this->actingAs($this->makeUser());
+        $name = 'Failed Document Customer ' . strtoupper(Str::random(8));
+        Event::listen('eloquent.creating: App\Customer', function () {
+            throw new \RuntimeException('Simulated customer write failure.');
+        });
+
+        try {
+            $response = $this->post(route('customers.store'), [
+                'name' => $name,
+                'customer_type' => 'Retail',
+                'phone' => '9876543210',
+                'status' => 'active',
+                'aadhaar_card' => UploadedFile::fake()->image('aadhaar.jpg'),
+            ]);
+        } finally {
+            Event::forget('eloquent.creating: App\Customer');
+        }
+
+        $response->assertStatus(500);
+        $this->assertDatabaseMissing('customers', ['name' => $name]);
+        $this->assertSame([], Storage::disk('local')->allFiles('customers/documents'));
     }
 
     private function makeUser()

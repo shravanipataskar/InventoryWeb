@@ -3,9 +3,13 @@
 namespace Tests\Feature;
 
 use App\Company;
+use App\CompanyDocument;
 use App\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Tests\TestCase;
 
@@ -54,5 +58,58 @@ class LocationCompanyTest extends TestCase
         $this->get(route('locations.index'))
             ->assertOk()
             ->assertSee($company->name);
+    }
+
+    public function test_company_document_storage_tracks_database_failures_and_preserves_files_on_delete_failure()
+    {
+        Storage::fake('local');
+        $this->actingAs(User::create([
+            'name' => 'Company Document Test User',
+            'email' => Str::uuid() . '@example.test',
+            'password' => Hash::make('test-password'),
+            'role' => 'ADMIN',
+        ]));
+        $company = Company::create([
+            'name' => 'Document Company ' . Str::random(8),
+            'code' => 'DOC-' . strtoupper(Str::random(8)),
+            'is_active' => true,
+        ]);
+        Event::listen('eloquent.creating: App\CompanyDocument', function () {
+            throw new \RuntimeException('Simulated company document write failure.');
+        });
+
+        try {
+            $response = $this->post(route('companies.documents.store', $company->id), [
+                'document' => UploadedFile::fake()->create('company.pdf', 10, 'application/pdf'),
+            ]);
+        } finally {
+            Event::forget('eloquent.creating: App\CompanyDocument');
+        }
+
+        $response->assertStatus(500);
+        $this->assertDatabaseMissing('company_documents', ['company_id' => $company->id]);
+        $this->assertSame([], Storage::disk('local')->allFiles('company-documents/' . $company->id));
+
+        $path = UploadedFile::fake()->create('retained.pdf', 10, 'application/pdf')
+            ->store('company-documents/' . $company->id, 'local');
+        $document = CompanyDocument::create([
+            'company_id' => $company->id,
+            'file_name' => 'retained.pdf',
+            'storage_path' => $path,
+            'file_size' => 10,
+        ]);
+        Event::listen('eloquent.deleting: App\CompanyDocument', function () {
+            throw new \RuntimeException('Simulated company document delete failure.');
+        });
+
+        try {
+            $response = $this->delete(route('companies.documents.destroy', [$company->id, $document->id]));
+        } finally {
+            Event::forget('eloquent.deleting: App\CompanyDocument');
+        }
+
+        $response->assertStatus(500);
+        $this->assertDatabaseHas('company_documents', ['id' => $document->id]);
+        Storage::disk('local')->assertExists($path);
     }
 }

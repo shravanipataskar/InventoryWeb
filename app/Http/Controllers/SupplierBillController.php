@@ -14,9 +14,12 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
+use Throwable;
 
 class SupplierBillController extends Controller
 {
@@ -394,16 +397,36 @@ class SupplierBillController extends Controller
         }
         $file = $request->file('attachment');
 
+        $path = $file->store('supplier-bills', 'local');
+        if (!$path) {
+            throw new RuntimeException('The supplier bill attachment could not be stored.');
+        }
+
         return [
-            'path' => $file->store('supplier-bills', 'local'),
+            'path' => $path,
             'name' => Str::limit(preg_replace('/[^A-Za-z0-9._ -]/', '_', $file->getClientOriginalName()), 180, ''),
         ];
     }
 
     private function discardAttachment($attachment)
     {
-        if ($attachment) {
-            Storage::disk('local')->delete($attachment['path']);
+        if (!$attachment || empty($attachment['path'])) {
+            return;
+        }
+        try {
+            if (Storage::disk('local')->exists($attachment['path'])
+                && !Storage::disk('local')->delete($attachment['path'])) {
+                Log::error('Unable to remove a supplier bill attachment during cleanup.', [
+                    'operation' => 'supplier_bill_attachment.cleanup',
+                    'attachment_path' => $attachment['path'],
+                ]);
+            }
+        } catch (Throwable $cleanupException) {
+            Log::error('Unable to remove a supplier bill attachment during cleanup.', [
+                'operation' => 'supplier_bill_attachment.cleanup',
+                'attachment_path' => $attachment['path'],
+                'exception' => get_class($cleanupException),
+            ]);
         }
     }
 

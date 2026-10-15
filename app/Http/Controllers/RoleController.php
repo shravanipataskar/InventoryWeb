@@ -52,38 +52,45 @@ class RoleController extends Controller
     public function update(Request $request, $id)
     {
         $role = Role::findOrFail($id);
-        $selectedPermissions = $request->input('permissions', []);
-        $permissionIds = [];
+        $validated = $request->validate([
+            'permissions' => 'nullable|array',
+            'permissions.*' => 'array',
+            'permissions.*.*' => 'in:1',
+        ]);
+        $selectedPermissions = $validated['permissions'] ?? [];
 
-        foreach ($this->moduleGroups as $moduleKey => $modules) {
-            foreach (['view', 'create', 'edit', 'delete'] as $action) {
-                $permissionAction = $moduleKey === 'quotation_approval' && $action === 'view'
-                    ? 'approve'
-                    : $action;
+        DB::transaction(function () use ($role, $selectedPermissions) {
+            $permissionIds = [];
+            foreach ($this->moduleGroups as $moduleKey => $modules) {
+                foreach (['view', 'create', 'edit', 'delete'] as $action) {
+                    $permissionAction = $moduleKey === 'quotation_approval' && $action === 'view'
+                        ? 'approve'
+                        : $action;
 
-                if (!isset($selectedPermissions[$moduleKey][$action])) {
-                    continue;
+                    if (!isset($selectedPermissions[$moduleKey][$action])) {
+                        continue;
+                    }
+
+                    $permissionIds = array_merge(
+                        $permissionIds,
+                        Permission::whereIn('module', $modules)
+                            ->where('action', $permissionAction)
+                            ->pluck('id')
+                            ->all()
+                    );
                 }
-
-                $permissionIds = array_merge(
-                    $permissionIds,
-                    Permission::whereIn('module', $modules)
-                        ->where('action', $permissionAction)
-                        ->pluck('id')
-                        ->all()
-                );
             }
-        }
 
-        $permissionIds = array_merge(
-            $permissionIds,
-            $role->permissions()
-                ->whereNotIn('action', ['view', 'create', 'edit', 'delete'])
-                ->pluck('permissions.id')
-                ->all()
-        );
+            $permissionIds = array_merge(
+                $permissionIds,
+                $role->permissions()
+                    ->whereNotIn('action', ['view', 'create', 'edit', 'delete'])
+                    ->pluck('permissions.id')
+                    ->all()
+            );
 
-        $role->permissions()->sync($permissionIds);
+            $role->permissions()->sync($permissionIds);
+        });
 
         return redirect()
             ->route('roles.index', ['role_id' => $role->id])

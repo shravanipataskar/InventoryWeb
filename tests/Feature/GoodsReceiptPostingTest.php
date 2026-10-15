@@ -15,6 +15,7 @@ use App\User;
 use App\Http\Middleware\VerifyCsrfToken;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -192,6 +193,35 @@ class GoodsReceiptPostingTest extends TestCase
             ->assertSee($product->name)
             ->assertSee('14.00')
             ->assertSee('₹770,000.00');
+    }
+
+    public function test_goods_receipt_failure_after_receipt_items_rolls_back_stock_and_related_records()
+    {
+        list($user, $supplier, $product, $store, $purchaseOrder) = $this->makePurchase();
+        $this->actingAs($user);
+        $token = (string) Str::uuid();
+
+        Event::listen('eloquent.creating: App\StockInward', function () {
+            throw new \RuntimeException('Simulated inward creation failure.');
+        });
+        try {
+            $response = $this->post(
+                route('goods-receipts.store', $purchaseOrder->id),
+                $this->receiptPayload($store, $purchaseOrder, $token)
+            );
+        } finally {
+            Event::forget('eloquent.creating: App\StockInward');
+        }
+
+        $response->assertStatus(500);
+        $this->assertDatabaseMissing('goods_receipts', ['submission_token' => $token]);
+        $this->assertSame(0, StockInward::where('product_id', $product->id)->count());
+        $this->assertSame(10.0, (float) $product->fresh()->current_stock);
+        $this->assertSame('approved', $purchaseOrder->fresh()->status);
+        $this->assertSame(0, DB::table('stock_transactions')
+            ->where('product_id', $product->id)
+            ->where('reference_type', 'stock_inward')
+            ->count());
     }
 
     public function test_goods_receipt_draft_does_not_change_stock_and_can_be_posted_once()

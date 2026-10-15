@@ -19,6 +19,7 @@ use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -710,6 +711,7 @@ class QuotationController extends Controller
         ]);
 
         $billCopy = $this->storeBillCopy($request, 'bill_copy');
+        $previousBillCopy = $billCopy ? $quotation->bill_copy_path : null;
         try {
             DB::transaction(function () use ($quotation, $validated, $billCopy) {
                 $this->submitQuotation($quotation, $validated['items']);
@@ -723,6 +725,9 @@ class QuotationController extends Controller
         } catch (Throwable $exception) {
             $this->deleteBillCopies([$billCopy]);
             throw $exception;
+        }
+        if ($previousBillCopy && $previousBillCopy !== $billCopy['bill_copy_path']) {
+            $this->deleteBillCopies([['bill_copy_path' => $previousBillCopy]]);
         }
 
         ActivityLogger::log('Quotation Submitted', 'Quotation', 'Quotation ' . $quotation->quotation_code . ' was submitted.');
@@ -756,6 +761,7 @@ class QuotationController extends Controller
             return (string) $id;
         })->all();
         $uploadedCopies = [];
+        $previousCopies = [];
         try {
             foreach (array_keys($validated['supplier_invoice_numbers'] ?? []) as $quotationId) {
                 if (!in_array((string) $quotationId, $draftQuotationIds, true)) {
@@ -776,6 +782,9 @@ class QuotationController extends Controller
             foreach ($draftQuotations as $quotation) {
                 if ($request->hasFile('bill_copies.' . $quotation->id)) {
                     $uploadedCopies[$quotation->id] = $this->storeBillCopy($request, 'bill_copies.' . $quotation->id);
+                    if ($quotation->bill_copy_path) {
+                        $previousCopies[] = ['bill_copy_path' => $quotation->bill_copy_path];
+                    }
                 }
             }
 
@@ -797,6 +806,7 @@ class QuotationController extends Controller
             $this->deleteBillCopies($uploadedCopies);
             throw $exception;
         }
+        $this->deleteBillCopies($previousCopies);
 
         ActivityLogger::log('Quotations Submitted', 'Quotation', 'All supplier quotations for request ' . $requestRecord->quotation_request_code . ' were submitted.');
 
@@ -1081,10 +1091,23 @@ class QuotationController extends Controller
     private function deleteBillCopies(array $copies)
     {
         foreach ($copies as $copy) {
-            if ($copy && isset($copy['bill_copy_path'])
-                && Storage::disk('local')->exists($copy['bill_copy_path'])
-                && !Storage::disk('local')->delete($copy['bill_copy_path'])) {
-                throw new RuntimeException('A supplier quotation bill copy could not be removed from storage.');
+            if (!$copy || empty($copy['bill_copy_path'])) {
+                continue;
+            }
+            try {
+                if (Storage::disk('local')->exists($copy['bill_copy_path'])
+                    && !Storage::disk('local')->delete($copy['bill_copy_path'])) {
+                    Log::error('Unable to remove a supplier quotation bill copy during cleanup.', [
+                        'operation' => 'quotation_bill_copy.cleanup',
+                        'document_path' => $copy['bill_copy_path'],
+                    ]);
+                }
+            } catch (Throwable $cleanupException) {
+                Log::error('Unable to remove a supplier quotation bill copy during cleanup.', [
+                    'operation' => 'quotation_bill_copy.cleanup',
+                    'document_path' => $copy['bill_copy_path'],
+                    'exception' => get_class($cleanupException),
+                ]);
             }
         }
     }

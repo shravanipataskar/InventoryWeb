@@ -13,10 +13,13 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use RuntimeException;
+use Throwable;
 
 class SupplierPaymentController extends Controller
 {
@@ -226,6 +229,9 @@ class SupplierPaymentController extends Controller
             'proof' => 'nullable|file|mimes:pdf,jpg,jpeg,png,webp|max:10240',
         ]);
         $proof = $request->hasFile('proof') ? $request->file('proof')->store('supplier-payments', 'local') : null;
+        if ($request->hasFile('proof') && !$proof) {
+            throw new RuntimeException('The supplier payment proof could not be stored.');
+        }
 
         try {
             $payment = DB::transaction(function () use ($id, $validated, $proof, $request) {
@@ -277,9 +283,9 @@ class SupplierPaymentController extends Controller
 
                 return $payment;
             });
-        } catch (\Throwable $exception) {
+        } catch (Throwable $exception) {
             if ($proof) {
-                Storage::disk('local')->delete($proof);
+                $this->deletePaymentProof($proof);
             }
             throw $exception;
         }
@@ -287,6 +293,25 @@ class SupplierPaymentController extends Controller
         ActivityLogger::log('Payment Completed', 'Supplier Payment', 'Payment ' . $payment->payment_number . ' for ₹' . $payment->amount . ' was recorded as completed.');
 
         return back()->with('success', 'Payment recorded as completed and bill balances updated.');
+    }
+
+    private function deletePaymentProof($path)
+    {
+        try {
+            if (Storage::disk('local')->exists($path)
+                && !Storage::disk('local')->delete($path)) {
+                Log::error('Unable to remove a supplier payment proof during cleanup.', [
+                    'operation' => 'supplier_payment_proof.cleanup',
+                    'proof_path' => $path,
+                ]);
+            }
+        } catch (Throwable $cleanupException) {
+            Log::error('Unable to remove a supplier payment proof during cleanup.', [
+                'operation' => 'supplier_payment_proof.cleanup',
+                'proof_path' => $path,
+                'exception' => get_class($cleanupException),
+            ]);
+        }
     }
 
     public function reverse(Request $request, $id)

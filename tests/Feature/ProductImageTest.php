@@ -12,7 +12,9 @@ use App\Unit;
 use App\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use App\Http\Middleware\VerifyCsrfToken;
@@ -217,6 +219,59 @@ class ProductImageTest extends TestCase
         } finally {
             unlink($largeImagePath);
         }
+    }
+
+    public function test_product_database_failure_cleans_uploaded_image_and_preserves_the_original_exception()
+    {
+        Storage::fake('public');
+        $this->actingAs($this->makeUser());
+        list($hall, $category, $unit) = $this->makeProductReferences();
+        $payload = $this->productPayload($hall, $category, $unit);
+        Event::listen('eloquent.creating: App\Product', function () {
+            throw new \RuntimeException('Simulated product write failure.');
+        });
+
+        try {
+            $response = $this->post(route('products.store'), $payload + [
+                'image' => UploadedFile::fake()->image('failed-product.jpg', 100, 100),
+            ]);
+        } finally {
+            Event::forget('eloquent.creating: App\Product');
+        }
+
+        $response->assertStatus(500);
+        $this->assertDatabaseMissing('products', ['name' => $payload['name']]);
+        $this->assertSame([], Storage::disk('public')->allFiles('products'));
+    }
+
+    public function test_product_image_cleanup_failure_is_logged_without_masking_the_database_failure()
+    {
+        Storage::fake('public');
+        $disk = \Mockery::mock(Storage::disk('public'))->makePartial();
+        $disk->shouldReceive('delete')
+            ->once()
+            ->andThrow(new \RuntimeException('Simulated storage cleanup failure.'));
+        Storage::shouldReceive('disk')->with('public')->andReturn($disk);
+        Log::spy();
+        $this->actingAs($this->makeUser());
+        list($hall, $category, $unit) = $this->makeProductReferences();
+        $payload = $this->productPayload($hall, $category, $unit);
+        Event::listen('eloquent.creating: App\Product', function () {
+            throw new \RuntimeException('Simulated product write failure.');
+        });
+
+        try {
+            $response = $this->post(route('products.store'), $payload + [
+                'image' => UploadedFile::fake()->image('cleanup-failure.jpg', 100, 100),
+            ]);
+        } finally {
+            Event::forget('eloquent.creating: App\Product');
+        }
+
+        $response->assertStatus(500);
+        $this->assertDatabaseMissing('products', ['name' => $payload['name']]);
+        Log::shouldHaveReceived('error')
+            ->with('Unable to remove product image after a failed product save.', \Mockery::type('array'));
     }
 
     public function test_product_list_shows_latest_active_inward_and_outward_prices()

@@ -123,14 +123,15 @@ class CategoryController extends Controller
             'is_active' => 'sometimes|in:0,1',
         ]);
 
-        $category->update([
+        $updates = [
             'name' => trim($validated['name']),
             'description' => $validated['description'] ?? null,
-        ]);
+        ];
 
         if (array_key_exists('is_active', $validated)) {
-            $category->update(['is_active' => (int) $validated['is_active']]);
+            $updates['is_active'] = (int) $validated['is_active'];
         }
+        $category->update($updates);
 
         return redirect()
             ->route('categories.index')
