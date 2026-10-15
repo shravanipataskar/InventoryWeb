@@ -16,6 +16,7 @@ use App\Services\PurchasePaymentAllocationService;
 use App\Support\ActivityLogger;
 use App\Support\Money;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -560,31 +561,123 @@ class QuotationController extends Controller
             ->with('success', 'Payment saved successfully.');
     }
 
-    public function approval()
+    public function approval(Request $request)
     {
-        $quotations = QuotationRequest::with([
+        $statusFilter = in_array($request->query('status'), ['pending', 'approved', 'rejected'], true)
+            ? $request->query('status')
+            : 'all';
+        $search = trim((string) $request->query('search', ''));
+        $startDate = $request->query('start_date');
+        $endDate = $request->query('end_date');
+
+        $query = QuotationRequest::with([
                 'creator',
                 'quotations.supplier',
-                'quotations.items',
+                'quotations.items.product',
             ])
-                ->whereIn('status', ['submitted', 'under_review', 'approved'])
-            ->orderByDesc('id')
-            ->get();
-        $quotations->each(function ($requestRecord) {
-                $visibleQuotations = $requestRecord->status === 'approved'
-                    ? $requestRecord->quotations->where('status', 'approved')
-                    : $requestRecord->quotations->whereIn('status', ['submitted', 'under_review']);
-                $requestRecord->setAttribute('approval_quotations', $visibleQuotations);
-                $requestRecord->setAttribute('quotations_count', $visibleQuotations->count());
-                $requestRecord->setAttribute('product_count', $visibleQuotations
-                    ->flatMap(function ($quotation) {
-                        return $quotation->items->pluck('product_id');
-                    })
+            ->whereIn('status', ['submitted', 'under_review', 'approved', 'rejected']);
+
+        if ($statusFilter === 'pending') {
+            $query->whereIn('status', ['submitted', 'under_review']);
+        } elseif ($statusFilter === 'approved') {
+            $query->where('status', 'approved');
+        } elseif ($statusFilter === 'rejected') {
+            $query->where(function ($query) {
+                $query->where('status', 'rejected')
+                    ->orWhereHas('quotations', function ($query) {
+                        $query->where('status', 'rejected');
+                    });
+            });
+        }
+
+        if ($startDate) {
+            $query->whereDate('request_date', '>=', $startDate);
+        }
+
+        if ($endDate) {
+            $query->whereDate('request_date', '<=', $endDate);
+        }
+
+        if ($search !== '') {
+            $searchTerm = '%' . $search . '%';
+            if ($statusFilter === 'all') {
+                $query->where(function ($query) use ($searchTerm) {
+                    $query->where('quotation_request_code', 'like', $searchTerm)
+                        ->orWhereHas('quotations.supplier', function ($query) use ($searchTerm) {
+                            $query->where('company_name', 'like', $searchTerm)
+                                ->orWhere('name', 'like', $searchTerm);
+                        })
+                        ->orWhereHas('quotations.items.product', function ($query) use ($searchTerm) {
+                            $query->where('name', 'like', $searchTerm);
+                        });
+                });
+            } else {
+                $quotationStatuses = $statusFilter === 'pending'
+                    ? ['submitted', 'under_review']
+                    : [$statusFilter];
+
+                $query->where(function ($query) use ($searchTerm, $quotationStatuses) {
+                    $query->where('quotation_request_code', 'like', $searchTerm)
+                        ->orWhereHas('quotations', function ($query) use ($searchTerm, $quotationStatuses) {
+                            $query->whereIn('status', $quotationStatuses)
+                                ->where(function ($query) use ($searchTerm) {
+                                    $query->whereHas('supplier', function ($query) use ($searchTerm) {
+                                        $query->where('company_name', 'like', $searchTerm)
+                                            ->orWhere('name', 'like', $searchTerm);
+                                    })->orWhereHas('items.product', function ($query) use ($searchTerm) {
+                                        $query->where('name', 'like', $searchTerm);
+                                    });
+                                });
+                        });
+                });
+            }
+        }
+
+        $quotations = $query->orderByDesc('id')
+            ->paginate(10)
+            ->appends($request->query());
+
+        $quotations->each(function ($requestRecord) use ($statusFilter) {
+            if ($statusFilter === 'rejected' || $requestRecord->status === 'rejected') {
+                $visibleQuotations = $requestRecord->quotations->where('status', 'rejected');
+            } elseif ($requestRecord->status === 'approved') {
+                $visibleQuotations = $requestRecord->quotations->where('status', 'approved');
+            } else {
+                $visibleQuotations = $requestRecord->quotations->whereIn('status', ['submitted', 'under_review']);
+            }
+
+            $requestRecord->setAttribute('approval_quotations', $visibleQuotations);
+            $requestRecord->setAttribute('quotations_count', $visibleQuotations->count());
+            $requestRecord->setAttribute('product_count', $visibleQuotations
+                ->flatMap(function ($quotation) {
+                    return $quotation->items->pluck('product_id');
+                })
                 ->unique()
                 ->count());
         });
 
-        return view('quotations.approval', compact('quotations'));
+        $stats = [
+            'all' => QuotationRequest::whereIn('status', ['submitted', 'under_review', 'approved', 'rejected'])->count(),
+            'pending' => QuotationRequest::whereIn('status', ['submitted', 'under_review'])->count(),
+            'approved' => QuotationRequest::where('status', 'approved')->count(),
+            'rejected' => QuotationRequest::whereIn('status', ['submitted', 'under_review', 'approved', 'rejected'])
+                ->where(function ($query) {
+                    $query->where('status', 'rejected')
+                        ->orWhereHas('quotations', function ($query) {
+                            $query->where('status', 'rejected');
+                        });
+                })
+                ->count(),
+        ];
+
+        return view('quotations.approval', compact(
+            'quotations',
+            'statusFilter',
+            'search',
+            'startDate',
+            'endDate',
+            'stats'
+        ));
     }
 
     public function rejected($id)

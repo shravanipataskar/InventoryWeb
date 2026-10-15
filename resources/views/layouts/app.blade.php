@@ -305,9 +305,6 @@
                         @if ($can('payments') || $can('bills'))<a class="nav-link {{ request()->routeIs('supplier-bills.index') ? 'is-active' : '' }}" href="{{ route('supplier-bills.index') }}">
                             <svg><use href="#icon-tray-out"></use></svg><span>Payment History</span>
                         </a>@endif
-                        @if ($can('payments'))<a class="nav-link {{ request()->routeIs('supplier-payments.*') ? 'is-active' : '' }}" href="{{ route('supplier-payments.index') }}">
-                            <svg><use href="#icon-tray-out"></use></svg><span>Payments</span>
-                        </a>@endif
                     </div>
                 </div>
                 @endif
@@ -317,14 +314,6 @@
                    href="{{ route('quotations.approval') }}">
                     <svg><use href="#icon-check"></use></svg>
                     <span>Quotation Approval</span>
-                </a>
-                @endif
-
-                @if ($can('bills', 'approve') || $can('payments', 'approve'))
-                <a class="nav-link {{ request()->routeIs('procurement.approvals') ? 'is-active' : '' }}"
-                   href="{{ route('procurement.approvals') }}">
-                    <svg><use href="#icon-check"></use></svg>
-                    <span>Bill &amp; Payment Approvals</span>
                 </a>
                 @endif
 
