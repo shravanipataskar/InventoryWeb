@@ -11,12 +11,20 @@ use App\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use App\Http\Middleware\VerifyCsrfToken;
 use Tests\TestCase;
 
 class StockInwardTaxTest extends TestCase
 {
     use DatabaseTransactions;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+        $this->withoutMiddleware(VerifyCsrfToken::class);
+    }
 
     public function test_create_form_filters_products_by_category()
     {
@@ -58,8 +66,12 @@ class StockInwardTaxTest extends TestCase
 
     public function test_stock_inward_recalculates_tax_totals_and_increases_stock()
     {
+        Storage::fake('public');
         $this->actingAs($this->makeUser());
         list($category, $otherCategory, $product, $supplier, $store) = $this->makeInventory();
+        $product->image = 'products/inward-test.jpg';
+        $product->save();
+        Storage::disk('public')->put($product->image, 'test image');
 
         $this->post(route('stock-inwards.store'), $this->inwardPayload(
             $category,
@@ -98,7 +110,9 @@ class StockInwardTaxTest extends TestCase
             ->assertSee('11,800.00')
             ->assertSee($inward->inward_number)
             ->assertSee($inward->goodsReceiptItem->goodsReceipt->purchaseOrder->po_number)
-            ->assertSee($inward->goodsReceiptItem->goodsReceipt->grn_number);
+            ->assertSee($inward->goodsReceiptItem->goodsReceipt->grn_number)
+            ->assertSee('class="stock-inward-product-image"', false)
+            ->assertSee('src="' . asset('storage/' . $product->image) . '"', false);
         $this->get(route('stock-inwards.index', [
             'search' => $inward->invoice_number,
             'date_from' => $inward->inward_date,

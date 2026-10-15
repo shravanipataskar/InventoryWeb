@@ -113,7 +113,16 @@
                             <td>{{ \Carbon\Carbon::parse($stock->inward_date)->format('d M Y') }}</td>
                             <td>{{ optional(optional($stock->goodsReceiptItem)->goodsReceipt)->grn_number ?: '—' }}</td>
                             <td>{{ optional(optional(optional($stock->goodsReceiptItem)->goodsReceipt)->purchaseOrder)->po_number ?: '—' }}</td>
-                            <td><span class="stock-inward-product"><span class="stock-inward-product-icon" aria-hidden="true">{{ \Illuminate\Support\Str::upper(\Illuminate\Support\Str::substr(optional($stock->product)->name ?: 'P', 0, 1)) }}</span><strong>{{ optional($stock->product)->name ?: '—' }}</strong></span></td>
+                            <td>
+                                <span class="stock-inward-product">
+                                    @if (optional($stock->product)->image && Storage::disk('public')->exists($stock->product->image))
+                                        <img class="stock-inward-product-image" src="{{ asset('storage/' . $stock->product->image) }}" alt="">
+                                    @else
+                                        <span class="stock-inward-product-icon" aria-hidden="true">{{ \Illuminate\Support\Str::upper(\Illuminate\Support\Str::substr(optional($stock->product)->name ?: 'P', 0, 1)) }}</span>
+                                    @endif
+                                    <strong>{{ optional($stock->product)->name ?: '—' }}</strong>
+                                </span>
+                            </td>
                             <td>{{ optional($stock->supplier)->name ?: '—' }}</td>
                             <td>{{ optional($stock->store)->name ?: '—' }}</td>
                             <td><span class="stock-inward-invoice">{{ $stock->invoice_number ?: '—' }}</span></td>
@@ -209,6 +218,7 @@
         .stock-inward-invoice{color:#405a70}
         .stock-inward-product{display:inline-flex;align-items:center;gap:7px}
         .stock-inward-product-icon{width:28px;height:28px;display:grid;place-items:center;border-radius:7px;background:#edf3ff;color:#315fd6;font-size:11px;font-weight:800}
+        .stock-inward-product-image{width:28px;height:28px;display:block;border-radius:7px;object-fit:cover}
         .stock-inward-product strong{max-width:120px;overflow:hidden;color:#263f56;text-overflow:ellipsis}
         .stock-inward-quantity{color:#187655!important;font-weight:700}
         .stock-inward-grand-total{color:#00878a}
