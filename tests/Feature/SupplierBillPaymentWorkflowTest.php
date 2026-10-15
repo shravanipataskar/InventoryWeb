@@ -1029,7 +1029,7 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         $entry->delete();
     }
 
-    private function approvedQuotation($billCopy = null, $approve = true, $discountPercent = 0)
+    private function approvedQuotation($billCopy = null, $approve = true, $discountPercent = 0, $supplierInvoiceNumber = null)
     {
         $this->actingAs($this->officer)->post(route('quotations.store'), [
             'request_date' => now()->toDateString(),
@@ -1039,7 +1039,11 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         ])->assertRedirect();
         $request = QuotationRequest::orderByDesc('id')->firstOrFail();
         $items = [];
+        $supplierInvoiceNumbers = [];
         foreach ($request->quotations as $quotation) {
+            if ($supplierInvoiceNumber !== null) {
+                $supplierInvoiceNumbers[$quotation->id] = $supplierInvoiceNumber;
+            }
             foreach ($quotation->items as $item) {
                 $items[$quotation->id][$item->id] = [
                     'supplier_rate' => 100,
@@ -1049,6 +1053,9 @@ class SupplierBillPaymentWorkflowTest extends TestCase
             }
         }
         $payload = ['items' => $items];
+        if ($supplierInvoiceNumbers) {
+            $payload['supplier_invoice_numbers'] = $supplierInvoiceNumbers;
+        }
         if ($billCopy) {
             $firstDraftQuotationId = $request->quotations()->orderBy('id')->value('id');
             $payload['bill_copies'] = [$firstDraftQuotationId => $billCopy];
@@ -1178,6 +1185,65 @@ class SupplierBillPaymentWorkflowTest extends TestCase
         $this->get(route('quotations.purchase-details', $quotation->id))
             ->assertOk()
             ->assertSee('name="items[' . $item->id . '][discount_percent]" value="10.00"', false);
+
+        $purchaseDetails = $this->get(route('quotations.purchase-details', $quotation->id))
+            ->assertOk();
+        $this->assertSame(
+            1,
+            substr_count($purchaseDetails->getContent(), 'name="items[' . $item->id . '][discount_percent]"')
+        );
+
+        $this->actingAs($this->owner)
+            ->post(route('quotations.purchase-orders.generate', $quotation->id), [
+                'items' => [
+                    $item->id => [
+                        'purchase_rate' => '100.00',
+                        'discount_percent' => '5.00',
+                    ],
+                ],
+            ])
+            ->assertRedirect(route('quotations.purchase-details', $quotation->id));
+
+        $purchaseItem = PurchaseOrder::where('quotation_id', $quotation->id)
+            ->with('items')
+            ->firstOrFail()
+            ->items
+            ->first();
+        $this->assertSame(5.0, (float) $purchaseItem->discount_percent);
+        $this->assertSame(1121.0, (float) $purchaseItem->total_amount);
+        $this->get(route('quotations.purchase-details', $quotation->id))
+            ->assertOk()
+            ->assertSee('name="items[' . $purchaseItem->id . '][discount_percent]" value="5.00"', false)
+            ->assertSee('₹1,121.00');
+    }
+
+    public function test_supplier_invoice_number_entered_with_quotation_prefills_goods_receipt()
+    {
+        $invoiceNumber = 'SUP-INV-' . strtoupper(Str::random(8));
+        list($quotation) = $this->approvedQuotation(null, true, 0, $invoiceNumber);
+
+        $this->assertSame($invoiceNumber, $quotation->fresh()->supplier_invoice_number);
+
+        $items = [];
+        foreach ($quotation->items as $item) {
+            $items[$item->id] = [
+                'purchase_rate' => number_format((float) $item->supplier_rate, 2, '.', ''),
+                'discount_percent' => number_format((float) $item->discount_percent, 2, '.', ''),
+            ];
+        }
+
+        $this->actingAs($this->owner)
+            ->post(route('quotations.purchase-orders.generate', $quotation->id), ['items' => $items])
+            ->assertRedirect(route('quotations.purchase-details', $quotation->id));
+
+        $purchaseOrder = PurchaseOrder::where('quotation_id', $quotation->id)->firstOrFail();
+        $this->actingAs($this->owner)
+            ->post(route('purchase-orders.release', $purchaseOrder->id))
+            ->assertRedirect(route('purchase-orders.show', $purchaseOrder->id));
+        $this->get(route('goods-receipts.create', $purchaseOrder->id))
+            ->assertOk()
+            ->assertSee('id="invoice_number"', false)
+            ->assertSee('value="' . $invoiceNumber . '"', false);
     }
 
     private function makeUser($roleName)

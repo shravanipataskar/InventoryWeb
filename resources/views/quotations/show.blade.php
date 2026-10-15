@@ -77,6 +77,8 @@
             @endif
             @if ($quotation->status === 'draft' && auth()->user()->hasPermission('quotations', 'edit'))
                 <div class="quote-bill-copy-upload">
+                    <label for="supplier-invoice-number-{{ $quotation->id }}">Supplier invoice/bill number</label>
+                    <input id="supplier-invoice-number-{{ $quotation->id }}" class="field-control" type="text" name="supplier_invoice_numbers[{{ $quotation->id }}]" form="submit-all-quotations" maxlength="100" value="{{ old('supplier_invoice_numbers.' . $quotation->id, $quotation->supplier_invoice_number) }}" autocomplete="off">
                     <label for="bill-copy-{{ $quotation->id }}">Bill Copy / Supplier Quotation (optional)</label>
                     <input id="bill-copy-{{ $quotation->id }}" class="field-control" type="file" name="bill_copies[{{ $quotation->id }}]" form="submit-all-quotations" accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp" data-bill-copy-input>
                     <small>Upload a photo or PDF copy · JPG, PNG, WEBP or PDF · Maximum 10 MB</small>

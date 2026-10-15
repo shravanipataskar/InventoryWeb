@@ -22,7 +22,7 @@
                 <div class="form-grid">
                     <div class="field"><label for="store_id">Receive into location <span class="required-mark">*</span></label><select class="field-control" id="store_id" name="store_id" required><option value="">Select location</option>@foreach ($stores as $store)<option value="{{ $store->id }}" {{ old('store_id') == $store->id ? 'selected' : '' }}>{{ $store->name }}{{ $store->location ? ' · ' . $store->location : '' }}</option>@endforeach</select>@error('store_id')<small class="field-error">{{ $message }}</small>@enderror</div>
                     <div class="field"><label for="received_date">Received date <span class="required-mark">*</span></label><input class="field-control" id="received_date" name="received_date" type="date" value="{{ old('received_date', date('Y-m-d')) }}" required>@error('received_date')<small class="field-error">{{ $message }}</small>@enderror</div>
-                    <div class="field"><label for="invoice_number">Supplier invoice/bill number</label><input class="field-control" id="invoice_number" name="invoice_number" type="text" maxlength="100" value="{{ old('invoice_number') }}"></div>
+                    <div class="field"><label for="invoice_number">Supplier invoice/bill number</label><input class="field-control" id="invoice_number" name="invoice_number" type="text" maxlength="100" value="{{ old('invoice_number', optional($purchaseOrder->quotation)->supplier_invoice_number) }}"></div>
                 </div>
             </div>
             <div class="form-section">

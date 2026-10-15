@@ -28,7 +28,7 @@ class GoodsReceiptController extends Controller
 
     public function create($purchaseOrderId)
     {
-        $purchaseOrder = PurchaseOrder::with(['supplier', 'items.product.unit'])
+        $purchaseOrder = PurchaseOrder::with(['supplier', 'quotation', 'items.product.unit'])
             ->findOrFail($purchaseOrderId);
 
         if (!in_array($purchaseOrder->status, PurchaseOrder::RECEIVABLE_STATUSES, true)) {

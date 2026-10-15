@@ -12,7 +12,7 @@ class Quotation extends Model
         'grand_total', 'submitted_at', 'approved_at', 'rejected_at',
         'created_by', 'submitted_by', 'approved_by', 'rejected_by',
         'rejection_reason', 'purchase_order_id',
-        'bill_copy_path', 'bill_copy_name',
+        'bill_copy_path', 'bill_copy_name', 'supplier_invoice_number',
     ];
 
     protected $dates = ['submitted_at', 'approved_at', 'rejected_at'];

@@ -705,6 +705,7 @@ class QuotationController extends Controller
             'items.*.supplier_rate' => 'required|numeric|min:0',
             'items.*.discount_percent' => 'nullable|numeric|min:0|max:100',
             'items.*.gst_rate' => 'required|numeric|min:0|max:100',
+            'supplier_invoice_number' => 'nullable|string|max:100',
             'bill_copy' => 'nullable|file|mimes:pdf,jpg,jpeg,png,webp|max:10240',
         ]);
 
@@ -712,9 +713,11 @@ class QuotationController extends Controller
         try {
             DB::transaction(function () use ($quotation, $validated, $billCopy) {
                 $this->submitQuotation($quotation, $validated['items']);
+                $quotation->supplier_invoice_number = trim((string) ($validated['supplier_invoice_number'] ?? '')) ?: null;
                 if ($billCopy) {
-                    $quotation->update($billCopy);
+                    $quotation->fill($billCopy);
                 }
+                $quotation->save();
                 $quotation->request()->update(['status' => 'submitted']);
             });
         } catch (Throwable $exception) {
@@ -743,6 +746,8 @@ class QuotationController extends Controller
             'items.*.*.supplier_rate' => 'required|numeric|min:0',
             'items.*.*.discount_percent' => 'nullable|numeric|min:0|max:100',
             'items.*.*.gst_rate' => 'required|numeric|min:0|max:100',
+            'supplier_invoice_numbers' => 'nullable|array',
+            'supplier_invoice_numbers.*' => 'nullable|string|max:100',
             'bill_copies' => 'nullable|array',
             'bill_copies.*' => 'nullable|file|mimes:pdf,jpg,jpeg,png,webp|max:10240',
         ]);
@@ -752,6 +757,14 @@ class QuotationController extends Controller
         })->all();
         $uploadedCopies = [];
         try {
+            foreach (array_keys($validated['supplier_invoice_numbers'] ?? []) as $quotationId) {
+                if (!in_array((string) $quotationId, $draftQuotationIds, true)) {
+                    throw ValidationException::withMessages([
+                        'supplier_invoice_numbers' => 'An invoice number can only be entered for a draft supplier quotation in this request.',
+                    ]);
+                }
+            }
+
             foreach ($request->file('bill_copies', []) as $quotationId => $file) {
                 if (!in_array((string) $quotationId, $draftQuotationIds, true)) {
                     throw ValidationException::withMessages([
@@ -772,9 +785,11 @@ class QuotationController extends Controller
                         throw ValidationException::withMessages(['items' => 'Every supplier quotation must be completed.']);
                     }
                     $this->submitQuotation($quotation, $validated['items'][$quotation->id]);
+                    $quotation->supplier_invoice_number = trim((string) ($validated['supplier_invoice_numbers'][$quotation->id] ?? '')) ?: null;
                     if (isset($uploadedCopies[$quotation->id])) {
-                        $quotation->update($uploadedCopies[$quotation->id]);
+                        $quotation->fill($uploadedCopies[$quotation->id]);
                     }
+                    $quotation->save();
                 }
                 $requestRecord->update(['status' => 'submitted']);
             });
@@ -916,7 +931,7 @@ class QuotationController extends Controller
         foreach ($quotationItems as $item) {
             $line = $items[$item->id];
             $rate = round((float) $line['purchase_rate'], 2);
-            $discountPercent = round((float) ($line['discount_percent'] ?? 0), 2);
+            $discountPercent = round((float) ($line['discount_percent'] ?? $item->discount_percent ?? 0), 2);
             $basic = round((float) $item->quantity * $rate, 2);
             $discount = round($basic * $discountPercent / 100, 2);
             $taxable = round($basic - $discount, 2);
