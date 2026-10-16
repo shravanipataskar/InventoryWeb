@@ -75,6 +75,35 @@ class StockOutwardController extends Controller
         );
     }
 
+    public function show($id)
+    {
+        try {
+            $stock = StockOutward::with(['product', 'customer'])
+                ->findOrFail($id);
+
+            return view('stock_outwards.show', compact('stock'));
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $exception) {
+            throw $exception;
+
+        } catch (\Throwable $exception) {
+            \Illuminate\Support\Facades\Log::error(
+                'Error displaying stock outward details.',
+                [
+                    'stock_outward_id' => $id,
+                    'error' => $exception->getMessage(),
+                    'file' => $exception->getFile(),
+                    'line' => $exception->getLine(),
+                ]
+            );
+
+            return redirect()
+                ->route('stock-outwards.index')
+                ->with('error', 'Unable to load stock outward details. Please try again.');
+        }
+    }
+
+
     public function create()
     {
         $selectedCustomerId = Customer::where('is_active', true)

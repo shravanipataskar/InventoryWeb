@@ -131,7 +131,7 @@
                             <td><span class="stock-outward-status {{ $stock->is_active ? 'is-active' : 'is-inactive' }}">{{ $stock->is_active ? 'Active' : 'Inactive' }}</span></td>
                             <td>
                                 <div class="stock-outward-actions">
-                                    <a class="stock-outward-view-button" href="{{ route('stock-outwards.index', ['status' => $listingStatus]) }}"><span aria-hidden="true">◉</span> View</a>
+                                    <a class="stock-outward-view-button" href="{{ route('stock-outwards.show', $stock->id) }}"><span aria-hidden="true">◉</span> View</a>
                                     <form class="status-action-form" action="{{ route('stock-outwards.status', $stock->id) }}" method="POST">
                                         @csrf
                                         @method('PATCH')

@@ -513,13 +513,21 @@ Route::middleware('auth')->group(function () {
     |--------------------------------------------------------------------------
     */
 
+   
     Route::resource(
         'stock-outwards',
         'StockOutwardController'
     )->only([
         'index',
+        'show',
         'create',
         'store',
     ])->middleware('permission:stock.view');
+
+    Route::patch(
+        'stock-outwards/{stockOutward}/status',
+        'StockOutwardController@status'
+    )->name('stock-outwards.status');
+
 
 });
