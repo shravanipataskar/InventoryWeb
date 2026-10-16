@@ -152,24 +152,27 @@
                         <span class="transfer-status-badge"><span aria-hidden="true">●</span>&nbsp; Ready to complete</span>
                     </div>
                     <div class="field">
-                        <label for="from_location">From Location <span class="required-mark">*</span></label>
+                        <label for="from_location">From Inventory Location <span class="required-mark">*</span></label>
                         <select class="field-control" id="from_location" name="from_location" required>
-                            <option value="">Select source location</option>
+                            <option value="">Select source inventory location</option>
                             @foreach ($locations as $location)
                                 <option value="{{ $location->name }}" data-store-id="{{ $location->id }}" {{ old('from_location') === $location->name ? 'selected' : '' }}>{{ $location->name }}</option>
                             @endforeach
                         </select>
+                        <small class="field-hint">Company's warehouse/storage location (stock will be transferred from here)</small>
                         @error('from_location')<small class="field-error">{{ $message }}</small>@enderror
                     </div>
                     <div class="field">
-                        <label for="to_location">To Location <span class="required-mark">*</span></label>
+                        <label for="to_location">To Inventory Location <span class="required-mark">*</span></label>
                         <select class="field-control" id="to_location" name="to_location" required>
-                            <option value="">Select destination location</option>
+                            <option value="">Select destination inventory location</option>
                             @foreach ($locations as $location)
                                 <option value="{{ $location->name }}" data-store-id="{{ $location->id }}" {{ old('to_location') === $location->name ? 'selected' : '' }}>{{ $location->name }}</option>
                             @endforeach
                         </select>
+                        <small class="field-hint">Company's warehouse/storage location (stock will be transferred to here)</small>
                         @error('to_location')<small class="field-error">{{ $message }}</small>@enderror
+                        <div id="location-validation-message" class="transfer-validation" style="display: none;"></div>
                     </div>
                     <div class="field">
                         <label for="transfer_reason">Transfer Reason <span class="required-mark">*</span></label>
@@ -335,17 +338,37 @@
 
             function renderPreview(items) {
                 if (!items.length) {
-                    preview.innerHTML = '<p class="field-hint">Select a product and locations to preview the stock movement.</p>';
+                    preview.innerHTML = '<p class="field-hint">Select products and locations to preview the stock movement.</p>';
                     return;
                 }
+                
+                var fromLocationName = sourceSelect.value || '—';
+                var toLocationName = destinationSelect.value || '—';
+                
                 preview.innerHTML = items.map(function (item) {
                     var afterSource = item.source - item.quantity;
                     var afterDestination = item.destination + item.quantity;
                     return '<div class="transfer-preview-row">' +
-                        '<strong class="transfer-preview-product">' + escapeHtml(item.name) + '</strong>' +
-                        '<div class="transfer-preview-location source"><strong>From: ' + escapeHtml(sourceSelect.value || '—') + '</strong><small>Current Stock <b>' + displayQuantity(item.source) + '</b><br><span class="transfer-out">Transfer Out <b>−' + displayQuantity(item.quantity) + '</b></span><br>After Transfer <b>' + displayQuantity(afterSource) + '</b></small></div>' +
+                        '<strong class="transfer-preview-product">📦 ' + escapeHtml(item.name) + '</strong>' +
+                        '<div class="transfer-preview-location source">' +
+                            '<strong>📍 SOURCE LOCATION</strong>' +
+                            '<div style="font-weight: 700; color: #b91c1c; margin: 4px 0;">' + escapeHtml(fromLocationName) + '</div>' +
+                            '<small>' +
+                                'Current Stock: <b>' + displayQuantity(item.source) + '</b><br>' +
+                                '<span class="transfer-out">Transfer Out: <b>−' + displayQuantity(item.quantity) + '</b></span><br>' +
+                                'Stock After Transfer: <b style="font-size: 10px;">' + displayQuantity(afterSource) + '</b>' +
+                            '</small>' +
+                        '</div>' +
                         '<span class="transfer-preview-arrow" aria-hidden="true">→</span>' +
-                        '<div class="transfer-preview-location destination"><strong>To: ' + escapeHtml(destinationSelect.value || '—') + '</strong><small>Current Stock <b>' + displayQuantity(item.destination) + '</b><br><span class="transfer-in">Transfer In <b>+' + displayQuantity(item.quantity) + '</b></span><br>After Transfer <b>' + displayQuantity(afterDestination) + '</b></small></div>' +
+                        '<div class="transfer-preview-location destination">' +
+                            '<strong>📍 DESTINATION LOCATION</strong>' +
+                            '<div style="font-weight: 700; color: #15803d; margin: 4px 0;">' + escapeHtml(toLocationName) + '</div>' +
+                            '<small>' +
+                                'Current Stock: <b>' + displayQuantity(item.destination) + '</b><br>' +
+                                '<span class="transfer-in">Transfer In: <b>+' + displayQuantity(item.quantity) + '</b></span><br>' +
+                                'Stock After Transfer: <b style="font-size: 10px;">' + displayQuantity(afterDestination) + '</b>' +
+                            '</small>' +
+                        '</div>' +
                         '</div>';
                 }).join('');
             }
@@ -547,8 +570,67 @@
                 bindRow(row);
                 populateProducts(row);
             });
-            sourceSelect.addEventListener('change', refreshValidation);
-            destinationSelect.addEventListener('change', refreshValidation);
+            
+            // Location validation: From and To must be different
+            function validateLocations() {
+                var fromLocation = sourceSelect.value;
+                var toLocation = destinationSelect.value;
+                var validationMessage = document.getElementById('location-validation-message');
+                
+                if (fromLocation && toLocation) {
+                    if (fromLocation === toLocation) {
+                        validationMessage.textContent = '⚠ From Location and To Location must be different. Please select different locations.';
+                        validationMessage.className = 'transfer-validation is-invalid';
+                        validationMessage.style.display = 'flex';
+                        return false;
+                    } else {
+                        validationMessage.textContent = '✓ Locations are valid. From and To locations are different.';
+                        validationMessage.className = 'transfer-validation is-valid';
+                        validationMessage.style.display = 'flex';
+                        return true;
+                    }
+                } else {
+                    validationMessage.style.display = 'none';
+                    return false;
+                }
+            }
+            
+            // Update To Location dropdown to disable the selected From Location
+            function updateToLocationOptions() {
+                var fromLocation = sourceSelect.value;
+                var toLocationSelect = destinationSelect;
+                
+                Array.prototype.forEach.call(toLocationSelect.options, function(option) {
+                    if (option.value && option.value === fromLocation) {
+                        option.disabled = true;
+                        option.style.color = '#cbd5e1';
+                    } else {
+                        option.disabled = false;
+                        option.style.color = '';
+                    }
+                });
+                
+                // If To Location is currently set to the same as From Location, clear it
+                if (toLocationSelect.value === fromLocation) {
+                    toLocationSelect.value = '';
+                }
+                
+                validateLocations();
+            }
+            
+            sourceSelect.addEventListener('change', function() {
+                updateToLocationOptions();
+                refreshValidation();
+            });
+            destinationSelect.addEventListener('change', function() {
+                validateLocations();
+                refreshValidation();
+            });
+            
+            // Initialize location validation on page load
+            if (sourceSelect.value) {
+                updateToLocationOptions();
+            }
             document.getElementById('transfer_reason').addEventListener('change', refreshValidation);
             document.getElementById('transfer_date').addEventListener('change', refreshValidation);
             addButton.addEventListener('click', addRow);

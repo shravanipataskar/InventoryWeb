@@ -165,6 +165,23 @@ Route::middleware('auth')->group(function () {
     Route::post('/locations', [WorkspaceController::class, 'storeLocation'])
         ->middleware('permission:locations.create')
         ->name('locations.store');
+    Route::get('/locations/{location}/edit', [WorkspaceController::class, 'editLocation'])
+        ->middleware('permission:locations.edit')
+        ->name('locations.edit');
+    Route::put('/locations/{location}', [WorkspaceController::class, 'updateLocation'])
+        ->middleware('permission:locations.edit')
+        ->name('locations.update');
+    Route::patch('/locations/{location}/toggle-status', [WorkspaceController::class, 'toggleLocationStatus'])
+        ->middleware('permission:locations.edit')
+        ->name('locations.toggleStatus');
+    
+    // API endpoints for cascading location/hall/rack/shelf dropdowns
+    Route::get('/api/stores/{store}/halls', [WorkspaceController::class, 'getHallsByStore'])
+        ->name('api.stores.halls');
+    Route::get('/api/halls/{hall}/racks', [WorkspaceController::class, 'getRacksByHall'])
+        ->name('api.halls.racks');
+    Route::get('/api/racks/{rack}/shelves', [WorkspaceController::class, 'getShelvesByRack'])
+        ->name('api.racks.shelves');
     Route::get('/opening-stock', [WorkspaceController::class, 'openingStock'])
         ->middleware('permission:stock.view')
         ->name('opening-stock.index');

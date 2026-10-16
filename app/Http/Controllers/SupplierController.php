@@ -6,12 +6,10 @@ use App\PurchaseOrder;
 use App\Services\PurchasePaymentAllocationService;
 use App\Supplier;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\Rule;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Throwable;
-use RuntimeException;
 
 class SupplierController extends Controller
 {
@@ -59,18 +57,21 @@ class SupplierController extends Controller
             'supplier_code.unique' => 'Supplier already exists.',
             'company_name.unique' => 'Supplier already exists.',
         ]);
+
         $this->validateActiveDuplicate($validated);
 
-        $validated = $this->storeDocuments($request, $validated);
-        $newDocuments = array_intersect_key($validated, array_flip(['aadhaar_card', 'pan_card']));
+        // Start transaction for supplier creation and document storage
         try {
-            DB::transaction(function () use ($validated) {
-                Supplier::create(array_merge($validated, [
-                    'is_active' => 1,
-                ]));
-            });
+            DB::beginTransaction();
+
+            $validated = $this->storeDocuments($request, $validated);
+            Supplier::create(array_merge($validated, [
+                'is_active' => 1,
+            ]));
+
+            DB::commit();
         } catch (Throwable $exception) {
-            $this->deleteDocuments($newDocuments);
+            DB::rollBack();
             throw $exception;
         }
 
@@ -116,6 +117,7 @@ class SupplierController extends Controller
             'supplier_code.unique' => 'Supplier already exists.',
             'company_name.unique' => 'Supplier already exists.',
         ]);
+
         $this->validateActiveDuplicate($validated, $supplier->id);
 
         $oldDocuments = [];
@@ -124,20 +126,22 @@ class SupplierController extends Controller
                 $oldDocuments[] = $supplier->{$document};
             }
         }
-        $validated = $this->storeDocuments($request, $validated);
-        $newDocuments = array_intersect_key($validated, array_flip(['aadhaar_card', 'pan_card']));
+
+        // Start transaction for supplier update and document replacement
         try {
-            DB::transaction(function () use ($supplier, $validated) {
-                $supplier->update($validated);
-            });
-        } catch (Throwable $exception) {
-            $this->deleteDocuments($newDocuments);
-            throw $exception;
-        }
-        foreach ($oldDocuments as $oldDocument) {
-            if ($oldDocument) {
-                $this->deleteDocuments([$oldDocument]);
+            DB::beginTransaction();
+
+            $supplier->update($this->storeDocuments($request, $validated));
+            foreach ($oldDocuments as $oldDocument) {
+                if ($oldDocument && Storage::disk('local')->exists($oldDocument)) {
+                    Storage::disk('local')->delete($oldDocument);
+                }
             }
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
         }
 
         return redirect()
@@ -152,9 +156,19 @@ class SupplierController extends Controller
             'listing_status' => 'required|in:active,inactive',
         ]);
 
-        $supplier = Supplier::findOrFail($id);
-        $supplier->is_active = $validated['is_active'];
-        $supplier->save();
+        // Start transaction for updating supplier status
+        try {
+            DB::beginTransaction();
+
+            $supplier = Supplier::findOrFail($id);
+            $supplier->is_active = $validated['is_active'];
+            $supplier->save();
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()
             ->route('suppliers.index', ['status' => $validated['listing_status']])
@@ -165,9 +179,19 @@ class SupplierController extends Controller
 
     public function destroy($id)
     {
-        $supplier = Supplier::findOrFail($id);
-        $supplier->is_active = false;
-        $supplier->save();
+        // Start transaction for supplier deactivation
+        try {
+            DB::beginTransaction();
+
+            $supplier = Supplier::findOrFail($id);
+            $supplier->is_active = false;
+            $supplier->save();
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()
             ->route('suppliers.index')
@@ -196,6 +220,7 @@ class SupplierController extends Controller
         $purchaseOrders = $canViewPurchaseHistory
             ? PurchaseOrder::withCount('items')->with('payments')->where('supplier_id', $supplier->id)->orderByDesc('po_date')->paginate(10, ['*'], 'purchase_page')
             : null;
+
         if ($purchaseOrders) {
             $purchaseOrders->getCollection()->each(function ($order) use ($paymentAllocations) {
                 $order->setAttribute('paid_total', \App\Support\Money::fromMinor(
@@ -203,6 +228,7 @@ class SupplierController extends Controller
                 ));
             });
         }
+
         $purchaseSummary = $canViewPurchaseHistory ? [
             'count' => PurchaseOrder::where('supplier_id', $supplier->id)->count(),
             'value' => PurchaseOrder::where('supplier_id', $supplier->id)->where('status', '<>', 'cancelled')->sum('grand_total'),
@@ -247,44 +273,12 @@ class SupplierController extends Controller
 
     private function storeDocuments(Request $request, array $validated)
     {
-        $storedPaths = [];
-        try {
-            foreach (['aadhaar_card', 'pan_card'] as $document) {
-                if ($request->hasFile($document)) {
-                    $path = $request->file($document)->store('supplier-documents', 'local');
-                    if (!$path) {
-                        throw new RuntimeException('The supplier document could not be stored.');
-                    }
-                    $validated[$document] = $path;
-                    $storedPaths[] = $path;
-                }
+        foreach (['aadhaar_card', 'pan_card'] as $document) {
+            if ($request->hasFile($document)) {
+                $validated[$document] = $request->file($document)->store('supplier-documents', 'local');
             }
-        } catch (Throwable $exception) {
-            $this->deleteDocuments($storedPaths);
-            throw $exception;
         }
 
         return $validated;
-    }
-
-    private function deleteDocuments(array $paths)
-    {
-        foreach ($paths as $path) {
-            try {
-                if ($path && Storage::disk('local')->exists($path)
-                    && !Storage::disk('local')->delete($path)) {
-                    Log::error('Unable to remove a supplier document during cleanup.', [
-                        'operation' => 'supplier_document.cleanup',
-                        'document_path' => $path,
-                    ]);
-                }
-            } catch (Throwable $cleanupException) {
-                Log::error('Unable to remove a supplier document during cleanup.', [
-                    'operation' => 'supplier_document.cleanup',
-                    'document_path' => $path,
-                    'exception' => get_class($cleanupException),
-                ]);
-            }
-        }
     }
 }

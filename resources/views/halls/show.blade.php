@@ -1,17 +1,113 @@
 @extends('layouts.app')
 
-@section('title', 'Hall ' . $hall->name)
-@section('topbar-title', 'Hall ' . $hall->name)
+@section('title', 'Rack Management - Hall ' . $hall->name)
+@section('topbar-title', 'Rack Management')
 
 @section('content')
+    <div class="breadcrumb-nav">
+        <a href="{{ route('locations.index') }}">Master Data</a>
+        <span class="breadcrumb-separator">/</span>
+        <a href="{{ route('locations.index') }}">Locations</a>
+        <span class="breadcrumb-separator">/</span>
+        <a href="{{ route('locations.halls', $hall->store_id) }}">{{ $hall->store->name }}</a>
+        <span class="breadcrumb-separator">/</span>
+        <a href="{{ route('locations.halls', $hall->store_id) }}">Halls</a>
+        <span class="breadcrumb-separator">/</span>
+        <span class="breadcrumb-current">{{ $hall->name }}</span>
+        <span class="breadcrumb-separator">/</span>
+        <span class="breadcrumb-current">Racks</span>
+    </div>
+
+    <div class="location-hierarchy-card">
+        <div class="hierarchy-item">
+            <span class="hierarchy-label">Location</span>
+            <span class="hierarchy-value">{{ $hall->store->name }}</span>
+        </div>
+        <div class="hierarchy-arrow">→</div>
+        <div class="hierarchy-item">
+            <span class="hierarchy-label">Hall</span>
+            <span class="hierarchy-value">{{ $hall->name }}</span>
+        </div>
+    </div>
+
     <div class="page-heading">
-        <div><span class="section-kicker">HALL MANAGEMENT</span><h1>Hall {{ $hall->name }}</h1><p>Manage racks and shells stored in this Hall.</p></div>
+        <div><span class="section-kicker">LOCATION: {{ strtoupper($hall->store->name) }} / HALL: {{ strtoupper($hall->name) }}</span><h1>Rack Management</h1><p>Manage racks and shelves stored in Hall {{ $hall->name }}.</p></div>
         <a class="button button-primary" href="{{ route('racks.create', $hall->id) }}"><span class="button-plus">+</span> Add Rack</a>
     </div>
     <div class="page-heading">
         <div>@include('components.status-badge', ['status' => $hall->is_active ? 'Active' : 'Inactive'])</div>
-        <a class="button button-light" href="{{ route('halls.index') }}">Back to halls</a>
+        <a class="button button-light" href="{{ route('locations.halls', $hall->store_id) }}">Back to Halls</a>
     </div>
+
+    <style>
+        .breadcrumb-nav {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 12px 0;
+            font-size: 14px;
+            color: #64748b;
+            flex-wrap: wrap;
+        }
+
+        .breadcrumb-nav a {
+            color: #2563eb;
+            text-decoration: none;
+            transition: color 0.15s;
+        }
+
+        .breadcrumb-nav a:hover {
+            color: #1d4ed8;
+            text-decoration: underline;
+        }
+
+        .breadcrumb-separator {
+            color: #cbd5e1;
+        }
+
+        .breadcrumb-current {
+            color: #0f172a;
+            font-weight: 600;
+        }
+
+        .location-hierarchy-card {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            padding: 16px 20px;
+            background: linear-gradient(135deg, #fef3c7 0%, #fde68a 100%);
+            border-radius: 8px;
+            border: 1px solid #fbbf24;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        .hierarchy-item {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+
+        .hierarchy-label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: #78350f;
+            letter-spacing: 0.5px;
+        }
+
+        .hierarchy-value {
+            font-size: 16px;
+            font-weight: 700;
+            color: #0f172a;
+        }
+
+        .hierarchy-arrow {
+            font-size: 20px;
+            color: #78350f;
+            font-weight: 700;
+        }
+    </style>
     <section class="panel listing-panel" data-enhanced-table data-page-size="10">
         <div class="table-toolbar">
             <label class="search-field"><span class="search-glyph" aria-hidden="true">⌕</span><input type="search" placeholder="Search racks..." aria-label="Search racks" data-table-search></label>

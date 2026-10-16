@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Rack;
 use App\Shelf;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Throwable;
 
 class ShelfController extends Controller
 {
@@ -30,10 +32,20 @@ class ShelfController extends Controller
             ],
         ]);
 
-        $rack->shelves()->create([
-            'name' => $validated['name'],
-            'is_active' => true,
-        ]);
+        // Start transaction for shelf creation
+        try {
+            DB::beginTransaction();
+
+            $rack->shelves()->create([
+                'name' => $validated['name'],
+                'is_active' => true,
+            ]);
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()->route('racks.show', $rack->id)
             ->with('success', 'Shell created successfully.');
@@ -62,7 +74,17 @@ class ShelfController extends Controller
             ],
         ]);
 
-        $shelf->update(['name' => $validated['name']]);
+        // Start transaction for shelf update
+        try {
+            DB::beginTransaction();
+
+            $shelf->update(['name' => $validated['name']]);
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()->route('racks.show', $shelf->rack_id)
             ->with('success', 'Shell updated successfully.');
@@ -76,8 +98,19 @@ class ShelfController extends Controller
         ]);
 
         $shelf = Shelf::findOrFail($id);
-        $shelf->is_active = $validated['is_active'];
-        $shelf->save();
+
+        // Start transaction for updating shelf status
+        try {
+            DB::beginTransaction();
+
+            $shelf->is_active = $validated['is_active'];
+            $shelf->save();
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()->route('racks.show', [
             'rack' => $shelf->rack_id,
@@ -90,8 +123,19 @@ class ShelfController extends Controller
     public function destroy($id)
     {
         $shelf = Shelf::findOrFail($id);
-        $shelf->is_active = false;
-        $shelf->save();
+
+        // Start transaction for shelf deactivation
+        try {
+            DB::beginTransaction();
+
+            $shelf->is_active = false;
+            $shelf->save();
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()->route('racks.show', $shelf->rack_id)
             ->with('success', 'Shell deactivated successfully. The record is retained.');

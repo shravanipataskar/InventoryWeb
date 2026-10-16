@@ -31,13 +31,52 @@ class QuotationController extends Controller
 {
     public function index(Request $request)
     {
+        $filters = $request->validate([
+            'search' => 'nullable|string|max:255',
+            'status' => 'nullable|in:all,draft,submitted,under_review,approved,rejected',
+            'from_date' => 'nullable|date',
+            'to_date' => 'nullable|date|after_or_equal:from_date',
+        ]);
+
+        $statusCounts = QuotationRequest::query()
+            ->select('status', DB::raw('COUNT(*) as aggregate'))
+            ->groupBy('status')
+            ->pluck('aggregate', 'status');
+
+        $stats = [
+            'total' => $statusCounts->sum(),
+            'draft' => (int) $statusCounts->get('draft', 0),
+            'submitted_quotations' => (int) Quotation::whereIn('status', ['submitted', 'under_review'])->count(),
+            'approved' => (int) $statusCounts->get('approved', 0),
+            'suppliers' => (int) Quotation::query()->distinct()->count('supplier_id'),
+        ];
+
         $requests = QuotationRequest::with(['creator', 'quotations.supplier'])
             ->withCount('quotations')
+            ->when(!empty($filters['search']), function ($query) use ($filters) {
+                $search = trim($filters['search']);
+                $query->where(function ($query) use ($search) {
+                    $query->where('quotation_request_code', 'like', '%' . $search . '%')
+                        ->orWhereHas('quotations.supplier', function ($query) use ($search) {
+                            $query->where('name', 'like', '%' . $search . '%')
+                                ->orWhere('company_name', 'like', '%' . $search . '%');
+                        });
+                });
+            })
+            ->when(!empty($filters['status']) && $filters['status'] !== 'all', function ($query) use ($filters) {
+                $query->where('status', $filters['status']);
+            })
+            ->when(!empty($filters['from_date']), function ($query) use ($filters) {
+                $query->whereDate('request_date', '>=', $filters['from_date']);
+            })
+            ->when(!empty($filters['to_date']), function ($query) use ($filters) {
+                $query->whereDate('request_date', '<=', $filters['to_date']);
+            })
             ->orderByDesc('id')
             ->paginate(20)
-            ->appends($request->query());
+            ->appends($filters);
 
-        return view('quotations.index', compact('requests'));
+        return view('quotations.index', compact('requests', 'stats', 'filters'));
     }
 
     public function create(Request $request)
@@ -90,7 +129,11 @@ class QuotationController extends Controller
             }
         }
 
-        $quotationRequest = DB::transaction(function () use ($validated) {
+        $quotationRequest = null;
+// Start transaction for quotation request creation
+        try {
+            DB::beginTransaction();
+            $quotationRequest = (function () use ($validated) {
             $requestRecord = QuotationRequest::create([
                 'quotation_request_code' => 'TEMP-' . Str::uuid(),
                 'request_date' => $validated['request_date'],
@@ -128,7 +171,12 @@ class QuotationController extends Controller
             }
 
             return $requestRecord;
-        });
+            })();
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         ActivityLogger::log('Quotation Created', 'Quotation', 'Quotation request ' . $quotationRequest->quotation_request_code . ' was created.');
 
@@ -235,14 +283,23 @@ class QuotationController extends Controller
             'items.*.discount_percent' => ['nullable', 'numeric', 'min:0', 'max:100', 'regex:/^\d+(\.\d{1,2})?$/'],
         ]);
 
-        $order = DB::transaction(function () use ($quotation, $validated) {
+        $order = null;
+// Start transaction for purchase order creation
+        try {
+            DB::beginTransaction();
+            $order = (function () use ($quotation, $validated) {
             $lockedQuotation = Quotation::with(['items', 'request'])->lockForUpdate()->findOrFail($quotation->id);
             if ($lockedQuotation->purchaseOrder) {
                 return $lockedQuotation->purchaseOrder;
             }
 
             return $this->createPurchaseOrderFromNegotiatedQuotation($lockedQuotation, $validated['items']);
-        });
+            })();
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         ActivityLogger::log('Purchase Order Generated', 'Purchase', 'Purchase order ' . $order->po_number . ' was generated from quotation ' . $quotation->quotation_code . '.');
 
@@ -262,7 +319,11 @@ class QuotationController extends Controller
         $quotation = Quotation::findOrFail($id);
         abort_unless($quotation->status === 'approved', 404);
 
-        $order = DB::transaction(function () use ($quotation, $validated, $paymentAllocations) {
+        $order = null;
+// Start transaction for updating purchase order discounts
+        try {
+            DB::beginTransaction();
+            $order = (function () use ($quotation, $validated, $paymentAllocations) {
             $lockedQuotation = Quotation::lockForUpdate()->findOrFail($quotation->id);
             $order = PurchaseOrder::where('quotation_id', $lockedQuotation->id)
                 ->lockForUpdate()
@@ -332,7 +393,12 @@ class QuotationController extends Controller
             ]);
 
             return $order;
-        });
+            })();
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         ActivityLogger::log('Purchase Discounts Updated', 'Purchase', 'Discounts were updated on purchase order ' . $order->po_number . '.');
 
@@ -347,10 +413,15 @@ class QuotationController extends Controller
             'planned_amount' => ['required', 'numeric', 'min:0.01', 'regex:/^\d+(\.\d{1,2})?$/'],
             'submission_token' => 'required|uuid',
         ]);
+
         $quotation = Quotation::findOrFail($id);
         abort_unless($quotation->status === 'approved', 404);
 
-        $installment = DB::transaction(function () use ($quotation, $validated, $paymentAllocations) {
+        $installment = null;
+// Start transaction for purchase installment creation
+        try {
+            DB::beginTransaction();
+            $installment = (function () use ($quotation, $validated, $paymentAllocations) {
             $lockedQuotation = Quotation::lockForUpdate()->findOrFail($quotation->id);
             $order = $lockedQuotation->purchaseOrder;
             if (!$order) {
@@ -395,7 +466,12 @@ class QuotationController extends Controller
             ]);
 
             return $installment;
-        });
+            })();
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
         if ($installment) {
             ActivityLogger::log('Purchase Installment Scheduled', 'Purchase', 'Installment ' . $installment->installment_number . ' was scheduled for purchase order ' . $installment->purchase_order_id . '.');
         }
@@ -409,7 +485,11 @@ class QuotationController extends Controller
         $quotation = Quotation::findOrFail($id);
         abort_unless($quotation->status === 'approved', 404);
 
-        $cancelled = DB::transaction(function () use ($quotation, $installmentId) {
+        $cancelled = null;
+// Start transaction for purchase installment cancellation
+        try {
+            DB::beginTransaction();
+            $cancelled = (function () use ($quotation, $installmentId) {
             $lockedQuotation = Quotation::lockForUpdate()->findOrFail($quotation->id);
             $order = $lockedQuotation->purchaseOrder;
             if (!$order) {
@@ -435,7 +515,12 @@ class QuotationController extends Controller
             ]);
 
             return true;
-        });
+            })();
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
         if ($cancelled) {
             ActivityLogger::log('Purchase Installment Cancelled', 'Purchase', 'Installment ' . $installmentId . ' was cancelled for purchase order ' . $quotation->purchase_order_id . '.');
         }
@@ -476,7 +561,11 @@ class QuotationController extends Controller
             ]);
         }
 
-        $purchaseOrder = DB::transaction(function () use ($quotation, $validated, $paymentAllocations) {
+        $purchaseOrder = null;
+// Start transaction for purchase payment creation
+        try {
+            DB::beginTransaction();
+            $purchaseOrder = (function () use ($quotation, $validated, $paymentAllocations) {
             $lockedQuotation = Quotation::with('items')->lockForUpdate()->findOrFail($quotation->id);
             if (PurchasePayment::where('submission_token', $validated['submission_token'])->exists()) {
                 return $lockedQuotation->purchaseOrder()->firstOrFail();
@@ -554,7 +643,12 @@ class QuotationController extends Controller
             ]);
 
             return $order;
-        });
+            })();
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         ActivityLogger::log('Purchase Payment Recorded', 'Purchase', 'Payment recorded against purchase order ' . $purchaseOrder->po_number . '.');
 
@@ -711,9 +805,11 @@ class QuotationController extends Controller
         ]);
 
         $billCopy = $this->storeBillCopy($request, 'bill_copy');
+// Start transaction for supplier quotation submission
         $previousBillCopy = $billCopy ? $quotation->bill_copy_path : null;
         try {
-            DB::transaction(function () use ($quotation, $validated, $billCopy) {
+            DB::beginTransaction();
+            (function () use ($quotation, $validated, $billCopy) {
                 $this->submitQuotation($quotation, $validated['items']);
                 $quotation->supplier_invoice_number = trim((string) ($validated['supplier_invoice_number'] ?? '')) ?: null;
                 if ($billCopy) {
@@ -721,8 +817,10 @@ class QuotationController extends Controller
                 }
                 $quotation->save();
                 $quotation->request()->update(['status' => 'submitted']);
-            });
+            })();
+            DB::commit();
         } catch (Throwable $exception) {
+            DB::rollBack();
             $this->deleteBillCopies([$billCopy]);
             throw $exception;
         }
@@ -761,6 +859,7 @@ class QuotationController extends Controller
             return (string) $id;
         })->all();
         $uploadedCopies = [];
+// Start transaction for submitting all supplier quotations in the request
         $previousCopies = [];
         try {
             foreach (array_keys($validated['supplier_invoice_numbers'] ?? []) as $quotationId) {
@@ -788,7 +887,8 @@ class QuotationController extends Controller
                 }
             }
 
-            DB::transaction(function () use ($requestRecord, $draftQuotations, $validated, $uploadedCopies) {
+            DB::beginTransaction();
+            (function () use ($requestRecord, $draftQuotations, $validated, $uploadedCopies) {
                 foreach ($draftQuotations as $quotation) {
                     if (!isset($validated['items'][$quotation->id])) {
                         throw ValidationException::withMessages(['items' => 'Every supplier quotation must be completed.']);
@@ -801,8 +901,10 @@ class QuotationController extends Controller
                     $quotation->save();
                 }
                 $requestRecord->update(['status' => 'submitted']);
-            });
+            })();
+            DB::commit();
         } catch (Throwable $exception) {
+            DB::rollBack();
             $this->deleteBillCopies($uploadedCopies);
             throw $exception;
         }
@@ -853,7 +955,11 @@ class QuotationController extends Controller
 
     private function approveSelectedQuotation($id)
     {
-        return DB::transaction(function () use ($id) {
+        $transactionResult = null;
+// Start transaction for approving the selected quotation
+        try {
+            DB::beginTransaction();
+            $transactionResult = (function () use ($id) {
             $quotation = Quotation::lockForUpdate()->findOrFail($id);
             $requestRecord = QuotationRequest::lockForUpdate()->findOrFail($quotation->quotation_request_id);
             if ($quotation->status === 'approved' && $requestRecord->status === 'approved') {
@@ -882,13 +988,23 @@ class QuotationController extends Controller
             ]);
 
             return $quotation;
-        });
+            })();
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
+        return $transactionResult;
     }
 
     public function reject(Request $request, $id)
     {
         $validated = $request->validate(['rejection_reason' => 'required|string|max:2000']);
-        $quotation = DB::transaction(function () use ($id, $validated) {
+        $quotation = null;
+// Start transaction for rejecting the quotation
+        try {
+            DB::beginTransaction();
+            $quotation = (function () use ($id, $validated) {
             $quotation = Quotation::lockForUpdate()->findOrFail($id);
             $requestRecord = QuotationRequest::lockForUpdate()->findOrFail($quotation->quotation_request_id);
             abort_if($requestRecord->status === 'approved', 422, 'An approved quotation request cannot be rejected.');
@@ -905,7 +1021,12 @@ class QuotationController extends Controller
             ]);
 
             return $quotation;
-        });
+            })();
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
         ActivityLogger::log('Quotation Rejected', 'Quotation', 'Quotation ' . $quotation->quotation_code . ' was rejected.');
 
         return back()->with('success', 'Quotation rejected.');
@@ -956,6 +1077,7 @@ class QuotationController extends Controller
             $sgstTotal += $sgst;
             $lines[] = compact('item', 'rate', 'discountPercent', 'basic', 'discount', 'gstRate', 'cgstRate', 'cgst', 'sgstRate', 'sgst');
         }
+
         $grandTotal = round($subtotal - $discountTotal + $cgstTotal + $sgstTotal, 2);
         if ($grandTotal <= 0) {
             throw ValidationException::withMessages(['amount' => 'A purchase order must have a payable amount greater than zero.']);

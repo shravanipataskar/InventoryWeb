@@ -9,6 +9,7 @@ use App\Product;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Throwable;
 
 class StockOutwardController extends Controller
 {
@@ -155,7 +156,10 @@ class StockOutwardController extends Controller
             'remarks' => 'nullable|string',
         ]);
 
-        DB::transaction(function () use ($validated) {
+        // Start transaction for creating stock outward entries and updating inventory
+        try {
+            DB::beginTransaction();
+
             $quantitiesByProduct = collect($validated['items'])
                 ->groupBy('product_id')
                 ->map(function ($items) {
@@ -214,7 +218,12 @@ class StockOutwardController extends Controller
             foreach ($quantitiesByProduct as $productId => $quantity) {
                 $products->get($productId)->decrement('current_stock', $quantity);
             }
-        });
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()
             ->route('stock-outwards.index')
@@ -231,11 +240,20 @@ class StockOutwardController extends Controller
             'listing_status' => 'required|in:active,inactive',
         ]);
 
-        DB::transaction(function () use ($id, $validated) {
+        // Start transaction for updating stock outward status and inventory
+        try {
+            DB::beginTransaction();
+
             $stockOutward = StockOutward::lockForUpdate()->findOrFail($id);
 
             if ((bool) $stockOutward->is_active === (bool) $validated['is_active']) {
-                return;
+                DB::commit();
+
+                return redirect()
+                    ->route('stock-outwards.index', ['status' => $validated['listing_status']])
+                    ->with('success', $validated['is_active']
+                        ? 'Stock outward activated and inventory updated.'
+                        : 'Stock outward deactivated and inventory updated.');
             }
 
             $product = Product::lockForUpdate()->findOrFail($stockOutward->product_id);
@@ -255,7 +273,12 @@ class StockOutwardController extends Controller
             }
 
             $stockOutward->save();
-        });
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()
             ->route('stock-outwards.index', ['status' => $validated['listing_status']])

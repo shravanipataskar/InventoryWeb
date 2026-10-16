@@ -5,7 +5,9 @@ namespace App\Http\Controllers;
 use App\Hall;
 use App\Rack;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use Throwable;
 
 class RackController extends Controller
 {
@@ -30,10 +32,20 @@ class RackController extends Controller
             ],
         ]);
 
-        $hall->racks()->create([
-            'name' => $validated['name'],
-            'is_active' => true,
-        ]);
+        // Start transaction for rack creation
+        try {
+            DB::beginTransaction();
+
+            $hall->racks()->create([
+                'name' => $validated['name'],
+                'is_active' => true,
+            ]);
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()->route('halls.show', $hall->id)
             ->with('success', 'Rack created successfully.');
@@ -74,7 +86,17 @@ class RackController extends Controller
             ],
         ]);
 
-        $rack->update(['name' => $validated['name']]);
+        // Start transaction for rack update
+        try {
+            DB::beginTransaction();
+
+            $rack->update(['name' => $validated['name']]);
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()->route('halls.show', $rack->hall_id)
             ->with('success', 'Rack updated successfully.');
@@ -88,8 +110,19 @@ class RackController extends Controller
         ]);
 
         $rack = Rack::findOrFail($id);
-        $rack->is_active = $validated['is_active'];
-        $rack->save();
+
+        // Start transaction for updating rack status
+        try {
+            DB::beginTransaction();
+
+            $rack->is_active = $validated['is_active'];
+            $rack->save();
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()->route('halls.show', [
             'hall' => $rack->hall_id,
@@ -112,8 +145,19 @@ class RackController extends Controller
     public function destroy($id)
     {
         $rack = Rack::findOrFail($id);
-        $rack->is_active = false;
-        $rack->save();
+
+        // Start transaction for rack deactivation
+        try {
+            DB::beginTransaction();
+
+            $rack->is_active = false;
+            $rack->save();
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()->route('halls.show', $rack->hall_id)
             ->with('success', 'Rack deactivated successfully. The record is retained.');

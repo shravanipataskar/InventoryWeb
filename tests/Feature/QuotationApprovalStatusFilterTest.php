@@ -132,6 +132,43 @@ class QuotationApprovalStatusFilterTest extends TestCase
             ->assertSee('status=rejected');
     }
 
+    public function test_quotation_request_list_shows_summary_and_filters_requests()
+    {
+        $existingSubmittedQuotationCount = Quotation::where('status', 'submitted')->count();
+        $draftRequest = $this->createRequest('draft', '2026-10-14');
+        $this->createQuotation($draftRequest, 'Searchable Supplier', 'draft');
+        $approvedRequest = $this->createRequest('approved', '2026-10-13');
+        $this->createQuotation($approvedRequest, 'Other Supplier', 'approved');
+        $submittedRequest = $this->createRequest('submitted', '2026-10-12');
+        $this->createQuotation($submittedRequest, 'Submitted Supplier', 'submitted');
+        $underReviewRequest = $this->createRequest('submitted', '2026-10-11');
+        $this->createQuotation($underReviewRequest, 'Under Review Supplier', 'under_review');
+
+        $this->get(route('quotations.index', [
+            'search' => 'Searchable Supplier',
+            'status' => 'draft',
+            'from_date' => '2026-10-14',
+            'to_date' => '2026-10-14',
+        ]))
+            ->assertOk()
+            ->assertSee('Total Requests')
+            ->assertSee('Submitted Quotations')
+            ->assertSee('Total Suppliers')
+            ->assertSee('name="search" value="Searchable Supplier"', false)
+            ->assertSee('name="from_date" value="2026-10-14"', false)
+            ->assertSee($draftRequest->quotation_request_code)
+            ->assertSee('Draft')
+            ->assertDontSee($approvedRequest->quotation_request_code)
+            ->assertSee('Showing')
+            ->assertViewHas('stats', function ($stats) use ($existingSubmittedQuotationCount) {
+                return array_key_exists('total', $stats)
+                    && array_key_exists('draft', $stats)
+                    && $stats['submitted_quotations'] === $existingSubmittedQuotationCount + 2
+                    && array_key_exists('approved', $stats)
+                    && array_key_exists('suppliers', $stats);
+            });
+    }
+
     private function createRequest($status, $date)
     {
         $this->sequence++;

@@ -14,11 +14,9 @@ use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
-use RuntimeException;
 use Throwable;
 
 class SupplierBillController extends Controller
@@ -45,6 +43,7 @@ class SupplierBillController extends Controller
         if ($redirect) {
             return $redirect;
         }
+
         $positions = $this->bills->quantityPositions($purchaseOrder);
 
         return view('supplier_bills.create', compact('purchaseOrder', 'positions'));
@@ -62,70 +61,77 @@ class SupplierBillController extends Controller
 
         $attachment = $this->storeAttachment($request);
 
+        // Start transaction for supplier bill creation and audit logging
         try {
-            $bill = DB::transaction(function () use ($validated, $purchaseOrderId, $attachment) {
-                // Lock the PO so concurrent bills cannot both claim the same accepted quantity.
-                $order = PurchaseOrder::lockForUpdate()->with('items.product')->findOrFail($purchaseOrderId);
-                if ($order->status === 'cancelled') {
-                    throw ValidationException::withMessages(['purchase_order' => 'A cancelled purchase order cannot be billed.']);
-                }
+            DB::beginTransaction();
 
-                $duplicateKey = SupplierBill::duplicateKey($order->supplier_id, $validated['invoice_number']);
-                if (SupplierBill::where('duplicate_key', $duplicateKey)->exists()) {
-                    throw ValidationException::withMessages(['invoice_number' => 'This supplier invoice number has already been recorded.']);
-                }
+            // Lock the PO so concurrent bills cannot both claim the same accepted quantity.
+            $order = PurchaseOrder::lockForUpdate()->with('items.product')->findOrFail($purchaseOrderId);
+            if ($order->status === 'cancelled') {
+                throw ValidationException::withMessages(['purchase_order' => 'A cancelled purchase order cannot be billed.']);
+            }
 
-                $lines = $this->bills->buildLines($order, $validated['items']);
-                $invoiceTotal = Money::toMinor($validated['invoice_total']);
-                $match = $this->bills->match($order, $lines, $invoiceTotal, $order->supplier_id);
-                $status = $match['status'] === 'matched' ? SupplierBill::STATUS_UNDER_VERIFICATION : SupplierBill::STATUS_ON_HOLD;
+            $duplicateKey = SupplierBill::duplicateKey($order->supplier_id, $validated['invoice_number']);
+            if (SupplierBill::where('duplicate_key', $duplicateKey)->exists()) {
+                throw ValidationException::withMessages(['invoice_number' => 'This supplier invoice number has already been recorded.']);
+            }
 
-                $bill = SupplierBill::create([
-                    'bill_number' => 'TEMP-' . Str::uuid(),
-                    'submission_token' => $validated['submission_token'],
-                    'supplier_id' => $order->supplier_id,
-                    'purchase_order_id' => $order->id,
-                    'invoice_number' => trim($validated['invoice_number']),
-                    'duplicate_key' => $duplicateKey,
-                    'invoice_date' => $validated['invoice_date'],
-                    'due_date' => $validated['due_date'] ?? null,
-                    'invoice_total' => Money::fromMinor($invoiceTotal),
-                    'paid_amount' => 0,
-                    'status' => $status,
-                    'match_status' => $match['status'],
-                    'match_result' => $match,
-                    'attachment_path' => $attachment ? $attachment['path'] : null,
-                    'attachment_name' => $attachment ? $attachment['name'] : null,
-                    'notes' => $validated['notes'] ?? null,
-                    'created_by' => Auth::id(),
-                ]);
-                $bill->bill_number = 'BILL-' . date('Ymd', strtotime($validated['invoice_date']))
-                    . '-' . str_pad($bill->id, 4, '0', STR_PAD_LEFT);
-                $bill->fill($this->bills->writeLines($bill, $lines));
-                $bill->save();
+            $lines = $this->bills->buildLines($order, $validated['items']);
+            $invoiceTotal = Money::toMinor($validated['invoice_total']);
+            $match = $this->bills->match($order, $lines, $invoiceTotal, $order->supplier_id);
+            $status = $match['status'] === 'matched' ? SupplierBill::STATUS_UNDER_VERIFICATION : SupplierBill::STATUS_ON_HOLD;
 
-                ProcurementAuditLog::record($bill, 'bill_submitted', null, $status, null, [
-                    'purchase_order_id' => $order->id,
-                    'invoice_number' => $bill->invoice_number,
-                    'match_status' => $match['status'],
-                    'issues' => count($match['issues']),
-                ]);
+            $bill = SupplierBill::create([
+                'bill_number' => 'TEMP-' . Str::uuid(),
+                'submission_token' => $validated['submission_token'],
+                'supplier_id' => $order->supplier_id,
+                'purchase_order_id' => $order->id,
+                'invoice_number' => trim($validated['invoice_number']),
+                'duplicate_key' => $duplicateKey,
+                'invoice_date' => $validated['invoice_date'],
+                'due_date' => $validated['due_date'] ?? null,
+                'invoice_total' => Money::fromMinor($invoiceTotal),
+                'paid_amount' => 0,
+                'status' => $status,
+                'match_status' => $match['status'],
+                'match_result' => $match,
+                'attachment_path' => $attachment ? $attachment['path'] : null,
+                'attachment_name' => $attachment ? $attachment['name'] : null,
+                'notes' => $validated['notes'] ?? null,
+                'created_by' => Auth::id(),
+            ]);
 
-                return $bill;
-            });
+            $bill->bill_number = 'BILL-' . date('Ymd', strtotime($validated['invoice_date']))
+                . '-' . str_pad($bill->id, 4, '0', STR_PAD_LEFT);
+            $bill->fill($this->bills->writeLines($bill, $lines));
+            $bill->save();
+
+            ProcurementAuditLog::record($bill, 'bill_submitted', null, $status, null, [
+                'purchase_order_id' => $order->id,
+                'invoice_number' => $bill->invoice_number,
+                'match_status' => $match['status'],
+                'issues' => count($match['issues']),
+            ]);
+
+            DB::commit();
         } catch (QueryException $exception) {
+            DB::rollBack();
             $this->discardAttachment($attachment);
+
             $existing = SupplierBill::where('submission_token', $validated['submission_token'])->first();
             if ($existing) {
                 return redirect()->route('supplier-bills.show', $existing->id)
                     ->with('success', 'This supplier bill was already submitted.');
             }
+
             $order = PurchaseOrder::find($purchaseOrderId);
             if ($order && SupplierBill::where('duplicate_key', SupplierBill::duplicateKey($order->supplier_id, $validated['invoice_number']))->exists()) {
                 throw ValidationException::withMessages(['invoice_number' => 'This supplier invoice number has already been recorded.']);
             }
+
             throw $exception;
-        } catch (\Throwable $exception) {
+        } catch (Throwable $exception) {
+            DB::rollBack();
             $this->discardAttachment($attachment);
             throw $exception;
         }
@@ -147,6 +153,7 @@ class SupplierBillController extends Controller
                 || Auth::user()->hasPermission('payments', 'view'),
             403
         );
+
         $bill = SupplierBill::with([
             'supplier', 'purchaseOrder.quotation', 'items.product.unit', 'items.purchaseOrderItem',
             'allocations.payment', 'purchasePaymentAllocations.purchasePayment', 'creator', 'approver',
@@ -178,53 +185,58 @@ class SupplierBillController extends Controller
         $validated = $this->validateBill($request, false);
         $attachment = $this->storeAttachment($request);
 
+        // Start transaction for supplier bill correction and audit logging
         try {
-            $bill = DB::transaction(function () use ($validated, $id, $attachment) {
-                $bill = SupplierBill::lockForUpdate()->findOrFail($id);
-                if (!in_array($bill->status, SupplierBill::EDITABLE_STATUSES, true)) {
-                    throw ValidationException::withMessages(['bill' => 'This bill can no longer be corrected.']);
-                }
-                $order = PurchaseOrder::lockForUpdate()->with('items.product')->findOrFail($bill->purchase_order_id);
+            DB::beginTransaction();
 
-                $duplicateKey = SupplierBill::duplicateKey($order->supplier_id, $validated['invoice_number']);
-                if (SupplierBill::where('duplicate_key', $duplicateKey)->where('id', '<>', $bill->id)->exists()) {
-                    throw ValidationException::withMessages(['invoice_number' => 'This supplier invoice number has already been recorded.']);
-                }
+            $bill = SupplierBill::lockForUpdate()->findOrFail($id);
+            if (!in_array($bill->status, SupplierBill::EDITABLE_STATUSES, true)) {
+                throw ValidationException::withMessages(['bill' => 'This bill can no longer be corrected.']);
+            }
 
-                $lines = $this->bills->buildLines($order, $validated['items']);
-                $invoiceTotal = Money::toMinor($validated['invoice_total']);
-                $match = $this->bills->match($order, $lines, $invoiceTotal, $bill->supplier_id, $bill->id);
-                $previous = $bill->status;
-                $oldAttachment = $bill->attachment_path;
+            $order = PurchaseOrder::lockForUpdate()->with('items.product')->findOrFail($bill->purchase_order_id);
 
-                $bill->fill([
-                    'invoice_number' => trim($validated['invoice_number']),
-                    'duplicate_key' => $duplicateKey,
-                    'invoice_date' => $validated['invoice_date'],
-                    'due_date' => $validated['due_date'] ?? null,
-                    'invoice_total' => Money::fromMinor($invoiceTotal),
-                    'status' => $match['status'] === 'matched' ? SupplierBill::STATUS_UNDER_VERIFICATION : SupplierBill::STATUS_ON_HOLD,
-                    'match_status' => $match['status'],
-                    'match_result' => $match,
-                    'exception_approved' => false,
-                    'notes' => $validated['notes'] ?? null,
-                ]);
-                if ($attachment) {
-                    $bill->attachment_path = $attachment['path'];
-                    $bill->attachment_name = $attachment['name'];
-                }
-                $bill->fill($this->bills->writeLines($bill, $lines));
-                $bill->save();
+            $duplicateKey = SupplierBill::duplicateKey($order->supplier_id, $validated['invoice_number']);
+            if (SupplierBill::where('duplicate_key', $duplicateKey)->where('id', '<>', $bill->id)->exists()) {
+                throw ValidationException::withMessages(['invoice_number' => 'This supplier invoice number has already been recorded.']);
+            }
 
-                ProcurementAuditLog::record($bill, 'bill_corrected', $previous, $bill->status, $validated['correction_reason'] ?? null, [
-                    'match_status' => $match['status'],
-                    'issues' => count($match['issues']),
-                    'previous_attachment' => $attachment ? $oldAttachment : null,
-                ]);
+            $lines = $this->bills->buildLines($order, $validated['items']);
+            $invoiceTotal = Money::toMinor($validated['invoice_total']);
+            $match = $this->bills->match($order, $lines, $invoiceTotal, $bill->supplier_id, $bill->id);
+            $previous = $bill->status;
+            $oldAttachment = $bill->attachment_path;
 
-                return $bill;
-            });
-        } catch (\Throwable $exception) {
+            $bill->fill([
+                'invoice_number' => trim($validated['invoice_number']),
+                'duplicate_key' => $duplicateKey,
+                'invoice_date' => $validated['invoice_date'],
+                'due_date' => $validated['due_date'] ?? null,
+                'invoice_total' => Money::fromMinor($invoiceTotal),
+                'status' => $match['status'] === 'matched' ? SupplierBill::STATUS_UNDER_VERIFICATION : SupplierBill::STATUS_ON_HOLD,
+                'match_status' => $match['status'],
+                'match_result' => $match,
+                'exception_approved' => false,
+                'notes' => $validated['notes'] ?? null,
+            ]);
+
+            if ($attachment) {
+                $bill->attachment_path = $attachment['path'];
+                $bill->attachment_name = $attachment['name'];
+            }
+
+            $bill->fill($this->bills->writeLines($bill, $lines));
+            $bill->save();
+
+            ProcurementAuditLog::record($bill, 'bill_corrected', $previous, $bill->status, $validated['correction_reason'] ?? null, [
+                'match_status' => $match['status'],
+                'issues' => count($match['issues']),
+                'previous_attachment' => $attachment ? $oldAttachment : null,
+            ]);
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
             $this->discardAttachment($attachment);
             throw $exception;
         }
@@ -239,7 +251,10 @@ class SupplierBillController extends Controller
         $validated = $request->validate(['reason' => 'nullable|string|max:2000']);
         $orderId = SupplierBill::where('id', $id)->value('purchase_order_id');
 
-        $bill = DB::transaction(function () use ($id, $orderId, $validated) {
+        // Start transaction for supplier bill approval and payment allocation
+        try {
+            DB::beginTransaction();
+
             $order = PurchaseOrder::lockForUpdate()->findOrFail($orderId);
             $bill = SupplierBill::lockForUpdate()->findOrFail($id);
             $this->assertNotCreator($bill->created_by, 'approve');
@@ -263,10 +278,14 @@ class SupplierBillController extends Controller
             ProcurementAuditLog::record($bill, $isException ? 'bill_exception_approved' : 'bill_approved', $previous, $bill->status, $validated['reason'] ?? null, [
                 'match_status' => $bill->match_status,
             ]);
+
             $this->purchasePayments->allocateForOrder($order);
 
-            return $bill;
-        });
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         ActivityLogger::log('Supplier Bill Approved', 'Supplier Bill', 'Supplier bill ' . $bill->bill_number . ' was approved for payment' . ($bill->exception_approved ? ' as an exception' : '') . '.');
 
@@ -303,19 +322,26 @@ class SupplierBillController extends Controller
     {
         $validated = $request->validate(['reason' => 'required|string|max:2000']);
 
-        $bill = DB::transaction(function () use ($id, $validated, $toStatus, $fromStatuses, $event) {
+        // Start transaction for supplier bill status transition and audit logging
+        try {
+            DB::beginTransaction();
+
             $bill = SupplierBill::lockForUpdate()->findOrFail($id);
             if (!in_array($bill->status, $fromStatuses, true)) {
                 throw ValidationException::withMessages(['bill' => 'This action is not allowed for a bill that is ' . str_replace('_', ' ', $bill->status) . '.']);
             }
+
             $previous = $bill->status;
             $bill->status = $toStatus;
             $bill->status_reason = $validated['reason'];
             $bill->save();
             ProcurementAuditLog::record($bill, $event, $previous, $toStatus, $validated['reason']);
 
-            return $bill;
-        });
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         ActivityLogger::log('Supplier Bill ' . ucfirst(str_replace('_', ' ', $toStatus)), 'Supplier Bill', 'Supplier bill ' . $bill->bill_number . ' is now ' . str_replace('_', ' ', $toStatus) . '.');
 
@@ -327,16 +353,21 @@ class SupplierBillController extends Controller
         $validated = $request->validate(['reason' => 'required|string|max:2000']);
         $orderId = SupplierBill::where('id', $id)->value('purchase_order_id');
 
-        $bill = DB::transaction(function () use ($id, $orderId, $validated, $toStatus, $fromStatuses, $event) {
+        // Start transaction for supplier bill closure, payment release, and status update
+        try {
+            DB::beginTransaction();
+
             $order = PurchaseOrder::lockForUpdate()->findOrFail($orderId);
             $bill = SupplierBill::lockForUpdate()->findOrFail($id);
             if (!in_array($bill->status, $fromStatuses, true)) {
                 throw ValidationException::withMessages(['bill' => 'This action is not allowed for a bill that is ' . str_replace('_', ' ', $bill->status) . '.']);
             }
+
             if ($this->purchasePayments->completedSupplierPaymentsMinorForBill($bill->id) > 0
                 || $this->payments->reservedMinor($bill->id) > 0) {
                 throw ValidationException::withMessages(['bill' => 'Cancel or reverse the payments linked to this bill first.']);
             }
+
             $releasedAdvance = Money::toMinor($bill->purchasePaymentAllocations()->sum('amount'));
             $bill->purchasePaymentAllocations()->delete();
             $bill->paid_amount = 0;
@@ -351,8 +382,11 @@ class SupplierBillController extends Controller
             ]);
             $this->purchasePayments->allocateForOrder($order);
 
-            return $bill;
-        });
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         ActivityLogger::log('Supplier Bill ' . ucfirst($toStatus), 'Supplier Bill', 'Supplier bill ' . $bill->bill_number . ' was ' . $toStatus . '.');
 
@@ -364,6 +398,7 @@ class SupplierBillController extends Controller
         if ($order->status === 'cancelled') {
             return redirect()->route('purchase-orders.show', $order->id)->with('error', 'A cancelled purchase order cannot be billed.');
         }
+
         if ($order->goodsReceipts->isEmpty()) {
             return redirect()->route('purchase-orders.show', $order->id)->with('error', 'Record goods received before entering the supplier bill.');
         }
@@ -395,38 +430,19 @@ class SupplierBillController extends Controller
         if (!$request->hasFile('attachment')) {
             return null;
         }
+
         $file = $request->file('attachment');
 
-        $path = $file->store('supplier-bills', 'local');
-        if (!$path) {
-            throw new RuntimeException('The supplier bill attachment could not be stored.');
-        }
-
         return [
-            'path' => $path,
+            'path' => $file->store('supplier-bills', 'local'),
             'name' => Str::limit(preg_replace('/[^A-Za-z0-9._ -]/', '_', $file->getClientOriginalName()), 180, ''),
         ];
     }
 
     private function discardAttachment($attachment)
     {
-        if (!$attachment || empty($attachment['path'])) {
-            return;
-        }
-        try {
-            if (Storage::disk('local')->exists($attachment['path'])
-                && !Storage::disk('local')->delete($attachment['path'])) {
-                Log::error('Unable to remove a supplier bill attachment during cleanup.', [
-                    'operation' => 'supplier_bill_attachment.cleanup',
-                    'attachment_path' => $attachment['path'],
-                ]);
-            }
-        } catch (Throwable $cleanupException) {
-            Log::error('Unable to remove a supplier bill attachment during cleanup.', [
-                'operation' => 'supplier_bill_attachment.cleanup',
-                'attachment_path' => $attachment['path'],
-                'exception' => get_class($cleanupException),
-            ]);
+        if ($attachment) {
+            Storage::disk('local')->delete($attachment['path']);
         }
     }
 

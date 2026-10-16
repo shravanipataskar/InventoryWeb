@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Hall;
+use App\Store;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -13,6 +14,18 @@ class HallController extends Controller
 {
     public function index(Request $request)
     {
+        $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
+        $storeFilter = $request->query('store_id');
+        
+        $query = Hall::with('store')->withCount('racks')
+            ->where('is_active', $listingStatus === 'active');
+        
+        if ($storeFilter) {
+            $query->where('store_id', $storeFilter);
+        }
+        
+        $halls = $query->orderBy('id', 'desc')->get();
+        $stores = Store::where('is_active', true)->orderBy('name')->get(['id', 'name']);
         try {
             $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
 
@@ -21,6 +34,7 @@ class HallController extends Controller
                 ->orderBy('id', 'desc')
                 ->get();
 
+        return view('halls.index', compact('halls', 'listingStatus', 'stores', 'storeFilter'));
             return view('halls.index', compact('halls', 'listingStatus'));
         } catch (Throwable $exception) {
             Log::error('Failed to load halls.', [
@@ -35,6 +49,9 @@ class HallController extends Controller
 
     public function create()
     {
+        $stores = Store::where('is_active', true)->orderBy('name')->get(['id', 'name']);
+        
+        return view('halls.create', compact('stores'));
         try {
             return view('halls.create');
         } catch (Throwable $exception) {
@@ -51,13 +68,26 @@ class HallController extends Controller
     public function store(Request $request)
     {
         $validated = $request->validate([
-            'name' => 'required|alpha_num|max:50|unique:halls,name',
+            'store_id' => 'required|integer|exists:stores,id,is_active,1',
+            'name' => [
+                'required',
+                'alpha_num',
+                'max:50',
+                Rule::unique('halls')->where(function ($query) use ($request) {
+                    return $query->where('store_id', $request->input('store_id'));
+                }),
+            ],
         ]);
 
         try {
             // This transaction ensures the hall record is created completely or the database changes are rolled back.
             DB::beginTransaction();
 
+        Hall::create([
+            'store_id' => $validated['store_id'],
+            'name' => $validated['name'],
+            'is_active' => true,
+        ]);
             Hall::create([
                 'name' => $validated['name'],
                 'is_active' => true,
@@ -78,12 +108,20 @@ class HallController extends Controller
             throw $exception;
         }
 
-        return redirect()->route('halls.index')
-            ->with('success', 'Hall created successfully.');
+        // Redirect to location-scoped hall management
+        return redirect()->route('locations.halls', $validated['store_id'])
+            ->with('success', 'Hall created successfully for the selected location.');
     }
 
     public function show(Request $request, $id)
     {
+        $hall = Hall::with('store')->findOrFail($id);
+        $listingStatus = $request->query('status') === 'inactive' ? 'inactive' : 'active';
+        $racks = $hall->racks()
+            ->withCount('shelves')
+            ->where('is_active', $listingStatus === 'active')
+            ->orderBy('name')
+            ->get();
         try {
             $hall = Hall::findOrFail($id);
 
@@ -110,9 +148,12 @@ class HallController extends Controller
 
     public function edit($id)
     {
+        $hall = Hall::with('store')->findOrFail($id);
+        $stores = Store::where('is_active', true)->orderBy('name')->get(['id', 'name']);
         try {
             $hall = Hall::findOrFail($id);
 
+        return view('halls.edit', compact('hall', 'stores'));
             return view('halls.edit', compact('hall'));
         } catch (Throwable $exception) {
             Log::error('Failed to load the hall edit page.', [
@@ -131,11 +172,16 @@ class HallController extends Controller
         $hall = Hall::findOrFail($id);
 
         $validated = $request->validate([
+            'store_id' => 'required|integer|exists:stores,id,is_active,1',
             'name' => [
                 'required',
                 'alpha_num',
                 'max:50',
-                Rule::unique('halls', 'name')->ignore($hall->id),
+                Rule::unique('halls', 'name')
+                    ->where(function ($query) use ($request) {
+                        return $query->where('store_id', $request->input('store_id'));
+                    })
+                    ->ignore($hall->id),
             ],
         ]);
 
@@ -143,6 +189,10 @@ class HallController extends Controller
             // This transaction ensures the hall name update is committed successfully or rolled back on failure.
             DB::beginTransaction();
 
+        $hall->update([
+            'store_id' => $validated['store_id'],
+            'name' => $validated['name'],
+        ]);
             $hall->update(['name' => $validated['name']]);
 
             DB::commit();
@@ -161,7 +211,8 @@ class HallController extends Controller
             throw $exception;
         }
 
-        return redirect()->route('halls.index')
+        // Redirect to location-scoped hall management
+        return redirect()->route('locations.halls', $validated['store_id'])
             ->with('success', 'Hall updated successfully.');
     }
 
@@ -197,12 +248,16 @@ class HallController extends Controller
             throw $exception;
         }
 
-        return redirect()->route('halls.index', ['status' => $validated['listing_status']])
+        // Redirect to location-scoped hall management
+        return redirect()->route('locations.halls', ['location' => $hall->store_id, 'status' => $validated['listing_status']])
             ->with('success', $hall->is_active
                 ? 'Hall activated successfully.'
                 : 'Hall deactivated successfully. The record is retained.');
     }
 
+    /**
+     * Get racks for a specific hall (API endpoint for cascading dropdowns)
+     */
     public function racksOptions($id)
     {
         try {

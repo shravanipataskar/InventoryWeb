@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use App\Unit;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Throwable;
 
 class UnitController extends Controller
 {
@@ -39,11 +41,21 @@ class UnitController extends Controller
             'short_name' => 'required|string|max:20',
         ]);
 
-        Unit::create([
-            'name' => trim($request->name),
-            'short_name' => $request->short_name,
-            'is_active' => 1,
-        ]);
+        // Start transaction for unit creation.
+        try {
+            DB::beginTransaction();
+
+            Unit::create([
+                'name' => trim($request->name),
+                'short_name' => $request->short_name,
+                'is_active' => 1,
+            ]);
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()
             ->route('units.index')
@@ -60,6 +72,7 @@ class UnitController extends Controller
     public function update(Request $request, $id)
     {
         $unit = Unit::findOrFail($id);
+
         $request->validate([
             'name' => [
                 'required',
@@ -77,10 +90,20 @@ class UnitController extends Controller
             'short_name' => 'required|string|max:20',
         ]);
 
-        $unit->update([
-            'name' => trim($request->name),
-            'short_name' => $request->short_name,
-        ]);
+        // Start transaction for unit update.
+        try {
+            DB::beginTransaction();
+
+            $unit->update([
+                'name' => trim($request->name),
+                'short_name' => $request->short_name,
+            ]);
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()
             ->route('units.index')
@@ -95,8 +118,19 @@ class UnitController extends Controller
         ]);
 
         $unit = Unit::findOrFail($id);
-        $unit->is_active = $validated['is_active'];
-        $unit->save();
+
+        // Start transaction for updating unit status.
+        try {
+            DB::beginTransaction();
+
+            $unit->is_active = $validated['is_active'];
+            $unit->save();
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()
             ->route('units.index', ['status' => $validated['listing_status']])
@@ -108,8 +142,19 @@ class UnitController extends Controller
     public function destroy($id)
     {
         $unit = Unit::findOrFail($id);
-        $unit->is_active = false;
-        $unit->save();
+
+        // Start transaction for unit deactivation.
+        try {
+            DB::beginTransaction();
+
+            $unit->is_active = false;
+            $unit->save();
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()
             ->route('units.index')

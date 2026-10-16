@@ -4,10 +4,13 @@ namespace App\Http\Controllers;
 
 use App\Category;
 use App\Company;
+use App\Hall;
 use App\Product;
+use App\Rack;
 use App\StockAdjustment;
 use App\StockInward;
 use App\StockOutward;
+use App\Store;
 use App\User;
 use App\Services\InventoryReportsService;
 use App\Support\ActivityLogger;
@@ -18,6 +21,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
+use Throwable;
 
 class WorkspaceController extends Controller
 {
@@ -283,30 +287,45 @@ class WorkspaceController extends Controller
         return view('workspace.settings');
     }
 
-    public function locations()
+    public function locations(Request $request)
     {
-        $locations = DB::table('stores')
+        $query = DB::table('stores')
             ->leftJoin('companies', 'companies.id', '=', 'stores.company_id')
-            ->select('stores.name', 'stores.code', 'companies.name as company_name', 'stores.location', 'stores.is_active')
-            ->orderBy('stores.name')
-            ->paginate(20);
+            ->select(
+                'stores.id',
+                'stores.name',
+                'stores.code',
+                'companies.name as company_name',
+                'stores.location',
+                'stores.is_active',
+                'stores.created_at'
+            );
 
-        return $this->recordsPage(
-            'Locations',
-            'MASTER DATA',
-            'Manage the inventory locations configured for your stores.',
-            $locations,
-            [
-                ['label' => 'Location', 'key' => 'name'],
-                ['label' => 'Company / Brand', 'key' => 'company_name'],
-                ['label' => 'Code', 'key' => 'code'],
-                ['label' => 'Address / Area', 'key' => 'location'],
-                ['label' => 'Status', 'key' => 'is_active', 'type' => 'active'],
-            ],
-            [['label' => 'Locations', 'value' => DB::table('stores')->count(), 'icon' => 'icon-building', 'tone' => 'blue']],
-            'locations.create',
-            'Add Location'
-        );
+        // Apply filters
+        if ($request->filled('search')) {
+            $search = $request->input('search');
+            $query->where(function ($q) use ($search) {
+                $q->where('stores.name', 'like', "%{$search}%")
+                  ->orWhere('stores.code', 'like', "%{$search}%")
+                  ->orWhere('stores.location', 'like', "%{$search}%");
+            });
+        }
+
+        if ($request->filled('status')) {
+            $status = $request->input('status');
+            if ($status === 'active') {
+                $query->where('stores.is_active', true);
+            } elseif ($status === 'inactive') {
+                $query->where('stores.is_active', false);
+            }
+        }
+
+        $locations = $query->orderBy('stores.name')->paginate(20)->appends($request->query());
+
+        $totalCount = DB::table('stores')->count();
+        $activeCount = DB::table('stores')->where('is_active', true)->count();
+
+        return view('workspace.locations-index', compact('locations', 'totalCount', 'activeCount'));
     }
 
     public function createLocation()
@@ -318,27 +337,267 @@ class WorkspaceController extends Controller
 
     public function storeLocation(Request $request)
     {
+        // Check if this is a bulk/dynamic location creation
+        if ($request->has('locations') && is_array($request->input('locations'))) {
+            return $this->storeBulkLocations($request);
+        }
+
+        // Single location creation (legacy mode)
         $validated = $request->validate([
-            'name' => 'required|string|max:255',
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                function ($attribute, $value, $fail) {
+                    if (!Store::isNameUnique($value)) {
+                        $fail('The location name "' . trim($value) . '" already exists. Please enter a different location.');
+                    }
+                },
+            ],
             'code' => 'required|string|max:255|unique:stores,code',
             'company_id' => 'required|integer|exists:companies,id,is_active,1',
             'location' => 'nullable|string|max:255',
+            'description' => 'nullable|string|max:1000',
         ]);
 
-        DB::table('stores')->insert([
-            'store_code' => trim($validated['code']),
-            'name' => trim($validated['name']),
+        // Start transaction for single location creation.
+        try {
+            DB::beginTransaction();
+
+            DB::table('stores')->insert([
+                'name' => trim($validated['name']),
             'code' => trim($validated['code']),
             'company_id' => $validated['company_id'],
             'location' => isset($validated['location']) ? trim($validated['location']) : null,
+            'description' => isset($validated['description']) ? trim($validated['description']) : null,
             'is_active' => true,
             'created_at' => now(),
-            'updated_at' => now(),
-        ]);
+                'updated_at' => now(),
+            ]);
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()
             ->route('locations.index')
-            ->with('success', 'Location added.');
+            ->with('success', 'Location added successfully.');
+    }
+
+    protected function storeBulkLocations(Request $request)
+    {
+        $validated = $request->validate([
+            'company_id' => 'required|integer|exists:companies,id,is_active,1',
+            'locations' => 'required|array|min:1|max:50',
+            'locations.*.name' => 'required|string|max:255',
+            'locations.*.location' => 'nullable|string|max:255',
+            'locations.*.description' => 'nullable|string|max:1000',
+        ]);
+
+        // Validate uniqueness within the submission
+        $names = array_map(function ($loc) {
+            return strtolower(trim($loc['name']));
+        }, $validated['locations']);
+
+        $duplicatesInSubmission = array_filter(array_count_values($names), function ($count) {
+            return $count > 1;
+        });
+
+        if (!empty($duplicatesInSubmission)) {
+            $duplicateNames = array_keys($duplicatesInSubmission);
+            return back()->withErrors([
+                'locations' => 'Duplicate location names found in your submission: ' . implode(', ', $duplicateNames) . '. Each location name must be unique.',
+            ])->withInput();
+        }
+
+        // Validate uniqueness against existing locations
+        foreach ($validated['locations'] as $index => $locationData) {
+            $name = trim($locationData['name']);
+            if (!Store::isNameUnique($name)) {
+                return back()->withErrors([
+                    "locations.{$index}.name" => "The location '{$name}' already exists. Please enter a different location.",
+                ])->withInput();
+            }
+        }
+
+        // Generate unique codes for each location
+        $locationsToInsert = [];
+        $existingCodes = DB::table('stores')->pluck('code')->toArray();
+
+        foreach ($validated['locations'] as $index => $locationData) {
+            $name = trim($locationData['name']);
+            $baseCode = 'LOC-' . strtoupper(substr(preg_replace('/[^A-Z0-9]/i', '', $name), 0, 6));
+            $code = $baseCode;
+            $suffix = 1;
+
+            while (in_array($code, $existingCodes) || in_array($code, array_column($locationsToInsert, 'code'))) {
+                $code = $baseCode . '-' . $suffix;
+                $suffix++;
+            }
+
+            $locationsToInsert[] = [
+                'name' => $name,
+                'code' => $code,
+                'company_id' => $validated['company_id'],
+                'location' => isset($locationData['location']) ? trim($locationData['location']) : null,
+                'description' => isset($locationData['description']) ? trim($locationData['description']) : null,
+                'is_active' => true,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ];
+        }
+
+        // Start transaction for bulk location creation.
+        try {
+            DB::beginTransaction();
+
+            DB::table('stores')->insert($locationsToInsert);
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
+
+        $count = count($locationsToInsert);
+        return redirect()
+            ->route('locations.index')
+            ->with('success', "{$count} location(s) added successfully.");
+    }
+
+    public function editLocation($id)
+    {
+        $location = Store::findOrFail($id);
+        $companies = Company::where('is_active', true)->orderBy('name')->get();
+
+        return view('workspace.location-edit', compact('location', 'companies'));
+    }
+
+    public function updateLocation(Request $request, $id)
+    {
+        $location = Store::findOrFail($id);
+
+        $validated = $request->validate([
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+                function ($attribute, $value, $fail) use ($id) {
+                    if (!Store::isNameUnique($value, $id)) {
+                        $fail('The location name "' . trim($value) . '" already exists. Please enter a different location.');
+                    }
+                },
+            ],
+            'code' => [
+                'required',
+                'string',
+                'max:255',
+                function ($attribute, $value, $fail) use ($id) {
+                    if (!Store::isCodeUnique($value, $id)) {
+                        $fail('The location code "' . trim($value) . '" already exists.');
+                    }
+                },
+            ],
+            'company_id' => 'required|integer|exists:companies,id,is_active,1',
+            'location' => 'nullable|string|max:255',
+            'description' => 'nullable|string|max:1000',
+        ]);
+
+        // Start transaction for location update.
+        try {
+            DB::beginTransaction();
+
+            $location->update([
+                'name' => trim($validated['name']),
+            'code' => trim($validated['code']),
+            'company_id' => $validated['company_id'],
+            'location' => isset($validated['location']) ? trim($validated['location']) : null,
+                'description' => isset($validated['description']) ? trim($validated['description']) : null,
+            ]);
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
+
+        return redirect()
+            ->route('locations.index')
+            ->with('success', 'Location updated successfully.');
+    }
+
+    public function toggleLocationStatus($id)
+    {
+        $location = Store::findOrFail($id);
+
+        // Check if location can be deactivated
+        if ($location->is_active && !$location->canBeDeactivated()) {
+            return back()->with('error', 'Cannot deactivate location "' . $location->name . '" because it currently has stock. Please transfer or adjust the stock first.');
+        }
+
+        // Start transaction for location status update.
+        try {
+            DB::beginTransaction();
+
+            $location->toggleStatus();
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
+
+        $status = $location->is_active ? 'activated' : 'deactivated';
+        return redirect()
+            ->route('locations.index')
+            ->with('success', "Location \"{$location->name}\" has been {$status} successfully.");
+    }
+
+    /**
+     * Get halls for a specific store (API endpoint for cascading dropdowns)
+     */
+    public function getHallsByStore($storeId)
+    {
+        $store = Store::findOrFail($storeId);
+        
+        $halls = Hall::where('store_id', $storeId)
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        return response()->json($halls);
+    }
+
+    /**
+     * Get racks for a specific hall (API endpoint for cascading dropdowns)
+     */
+    public function getRacksByHall($hallId)
+    {
+        $hall = Hall::findOrFail($hallId);
+        
+        $racks = $hall->racks()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        return response()->json($racks);
+    }
+
+    /**
+     * Get shelves for a specific rack (API endpoint for cascading dropdowns)
+     */
+    public function getShelvesByRack($rackId)
+    {
+        $rack = Rack::findOrFail($rackId);
+        
+        $shelves = $rack->shelves()
+            ->where('is_active', true)
+            ->orderBy('name')
+            ->get(['id', 'name']);
+
+        return response()->json($shelves);
     }
 
     public function openingStock(Request $request)
@@ -521,7 +780,10 @@ class WorkspaceController extends Controller
             'confirm_existing_stock' => 'nullable|boolean',
         ]);
 
-        $posting = DB::transaction(function () use ($validated, $request) {
+        // Start transaction for opening stock validation and posting.
+        try {
+            DB::beginTransaction();
+
         $submittedItems = array_values($validated['items']);
         $products = Product::whereIn('id', array_column($submittedItems, 'product_id'))
             ->orderBy('id')
@@ -640,7 +902,10 @@ class WorkspaceController extends Controller
             ]);
         }
 
-        $referenceNumber = DB::transaction(function () use ($validated, $productRows, $products, $storeId) {
+        // Start transaction for opening stock record creation and inventory update.
+        try {
+            DB::beginTransaction();
+
             $now = now();
             $headerId = DB::table('opening_stock_headers')->insertGetId([
                 'opening_number' => 'PENDING-' . Str::uuid(),
@@ -719,14 +984,24 @@ class WorkspaceController extends Controller
                 $product->save();
             }
 
-            return $reference;
-        });
+            $referenceNumber = $reference;
 
-        return [
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
+
+        $posting = [
             'reference_number' => $referenceNumber,
             'existing_stock_names' => $existingStockNames,
         ];
-        });
+
+        DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         $response = redirect()
             ->route('opening-stock.index')
@@ -999,11 +1274,19 @@ class WorkspaceController extends Controller
 
         $fromStoreId = DB::table('stores')->where('name', $validated['from_location'])->where('is_active', true)->value('id');
         $toStoreId = DB::table('stores')->where('name', $validated['to_location'])->where('is_active', true)->value('id');
-        if (!$fromStoreId || !$toStoreId || $fromStoreId == $toStoreId) {
+        
+        if (!$fromStoreId || !$toStoreId) {
             throw ValidationException::withMessages([
-                'from_location' => 'From Location and To Location must be different active locations.',
+                'from_location' => 'Both From and To locations must be active inventory locations.',
             ]);
         }
+        
+        if ($fromStoreId == $toStoreId) {
+            throw ValidationException::withMessages([
+                'to_location' => 'From Location and To Location must be different. You cannot transfer stock to the same location.',
+            ]);
+        }
+        
         $validated['from_store_id'] = $fromStoreId;
         $validated['to_store_id'] = $toStoreId;
         if (!Schema::hasTable('stock_transactions')) {
@@ -1021,7 +1304,10 @@ class WorkspaceController extends Controller
             }
         }
 
-        DB::transaction(function () use ($validated, $fromStoreId, $toStoreId) {
+        // Start transaction for stock transfer creation and inventory ledger updates.
+        try {
+            DB::beginTransaction();
+
             $activeStoreIds = DB::table('stores')
                 ->whereIn('id', [$fromStoreId, $toStoreId])
                 ->where('is_active', true)
@@ -1163,7 +1449,12 @@ class WorkspaceController extends Controller
                     'remarks' => 'Transfer in: ' . $transferNumber,
                 ]), array_flip(Schema::getColumnListing('stock_transactions'))));
             }
-        });
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()
             ->route('stock-transfers.index')
@@ -1333,7 +1624,10 @@ class WorkspaceController extends Controller
         $validated = $request->validate($rules);
         $legacyAdjustmentSchema = Schema::hasColumn('stock_adjustments', 'adjustment_number');
 
-        DB::transaction(function () use ($validated, $legacyAdjustmentSchema) {
+        // Start transaction for stock adjustment and inventory ledger update.
+        try {
+            DB::beginTransaction();
+
             $product = Product::lockForUpdate()->findOrFail($validated['product_id']);
             if (!$product->is_active) {
                 throw ValidationException::withMessages([
@@ -1427,7 +1721,12 @@ class WorkspaceController extends Controller
                     'updated_at' => now(),
                 ]);
             }
-        });
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()
             ->route('stock-adjustments.index')
@@ -2678,11 +2977,21 @@ class WorkspaceController extends Controller
             'business_address' => 'nullable|string|max:500',
         ]);
 
-        foreach ($validated as $key => $value) {
-            DB::table('system_settings')->updateOrInsert(
-                ['key' => $key],
-                ['value' => $value, 'updated_at' => now(), 'created_at' => now()]
-            );
+        // Start transaction for updating general system settings.
+        try {
+            DB::beginTransaction();
+
+            foreach ($validated as $key => $value) {
+                DB::table('system_settings')->updateOrInsert(
+                    ['key' => $key],
+                    ['value' => $value, 'updated_at' => now(), 'created_at' => now()]
+                );
+            }
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
         }
 
         ActivityLogger::log(

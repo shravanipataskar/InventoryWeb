@@ -8,12 +8,14 @@ use App\Support\ActivityLogger;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Throwable;
 
 class UserController extends Controller
 {
     public function index(Request $request)
     {
         $query = User::with('roles')->orderBy('name');
+
         if ($request->filled('search')) {
             $search = trim($request->input('search'));
             $query->where(function ($userQuery) use ($search) {
@@ -22,6 +24,7 @@ class UserController extends Controller
                     ->orWhere('phone', 'like', '%' . $search . '%');
             });
         }
+
         if ($request->input('status') === 'active') {
             $query->where('is_active', true);
         } elseif ($request->input('status') === 'inactive') {
@@ -68,7 +71,11 @@ class UserController extends Controller
         ]);
 
         $role = Role::findOrFail($data['role_id']);
-        $user = DB::transaction(function () use ($data, $role) {
+
+        // Start transaction for user creation and role assignment.
+        try {
+            DB::beginTransaction();
+
             $user = User::create([
                 'name' => $data['name'],
                 'email' => $data['email'],
@@ -77,12 +84,21 @@ class UserController extends Controller
                 'phone' => $data['phone'] ?? null,
                 'is_active' => ($data['status'] ?? 'active') === 'active',
             ]);
+
             $user->roles()->sync([$role->id]);
 
-            return $user;
-        });
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
-        ActivityLogger::log('Created user', 'Users', 'Created ' . $user->email . ' with role ' . $role->label . '.', $user);
+        ActivityLogger::log(
+            'Created user',
+            'Users',
+            'Created ' . $user->email . ' with role ' . $role->label . '.',
+            $user
+        );
 
         return redirect()
             ->route('users.index')
@@ -107,6 +123,7 @@ class UserController extends Controller
     public function update(Request $request, $id)
     {
         $user = User::findOrFail($id);
+
         $data = $request->validate([
             'name' => 'required|string|max:100',
             'email' => 'required|email|max:255|unique:users,email,' . $user->id,
@@ -114,24 +131,37 @@ class UserController extends Controller
             'role_id' => 'required|exists:roles,id',
             'is_active' => 'required|boolean',
         ]);
+
         if ($request->filled('password')) {
             $data['password'] = $request->validate([
                 'password' => 'required|string|min:8|confirmed',
             ])['password'];
         }
+
         $role = Role::findOrFail($data['role_id']);
-        DB::transaction(function () use ($user, $data, $role) {
+
+        // Start transaction for user update and role assignment.
+        try {
+            DB::beginTransaction();
+
             $user->name = $data['name'];
             $user->email = $data['email'];
             $user->phone = $data['phone'] ?? null;
             $user->is_active = (bool) $data['is_active'];
             $user->role = $role->name;
+
             if (!empty($data['password'])) {
                 $user->password = Hash::make($data['password']);
             }
+
             $user->save();
             $user->roles()->sync([$role->id]);
-        });
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()->route('users.show', $user->id)
             ->with('success', 'User details updated.');
@@ -139,10 +169,24 @@ class UserController extends Controller
 
     public function status(Request $request, $id)
     {
-        $data = $request->validate(['is_active' => 'required|boolean']);
+        $data = $request->validate([
+            'is_active' => 'required|boolean'
+        ]);
+
         $user = User::findOrFail($id);
-        $user->is_active = (bool) $data['is_active'];
-        $user->save();
+
+        // Start transaction for updating user status.
+        try {
+            DB::beginTransaction();
+
+            $user->is_active = (bool) $data['is_active'];
+            $user->save();
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()->route('users.index')
             ->with('success', $user->is_active ? 'User activated.' : 'User deactivated.');

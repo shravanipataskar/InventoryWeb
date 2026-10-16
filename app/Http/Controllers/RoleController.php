@@ -7,6 +7,7 @@ use App\Role;
 use App\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Throwable;
 
 class RoleController extends Controller
 {
@@ -81,6 +82,17 @@ class RoleController extends Controller
                 }
             }
 
+        $permissionIds = array_merge(
+            $permissionIds,
+            $role->permissions()
+                ->whereNotIn('action', ['view', 'create', 'edit', 'delete'])
+                ->pluck('permissions.id')
+                ->all()
+        );
+
+        // Start transaction for updating role permissions
+        try {
+            DB::beginTransaction();
             $permissionIds = array_merge(
                 $permissionIds,
                 $role->permissions()
@@ -89,6 +101,13 @@ class RoleController extends Controller
                     ->all()
             );
 
+            $role->permissions()->sync($permissionIds);
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
             $role->permissions()->sync($permissionIds);
         });
 
@@ -102,11 +121,20 @@ class RoleController extends Controller
         $validated = $request->validate(['role_id' => 'required|exists:roles,id']);
         $user = User::findOrFail($id);
         $role = Role::findOrFail($validated['role_id']);
-        DB::transaction(function () use ($user, $role) {
+
+        // Start transaction for assigning role to user
+        try {
+            DB::beginTransaction();
+
             $user->roles()->sync([$role->id]);
             $user->role = $role->name;
             $user->save();
-        });
+
+            DB::commit();
+        } catch (Throwable $exception) {
+            DB::rollBack();
+            throw $exception;
+        }
 
         return redirect()
             ->route('roles.index', ['role_id' => $role->id])
